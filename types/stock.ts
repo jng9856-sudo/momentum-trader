@@ -26,6 +26,27 @@ export interface StockAnalysis {
   volume_ratio:       number;
   bb_position:        number;
   atr_pct:            number;
+  // MA data
+  ma10?:              number;
+  ma20?:              number;
+  ma30?:              number;
+  ma50?:              number;
+  ma120?:             number;
+  above_ma_count?:    number;
+  stacked_bull?:      boolean;
+  stacked_bear?:      boolean;
+  // VCP / Pivot data
+  vcp_score?:         number;
+  vcp_is_vcp?:        boolean;
+  vcp_contraction_count?: number;
+  vcp_last_pullback?: number;
+  vcp_base_weeks?:    number;
+  vcp_lowest_vol?:    boolean;
+  vcp_pivot?:         number | null;
+  vcp_detail?:        string;
+  pivot_broken?:      boolean;
+  pivot_dist?:        number;
+  pivot_within_chase?: boolean;
 }
 
 export interface AnalysisResult {
