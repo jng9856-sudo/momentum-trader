@@ -31,7 +31,7 @@ function GaugeBar({ value, max, color }: { value: number; max: number; color: st
   );
 }
 
-export default function StockCard({ stock, highlight = false }: { stock: StockAnalysis; highlight?: boolean }) {
+export default function StockCard({ stock, highlight = false, onRemove }: { stock: StockAnalysis; highlight?: boolean; onRemove?: (ticker: string) => void }) {
   const router = useRouter();
   const score  = Math.min(10, Math.max(1, Math.round(Number(stock.momentum_score) * 2) / 2));
   const c      = sigColors(stock.signal);
@@ -43,7 +43,14 @@ export default function StockCard({ stock, highlight = false }: { stock: StockAn
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
-          <button onClick={() => router.push(`/stock/${stock.ticker}`)} className="text-xl font-semibold text-zinc-100 hover:text-emerald-300 transition-colors underline-offset-2 hover:underline cursor-pointer">{stock.ticker} ↗</button>
+          <div className="flex items-center gap-2">
+            <button onClick={() => router.push(`/stock/${stock.ticker}`)} className="text-xl font-semibold text-zinc-100 hover:text-emerald-300 transition-colors underline-offset-2 hover:underline cursor-pointer">{stock.ticker} ↗</button>
+            {onRemove && (
+              <button onClick={() => onRemove(stock.ticker)}
+                className="w-5 h-5 flex items-center justify-center rounded-full bg-zinc-800 hover:bg-red-900 text-zinc-500 hover:text-red-400 transition-colors text-xs leading-none"
+                title="목록에서 삭제">✕</button>
+            )}
+          </div>
           <span className={`w-2 h-2 rounded-full ${confDot(stock.confidence)}`} />
           <span className="text-xs text-zinc-500">
             {stock.confidence === 'HIGH' ? '신뢰↑' : stock.confidence === 'MEDIUM' ? '신뢰중' : '신뢰↓'}
