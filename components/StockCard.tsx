@@ -1,5 +1,6 @@
 'use client';
 import { StockAnalysis } from '@/types/stock';
+import { useRouter } from 'next/navigation';
 
 const SIG_KO: Record<string, string> = {
   STRONG_BUY: '즉시매수', BUY: '매수', HOLD: '관망', SELL: '매도', STRONG_SELL: '즉시매도',
@@ -31,6 +32,7 @@ function GaugeBar({ value, max, color }: { value: number; max: number; color: st
 }
 
 export default function StockCard({ stock, highlight = false }: { stock: StockAnalysis; highlight?: boolean }) {
+  const router = useRouter();
   const score  = Math.min(10, Math.max(1, Math.round(Number(stock.momentum_score) * 2) / 2));
   const c      = sigColors(stock.signal);
 
@@ -41,7 +43,7 @@ export default function StockCard({ stock, highlight = false }: { stock: StockAn
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
-          <span className="text-xl font-semibold text-zinc-100">{stock.ticker}</span>
+          <button onClick={() => router.push(`/stock/${stock.ticker}`)} className="text-xl font-semibold text-zinc-100 hover:text-emerald-300 transition-colors underline-offset-2 hover:underline cursor-pointer">{stock.ticker} ↗</button>
           <span className={`w-2 h-2 rounded-full ${confDot(stock.confidence)}`} />
           <span className="text-xs text-zinc-500">
             {stock.confidence === 'HIGH' ? '신뢰↑' : stock.confidence === 'MEDIUM' ? '신뢰중' : '신뢰↓'}
