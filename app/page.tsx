@@ -86,6 +86,18 @@ export default function Home() {
 
   function addTicker(t: string)    { if (watchlist.length < MAX_TICKERS) setWatchlist(w => [...w, t]); }
   function removeTicker(t: string) { setWatchlist(w => w.filter(x => x !== t)); }
+  function removeFromResults(ticker: string) {
+    setAllStocks(s => s.filter(x => x.ticker !== ticker));
+    setWatchlist(w => w.filter(x => x !== ticker));
+    try {
+      const c = localStorage.getItem(CACHE_KEY);
+      if (c) {
+        const p = JSON.parse(c);
+        p.stocks = (p.stocks ?? []).filter((s: { ticker: string }) => s.ticker !== ticker);
+        localStorage.setItem(CACHE_KEY, JSON.stringify(p));
+      }
+    } catch {}
+  }
 
   async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -324,7 +336,7 @@ export default function Home() {
 
                 <div className="flex flex-col gap-4">
                   {displayed.map((s, i) => (
-                    <StockCard key={s.ticker} stock={s} highlight={i===0 && filter!=='SELL' && filter!=='STRONG_SELL'} />
+                    <StockCard key={s.ticker} stock={s} highlight={i===0 && filter!=='SELL' && filter!=='STRONG_SELL'} onRemove={removeFromResults} />
                   ))}
                   {displayed.length === 0 && (
                     <p className="text-sm text-zinc-600 py-6 text-center">해당 조건의 종목이 없습니다.</p>
