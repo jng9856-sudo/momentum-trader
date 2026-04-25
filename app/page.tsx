@@ -58,6 +58,7 @@ export default function Home() {
   const [filter,     setFilter]     = useState<FilterType>('ALL');
   const [sort,       setSort]       = useState<SortType>('SCORE');
   const [xlsxMsg,    setXlsxMsg]    = useState('');
+  const [search,     setSearch]     = useState('');
   const fileRef    = useRef<HTMLInputElement>(null);
   const abortRef   = useRef(false);
 
@@ -157,6 +158,7 @@ export default function Home() {
 
   const displayed = [...allStocks]
     .filter(s => filter === 'ALL' || s.signal === filter)
+    .filter(s => search === '' || s.ticker.includes(search.toUpperCase()))
     .sort((a, b) => {
       if (sort === 'SCORE')  return Number(b.momentum_score) - Number(a.momentum_score);
       if (sort === 'TICKER') return a.ticker.localeCompare(b.ticker);
@@ -253,6 +255,24 @@ export default function Home() {
             </div>
 
             <TopPicks stocks={allStocks} />
+
+            {/* Search bar */}
+            <div className="relative mb-3">
+              <input
+                type="text"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="티커 검색 (예: AMD)"
+                className="w-full bg-zinc-900 border border-zinc-700 text-zinc-100 text-sm px-4 py-2.5 pl-9 rounded-lg placeholder:text-zinc-600 focus:outline-none focus:border-zinc-500 font-mono"
+              />
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-600 text-sm">⌕</span>
+              {search && (
+                <button onClick={() => setSearch('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300 text-xs">
+                  ✕
+                </button>
+              )}
+            </div>
 
             <div className="flex flex-wrap gap-2 items-center justify-between mb-4">
               <div className="flex flex-wrap gap-1">
