@@ -12,7 +12,7 @@ const WATCHLIST_KEY    = 'mt_watchlist_v3';
 const MAX_TICKERS      = 1000;
 const BATCH_SIZE       = 50;
 
-type FilterType = 'ALL' | 'BUY' | 'SELL' | 'HOLD';
+type FilterType = 'ALL' | 'STRONG_BUY' | 'BUY' | 'HOLD' | 'SELL' | 'STRONG_SELL';
 type SortType   = 'SCORE' | 'TICKER' | 'SIGNAL';
 
 function todayKey() { return new Date().toISOString().slice(0, 10); }
@@ -164,7 +164,7 @@ export default function Home() {
       return (o[a.signal] ?? 3) - (o[b.signal] ?? 3);
     });
 
-  const buyCnt  = allStocks.filter(s => s.signal === 'BUY').length;
+  const buyCnt  = allStocks.filter(s => s.signal === 'STRONG_BUY' || s.signal === 'BUY').length;
   const sellCnt = allStocks.filter(s => s.signal === 'SELL').length;
   const holdCnt = allStocks.filter(s => s.signal === 'HOLD').length;
   const pct     = progress.total > 0 ? Math.round((progress.done / progress.total) * 100) : 0;
@@ -255,12 +255,19 @@ export default function Home() {
             <TopPicks stocks={allStocks} />
 
             <div className="flex flex-wrap gap-2 items-center justify-between mb-4">
-              <div className="flex gap-1">
-                {(['ALL','BUY','SELL','HOLD'] as FilterType[]).map(f => (
+              <div className="flex flex-wrap gap-1">
+                {([
+                  ['ALL',        `전체(${allStocks.length})`],
+                  ['STRONG_BUY', `즉시매수(${allStocks.filter(s=>s.signal==='STRONG_BUY').length})`],
+                  ['BUY',        `매수(${allStocks.filter(s=>s.signal==='BUY').length})`],
+                  ['HOLD',       `관망(${holdCnt})`],
+                  ['SELL',       `매도(${allStocks.filter(s=>s.signal==='SELL').length})`],
+                  ['STRONG_SELL',`즉시매도(${allStocks.filter(s=>s.signal==='STRONG_SELL').length})`],
+                ] as [FilterType, string][]).map(([f, label]) => (
                   <button key={f} onClick={() => setFilter(f)}
-                    className={`text-xs px-3 py-1.5 rounded-lg border transition-colors
+                    className={`text-xs px-2.5 py-1.5 rounded-lg border transition-colors
                       ${filter===f ? 'bg-zinc-700 border-zinc-600 text-zinc-100' : 'bg-transparent border-zinc-800 text-zinc-500 hover:text-zinc-300'}`}>
-                    {f==='ALL'?`전체(${allStocks.length})`:f==='BUY'?`매수(${buyCnt})`:f==='SELL'?`매도(${sellCnt})`:`관망(${holdCnt})`}
+                    {label}
                   </button>
                 ))}
               </div>
