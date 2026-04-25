@@ -156,6 +156,22 @@ export default function Home() {
 
   function stopAnalysis() { abortRef.current = true; setLoading(false); setStatus('> 분석 중단됨'); }
 
+  function resetAll() {
+    abortRef.current = true;
+    setLoading(false);
+    setAllStocks([]);
+    setMarketCtx('');
+    setAnalyzedAt('');
+    setStatus('');
+    setError('');
+    setSearch('');
+    setFilter('ALL');
+    setSort('SCORE');
+    setWatchlist(DEFAULT_TICKERS);
+    setXlsxMsg('');
+    try { localStorage.removeItem(CACHE_KEY); localStorage.removeItem(WATCHLIST_KEY); } catch {}
+  }
+
   const displayed = [...allStocks]
     .filter(s => filter === 'ALL' || s.signal === filter)
     .filter(s => search === '' || s.ticker.includes(search.toUpperCase()))
@@ -184,6 +200,10 @@ export default function Home() {
             <p className="text-xs text-zinc-600 mt-0.5">{today}</p>
           </div>
           <div className="flex gap-2">
+            <button onClick={resetAll}
+              className="px-4 py-2.5 text-sm font-semibold rounded-lg border border-zinc-700 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 transition-all">
+              초기화 ↺
+            </button>
             {loading && (
               <button onClick={stopAnalysis}
                 className="px-4 py-2.5 text-sm font-semibold rounded-lg border border-red-800 text-red-400 hover:bg-red-950 transition-all">
