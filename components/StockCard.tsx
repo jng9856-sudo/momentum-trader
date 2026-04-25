@@ -120,34 +120,34 @@ export default function StockCard({ stock, highlight = false, onRemove }: { stoc
       </div>
 
       {/* VCP Section */}
-      {(stock as Record<string, unknown>).vcp_score !== undefined && (
-        <div className={`mb-3 p-3 rounded-lg border ${(stock as Record<string, unknown>).vcp_is_vcp ? 'border-emerald-800 bg-emerald-950/20' : 'border-zinc-800 bg-zinc-900/30'}`}>
+      {stock.vcp_score !== undefined && (
+        <div className={`mb-3 p-3 rounded-lg border ${stock.vcp_is_vcp ? 'border-emerald-800 bg-emerald-950/20' : 'border-zinc-800 bg-zinc-900/30'}`}>
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
               <span className="text-[10px] text-zinc-500 uppercase tracking-widest">VCP 타점 분석</span>
-              {(stock as Record<string, unknown>).vcp_is_vcp && (
+              {stock.vcp_is_vcp && (
                 <span className="text-[9px] bg-emerald-900 text-emerald-300 border border-emerald-700 px-1.5 py-0.5 rounded">VCP 감지</span>
               )}
-              {(stock as Record<string, unknown>).pivot_broken && (stock as Record<string, unknown>).pivot_within_chase && (
+              {stock.pivot_broken && stock.pivot_within_chase && (
                 <span className="text-[9px] bg-amber-900 text-amber-300 border border-amber-700 px-1.5 py-0.5 rounded">피봇 돌파 ✓</span>
               )}
             </div>
-            <span className={`text-sm font-semibold font-mono ${Number((stock as Record<string, unknown>).vcp_score) >= 60 ? 'text-emerald-400' : Number((stock as Record<string, unknown>).vcp_score) >= 40 ? 'text-amber-400' : 'text-zinc-500'}`}>
-              {String((stock as Record<string, unknown>).vcp_score ?? 0)}점
+            <span className={`text-sm font-semibold font-mono ${(stock.vcp_score ?? 0) >= 60 ? 'text-emerald-400' : (stock.vcp_score ?? 0) >= 40 ? 'text-amber-400' : 'text-zinc-500'}`}>
+              {stock.vcp_score ?? 0}점
             </span>
           </div>
           <div className="h-1 bg-zinc-800 rounded-full overflow-hidden mb-2">
-            <div className="h-full rounded-full transition-all" style={{ width: `${(stock as Record<string, unknown>).vcp_score ?? 0}%`, background: Number((stock as Record<string, unknown>).vcp_score) >= 60 ? '#10b981' : Number((stock as Record<string, unknown>).vcp_score) >= 40 ? '#f59e0b' : '#52525b' }} />
+            <div className="h-full rounded-full transition-all" style={{ width: `${stock.vcp_score ?? 0}%`, background: (stock.vcp_score ?? 0) >= 60 ? '#10b981' : (stock.vcp_score ?? 0) >= 40 ? '#f59e0b' : '#52525b' }} />
           </div>
           <div className="grid grid-cols-3 gap-2 text-[10px] text-zinc-500 mb-2">
-            <span>수렴 <span className="text-zinc-300">{String((stock as Record<string, unknown>).vcp_contraction_count ?? 0)}회</span></span>
-            <span>베이스 <span className="text-zinc-300">{String((stock as Record<string, unknown>).vcp_base_weeks ?? 0)}주</span></span>
-            <span>조정폭 <span className="text-zinc-300">{String((stock as Record<string, unknown>).vcp_last_pullback ?? 0)}%</span></span>
-            <span>저거래량 <span className={(stock as Record<string, unknown>).vcp_lowest_vol ? 'text-emerald-400' : 'text-red-400'}>{(stock as Record<string, unknown>).vcp_lowest_vol ? '✓ 확인' : '✕ 미확인'}</span></span>
-            <span>피봇가 <span className="text-zinc-300">{(stock as Record<string, unknown>).vcp_pivot ? `$${(stock as Record<string, unknown>).vcp_pivot}` : '-'}</span></span>
-            <span>피봇거리 <span className={(stock as Record<string, unknown>).pivot_within_chase ? 'text-emerald-400' : 'text-zinc-400'}>{(stock as Record<string, unknown>).pivot_broken ? `+${(stock as Record<string, unknown>).pivot_dist}%` : '미돌파'}</span></span>
+            <span>수렴 <span className="text-zinc-300">{stock.vcp_contraction_count ?? 0}회</span></span>
+            <span>베이스 <span className="text-zinc-300">{stock.vcp_base_weeks ?? 0}주</span></span>
+            <span>조정폭 <span className="text-zinc-300">{stock.vcp_last_pullback ?? 0}%</span></span>
+            <span>저거래량 <span className={stock.vcp_lowest_vol ? 'text-emerald-400' : 'text-red-400'}>{stock.vcp_lowest_vol ? '✓ 확인' : '✕ 미확인'}</span></span>
+            <span>피봇가 <span className="text-zinc-300">{stock.vcp_pivot ? `$${stock.vcp_pivot}` : '-'}</span></span>
+            <span>피봇거리 <span className={stock.pivot_within_chase ? 'text-emerald-400' : 'text-zinc-400'}>{stock.pivot_broken ? `+${stock.pivot_dist}%` : '미돌파'}</span></span>
           </div>
-          <p className="text-[10px] text-zinc-600" style={{ fontFamily: 'system-ui, sans-serif' }}>{String((stock as Record<string, unknown>).vcp_detail ?? '')}</p>
+          <p className="text-[10px] text-zinc-600" style={{ fontFamily: 'system-ui, sans-serif' }}>{stock.vcp_detail ?? ''}</p>
         </div>
       )}
 
