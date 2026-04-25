@@ -183,13 +183,16 @@ export default function PortfolioTab() {
 
       {/* Results */}
       <div className="flex flex-col gap-4">
-        {results.map((r) => r.error ? (
-          <div key={r.ticker} className="p-4 border border-zinc-800 rounded-xl bg-zinc-900/40">
-            <span className="text-zinc-300 font-semibold">{r.ticker}</span>
-            <span className="text-zinc-600 text-xs ml-2">{r.error}</span>
+        {results.map((r, i) => r.error ? (
+          <div key={r.ticker} className="p-4 border border-zinc-800 rounded-xl bg-zinc-900/40 flex items-center justify-between">
+            <div>
+              <span className="text-zinc-300 font-semibold">{r.ticker}</span>
+              <span className="text-zinc-600 text-xs ml-2">{r.error}</span>
+            </div>
+            <button onClick={() => removeHolding(i)} className="text-zinc-600 hover:text-red-400 text-xs transition-colors">✕ 삭제</button>
           </div>
         ) : (
-          <HoldingCard key={r.ticker} result={r} />
+          <HoldingCard key={r.ticker} result={r} onRemove={() => removeHolding(holdings.findIndex(h => h.ticker === r.ticker))} />
         ))}
       </div>
 
@@ -202,7 +205,7 @@ export default function PortfolioTab() {
   );
 }
 
-function HoldingCard({ result: r }: { result: HoldingResult }) {
+function HoldingCard({ result: r, onRemove }: { result: HoldingResult; onRemove?: () => void }) {
   const pnlPos = r.pnlPct >= 0;
   const borderColor = r.action === '즉시매도' ? 'border-l-red-400' :
     r.action === '매도' ? 'border-l-red-700' :
@@ -219,6 +222,11 @@ function HoldingCard({ result: r }: { result: HoldingResult }) {
             <span className={`text-xs font-semibold px-3 py-1 rounded-md border ${ACTION_STYLE[r.action] ?? 'bg-zinc-900 text-zinc-400 border-zinc-700'}`}>
               {r.action}
             </span>
+            {onRemove && (
+              <button onClick={onRemove}
+                className="w-5 h-5 flex items-center justify-center rounded-full bg-zinc-800 hover:bg-red-900 text-zinc-500 hover:text-red-400 transition-colors text-xs leading-none"
+                title="삭제">✕</button>
+            )}
           </div>
           <div className="text-xs text-zinc-600">평균매수 ${r.avgPrice} {r.shares > 0 && `· ${r.shares}주`}</div>
         </div>
