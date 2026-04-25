@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-interface YahooQuote {
+interface QuoteData {
   ticker: string;
   price: number;
   change1d: number;
@@ -10,72 +10,146 @@ interface YahooQuote {
   high52w: number;
   low52w: number;
   aboveMa50: boolean;
+  aboveMa200: boolean;
   distFromHigh: number;
+  momentum3m: number;
 }
 
-async function fetchYahooData(ticker: string): Promise<YahooQuote | null> {
+async function fetchQuote(ticker: string): Promise<QuoteData | null> {
   try {
-    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=1y`;
-    const res = await fetch(url, {
-      headers: { 'User-Agent': 'Mozilla/5.0' },
-    });
+    const res = await fetch(
+      `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=1y`,
+      { headers: { 'User-Agent': 'Mozilla/5.0' }, next: { revalidate: 0 } }
+    );
     if (!res.ok) return null;
     const data = await res.json();
+    const result = data?.chart?.result?.[0];
+    if (!result) return null;
 
-    const closes: number[] = data?.chart?.result?.[0]?.indicators?.quote?.[0]?.close ?? [];
-    const timestamps: number[] = data?.chart?.result?.[0]?.timestamps ?? [];
-    if (closes.length < 50) return null;
+    const closes: number[] = result.indicators?.quote?.[0]?.close ?? [];
+    const timestamps: number[] = result.timestamp ?? [];
+    const valid = closes.map((c, i) => ({ c, t: timestamps[i] })).filter(x => x.c != null && !isNaN(x.c));
+    if (valid.length < 60) return null;
 
-    const validCloses = closes.filter((c: number) => c != null && !isNaN(c));
-    const price = validCloses[validCloses.length - 1];
-    const prev = validCloses[validCloses.length - 2];
-    const change1d = prev ? ((price - prev) / prev) * 100 : 0;
+    const price = valid[valid.length - 1].c;
+    const prev  = valid[valid.length - 2].c;
+    const change1d = ((price - prev) / prev) * 100;
 
-    // YTD: find first trading day of this year
-    const now = new Date();
-    const yearStart = new Date(now.getFullYear(), 0, 1).getTime() / 1000;
-    let ytdStartIdx = 0;
-    for (let i = 0; i < timestamps.length; i++) {
-      if (timestamps[i] >= yearStart) { ytdStartIdx = i; break; }
-    }
-    const ytdStartPrice = validCloses[ytdStartIdx] ?? validCloses[0];
-    const ytdReturn = ((price - ytdStartPrice) / ytdStartPrice) * 100;
+    // YTD
+    const yearStart = new Date(new Date().getFullYear(), 0, 1).getTime() / 1000;
+    const ytdIdx = valid.findIndex(x => x.t >= yearStart);
+    const ytdBase = valid[ytdIdx >= 0 ? ytdIdx : 0].c;
+    const ytdReturn = ((price - ytdBase) / ytdBase) * 100;
 
-    // 50-day & 200-day MA
-    const last50 = validCloses.slice(-50);
-    const last200 = validCloses.slice(-200);
-    const ma50 = last50.reduce((a: number, b: number) => a + b, 0) / last50.length;
-    const ma200 = last200.length >= 200
-      ? last200.reduce((a: number, b: number) => a + b, 0) / last200.length
-      : ma50;
+    // 3-month momentum
+    const q3 = valid[Math.max(0, valid.length - 63)].c;
+    const momentum3m = ((price - q3) / q3) * 100;
 
-    const high52w = Math.max(...validCloses);
-    const low52w = Math.min(...validCloses);
+    // MAs
+    const cs = valid.map(x => x.c);
+    const ma50  = cs.slice(-50).reduce((a, b) => a + b, 0) / 50;
+    const ma200 = cs.length >= 200 ? cs.slice(-200).reduce((a, b) => a + b, 0) / 200 : ma50;
+
+    const high52w = Math.max(...cs);
+    const low52w  = Math.min(...cs);
     const distFromHigh = ((price - high52w) / high52w) * 100;
 
     return {
       ticker,
-      price: Math.round(price * 100) / 100,
-      change1d: Math.round(change1d * 10) / 10,
-      ytdReturn: Math.round(ytdReturn * 10) / 10,
-      ma50: Math.round(ma50 * 100) / 100,
-      ma200: Math.round(ma200 * 100) / 100,
-      high52w: Math.round(high52w * 100) / 100,
-      low52w: Math.round(low52w * 100) / 100,
-      aboveMa50: price > ma50,
+      price:        Math.round(price * 100) / 100,
+      change1d:     Math.round(change1d * 10) / 10,
+      ytdReturn:    Math.round(ytdReturn * 10) / 10,
+      ma50:         Math.round(ma50 * 100) / 100,
+      ma200:        Math.round(ma200 * 100) / 100,
+      high52w:      Math.round(high52w * 100) / 100,
+      low52w:       Math.round(low52w * 100) / 100,
+      aboveMa50:    price > ma50,
+      aboveMa200:   price > ma200,
       distFromHigh: Math.round(distFromHigh * 10) / 10,
+      momentum3m:   Math.round(momentum3m * 10) / 10,
     };
-  } catch {
-    return null;
+  } catch { return null; }
+}
+
+function analyzeStock(q: QuoteData, spyYtd: number, sectorAvgYtd: number) {
+  const excessVsSpy    = q.ytdReturn - spyYtd;
+  const excessVsSector = q.ytdReturn - sectorAvgYtd;
+
+  // Relative strength
+  const rsIndex  = excessVsSpy > 5 ? 'STRONG' : excessVsSpy < -5 ? 'WEAK' : 'NEUTRAL';
+  const rsSector = excessVsSector > 3 ? 'STRONG' : excessVsSector < -3 ? 'WEAK' : 'NEUTRAL';
+
+  // MA status
+  const ma50Status = q.price > q.ma50 * 1.01 ? 'ABOVE' : q.price < q.ma50 * 0.99 ? 'BELOW' : 'AT';
+
+  // Pattern detection
+  let pattern: string;
+  if (q.distFromHigh > -5 && q.aboveMa50 && q.aboveMa200) pattern = 'BREAKOUT';
+  else if (q.distFromHigh >= -15 && q.distFromHigh < -5 && q.aboveMa50) pattern = 'CUP';
+  else if (q.distFromHigh >= -20 && q.aboveMa50 && q.momentum3m > 0) pattern = 'W_BASE';
+  else if (!q.aboveMa50 && q.momentum3m < -10) pattern = 'DOWNTREND';
+  else pattern = 'NONE';
+
+  // Momentum score (1-10)
+  let score = 5;
+  if (q.aboveMa50) score += 1;
+  if (q.aboveMa200) score += 1;
+  if (rsIndex === 'STRONG') score += 1; else if (rsIndex === 'WEAK') score -= 1;
+  if (rsSector === 'STRONG') score += 1; else if (rsSector === 'WEAK') score -= 1;
+  if (q.momentum3m > 20) score += 1; else if (q.momentum3m < -10) score -= 1;
+  if (q.distFromHigh > -10) score += 0.5;
+  score = Math.max(1, Math.min(10, Math.round(score)));
+
+  // Signal
+  let signal: string, confidence: string;
+  if (score >= 7 && q.aboveMa50 && rsIndex !== 'WEAK') {
+    signal = 'BUY';
+    confidence = score >= 9 ? 'HIGH' : 'MEDIUM';
+  } else if (score <= 4 || (!q.aboveMa50 && rsIndex === 'WEAK')) {
+    signal = 'SELL';
+    confidence = score <= 2 ? 'HIGH' : 'MEDIUM';
+  } else {
+    signal = 'HOLD';
+    confidence = 'MEDIUM';
   }
+
+  // Price levels
+  const entryLow  = Math.round(q.price * 0.99 * 100) / 100;
+  const entryHigh = Math.round(q.price * 1.02 * 100) / 100;
+  const stopLoss  = Math.round(q.ma50 * 0.97 * 100) / 100;
+  const support   = Math.round(q.ma50 * 100) / 100;
+  const resistance = Math.round(q.high52w * 100) / 100;
+
+  // Korean summary
+  const maWord   = q.aboveMa50 ? '50일선 위' : '50일선 아래';
+  const rsWord   = rsIndex === 'STRONG' ? 'S&P500 대비 강세' : rsIndex === 'WEAK' ? 'S&P500 대비 약세' : 'S&P500 대비 중립';
+  const ytdWord  = `YTD ${q.ytdReturn > 0 ? '+' : ''}${q.ytdReturn}%`;
+  const summary  = `${q.ticker}는 ${ytdWord} 수익률로 ${rsWord}이며, 현재 ${maWord} (MA50: $${q.ma50})에서 거래 중입니다. 3개월 모멘텀 ${q.momentum3m > 0 ? '+' : ''}${q.momentum3m}%, 52주 고점 대비 ${q.distFromHigh}% 위치에 있습니다.`;
+
+  let caution: string | null = null;
+  if (q.distFromHigh > -3 && signal === 'BUY') caution = '52주 고점 근접 — 추격 매수보다 눌림목 대기 권장';
+  if (!q.aboveMa50 && signal === 'HOLD') caution = '50일선 아래 거래 중 — 50일선 회복 확인 후 진입 권장';
+
+  return {
+    ticker: q.ticker,
+    signal,
+    confidence,
+    momentum_score: score,
+    rs_vs_index:  rsIndex,
+    rs_vs_sector: rsSector,
+    ma50_status:  ma50Status,
+    pattern,
+    volume_confirmation: q.aboveMa50 && q.momentum3m > 0,
+    entry_zone:   signal === 'BUY' ? `$${entryLow}-$${entryHigh}` : null,
+    key_support:  `$${support}`,
+    key_resistance: `$${resistance}`,
+    stop_loss:    signal === 'BUY' ? `$${stopLoss}` : null,
+    summary,
+    caution,
+  };
 }
 
 export async function POST(req: NextRequest) {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    return NextResponse.json({ error: 'GEMINI_API_KEY not configured' }, { status: 500 });
-  }
-
   let tickers: string[];
   try {
     const body = await req.json();
@@ -85,97 +159,34 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
   }
 
-  // Fetch real-time data from Yahoo Finance (no API key needed)
-  const stockData = await Promise.all(tickers.map(fetchYahooData));
-  const validData = stockData.filter((d): d is YahooQuote => d !== null);
+  // Fetch all quotes in parallel (including SPY for benchmark)
+  const [spyQuote, ...stockQuotes] = await Promise.all([
+    fetchQuote('SPY'),
+    ...tickers.map(fetchQuote),
+  ]);
 
-  if (validData.length === 0) {
+  const validStocks = stockQuotes.filter((q): q is QuoteData => q !== null);
+  if (validStocks.length === 0) {
     return NextResponse.json({ error: '주가 데이터를 가져올 수 없습니다. 잠시 후 다시 시도해주세요.' }, { status: 500 });
   }
 
-  // Also fetch SPY for relative strength comparison
-  const spyData = await fetchYahooData('SPY');
-  const spyYtd = spyData?.ytdReturn ?? 0;
+  const spyYtd = spyQuote?.ytdReturn ?? 0;
+  const sectorAvgYtd = validStocks.reduce((a, s) => a + s.ytdReturn, 0) / validStocks.length;
 
-  const dataStr = validData.map(d => `
-${d.ticker}:
-  현재가: $${d.price}
-  전일 대비: ${d.change1d}%
-  YTD 수익률: ${d.ytdReturn}% (S&P500 YTD: ${spyYtd.toFixed(1)}%)
-  S&P500 대비 초과 수익: ${(d.ytdReturn - spyYtd).toFixed(1)}%
-  50일 이동평균: $${d.ma50} → 현재가 50일선 ${d.aboveMa50 ? '위' : '아래'}
-  200일 이동평균: $${d.ma200}
-  52주 최고가: $${d.high52w} (현재 고점 대비 ${d.distFromHigh}%)
-  52주 최저가: $${d.low52w}
-`).join('\n');
+  const stocks = validStocks.map(q => analyzeStock(q, spyYtd, sectorAvgYtd));
 
-  const today = new Date().toLocaleDateString('ko-KR');
-  const prompt = `You are an expert stock momentum analyst using CAN SLIM / IBD strategy.
-Today is ${today}. Here is real-time market data fetched from Yahoo Finance:
+  // Top 3 buys for market context
+  const buys = stocks.filter(s => s.signal === 'BUY').sort((a, b) => b.momentum_score - a.momentum_score);
+  const topTickers = buys.slice(0, 3).map(s => s.ticker).join(', ');
+  const sectorAvgStr = `${sectorAvgYtd > 0 ? '+' : ''}${Math.round(sectorAvgYtd * 10) / 10}%`;
 
-${dataStr}
+  const market_context = `반도체 섹터 평균 YTD 수익률 ${sectorAvgStr} (S&P500 YTD ${spyYtd > 0 ? '+' : ''}${Math.round(spyYtd * 10) / 10}%). ` +
+    `${buys.length > 0 ? `모멘텀 상위 종목: ${topTickers}.` : '현재 매수 신호 종목 없음 — 시장 관망 구간.'} ` +
+    `분석 기준: Yahoo Finance 실시간 데이터 기반 규칙 알고리즘.`;
 
-Based on this data, analyze each stock:
-- BUY: strong RS vs S&P500 (positive excess return), price above MA50, constructive price action near highs
-- SELL: negative RS, price below MA50, extended downtrend
-- HOLD: mixed signals
-
-For chart patterns, infer from: distance from 52w high (within 5-15% = potential base), above/below MAs, momentum.
-
-Return ONLY raw JSON. No markdown. No backticks. Start with { end with }:
-{"stocks":[{"ticker":"AMD","signal":"BUY","confidence":"HIGH","momentum_score":8,"rs_vs_index":"STRONG","rs_vs_sector":"STRONG","ma50_status":"ABOVE","pattern":"BREAKOUT","volume_confirmation":true,"entry_zone":"$120-$125","key_support":"$115","key_resistance":"$135","stop_loss":"$113","summary":"한국어 2-3문장 분석.","caution":null}],"market_context":"한국어 반도체 시장 컨텍스트 2-3문장."}
-
-signal:"BUY"|"SELL"|"HOLD" confidence:"HIGH"|"MEDIUM"|"LOW" rs_vs_index:"STRONG"|"NEUTRAL"|"WEAK" rs_vs_sector:"STRONG"|"NEUTRAL"|"WEAK" ma50_status:"ABOVE"|"AT"|"BELOW" pattern:"CUP"|"W_BASE"|"BREAKOUT"|"DOWNTREND"|"NONE"`;
-
-  const models = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-flash-latest'];
-
-  for (const model of models) {
-    try {
-      const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ role: 'user', parts: [{ text: prompt }] }],
-            generationConfig: { temperature: 0.1, maxOutputTokens: 4000 },
-          }),
-        }
-      );
-
-      if (!res.ok) {
-        const errText = await res.text();
-        console.error(`Model ${model} failed:`, errText);
-        continue;
-      }
-
-      const data = await res.json();
-      const text = (data.candidates?.[0]?.content?.parts ?? [])
-        .filter((p: { text?: string }) => p.text)
-        .map((p: { text: string }) => p.text)
-        .join('');
-
-      if (!text) continue;
-
-      let raw = text.trim().replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
-      const js = raw.indexOf('{'), je = raw.lastIndexOf('}');
-      if (js === -1 || je === -1) continue;
-
-      const parsed = JSON.parse(raw.substring(js, je + 1));
-      parsed.analyzed_at = new Date().toISOString();
-      // Attach real price data for display
-      parsed.priceData = validData;
-      parsed.spyYtd = spyYtd;
-
-      return NextResponse.json(parsed);
-    } catch (e) {
-      console.error(`Model ${model} error:`, e);
-      continue;
-    }
-  }
-
-  return NextResponse.json(
-    { error: 'Gemini 분석 실패. API Key를 확인하거나 잠시 후 다시 시도해주세요.' },
-    { status: 500 }
-  );
+  return NextResponse.json({
+    stocks,
+    market_context,
+    analyzed_at: new Date().toISOString(),
+  });
 }
