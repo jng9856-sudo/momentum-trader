@@ -5,6 +5,7 @@ import type { AnalysisResult, StockAnalysis } from '@/types/stock';
 import StockCard        from '@/components/StockCard';
 import TopPicks         from '@/components/TopPicks';
 import WatchlistManager from '@/components/WatchlistManager';
+import PortfolioTab     from '@/components/PortfolioTab';
 
 const DEFAULT_TICKERS = ['AMD', 'MRVL', 'AVGO', 'MU', 'INTC', 'ARM', 'NVDA', 'TSM'];
 const CACHE_KEY        = 'mt_analysis_v4';
@@ -58,6 +59,7 @@ export default function Home() {
   const [filter,     setFilter]     = useState<FilterType>('ALL');
   const [sort,       setSort]       = useState<SortType>('SCORE');
   const [xlsxMsg,    setXlsxMsg]    = useState('');
+  const [activeTab,   setActiveTab]   = useState<'scanner' | 'portfolio'>('scanner');
   const [search,     setSearch]     = useState('');
   const fileRef    = useRef<HTMLInputElement>(null);
   const abortRef   = useRef(false);
@@ -194,11 +196,12 @@ export default function Home() {
       <div className="max-w-4xl mx-auto px-4 py-8">
 
         {/* Header */}
-        <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8 pb-6 border-b border-border">
-          <div>
-            <h1 className="text-lg font-semibold tracking-tight text-zinc-100">MOMENTUM SIGNAL</h1>
-            <p className="text-xs text-zinc-600 mt-0.5">{today}</p>
-          </div>
+        <header className="mb-8">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-border mb-4">
+            <div>
+              <h1 className="text-lg font-semibold tracking-tight text-zinc-100">MOMENTUM SIGNAL</h1>
+              <p className="text-xs text-zinc-600 mt-0.5">{today}</p>
+            </div>
           <div className="flex gap-2">
             <button onClick={resetAll}
               className="px-4 py-2.5 text-sm font-semibold rounded-lg border border-zinc-700 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 transition-all">
@@ -218,9 +221,25 @@ export default function Home() {
                        : allStocks.length > 0 ? '재분석 실행' : '분석 실행 →'}
             </button>
           </div>
+          {/* Tab buttons */}
+          <div className="flex gap-1">
+            {([['scanner','모멘텀 스캐너'],['portfolio','내 포트폴리오']] as const).map(([tab, label]) => (
+              <button key={tab} onClick={() => setActiveTab(tab)}
+                className={`px-4 py-2 text-sm font-medium rounded-lg border transition-colors
+                  ${activeTab === tab
+                    ? 'bg-zinc-700 border-zinc-600 text-zinc-100'
+                    : 'bg-transparent border-zinc-800 text-zinc-500 hover:text-zinc-300'}`}>
+                {label}
+              </button>
+            ))}
+          </div>
         </header>
 
-        <WatchlistManager watchlist={watchlist} onAdd={addTicker} onRemove={removeTicker} maxTickers={MAX_TICKERS} />
+        {activeTab === 'portfolio' && <PortfolioTab />}
+
+        {activeTab === 'scanner' && <WatchlistManager watchlist={watchlist} onAdd={addTicker} onRemove={removeTicker} maxTickers={MAX_TICKERS} />
+
+        {activeTab === 'scanner' && <>
 
         {/* Excel Upload */}
         <div className="mb-6 p-4 border border-zinc-800 rounded-xl bg-zinc-900/40">
@@ -342,6 +361,8 @@ export default function Home() {
             <p className="text-zinc-700 text-xs">Yahoo Finance 실시간 데이터 · 최대 1,000종목 지원</p>
           </div>
         )}
+
+        </>}
 
         <footer className="mt-10 pt-6 border-t border-border">
           <p className="text-[10px] text-zinc-700 leading-relaxed text-center" style={{ fontFamily: 'system-ui, sans-serif' }}>
