@@ -1,116 +1,134 @@
 'use client';
-
 import { StockAnalysis } from '@/types/stock';
 
-const SIGNAL_LABEL: Record<string, string> = { BUY: '매수', SELL: '매도', HOLD: '관망' };
-const CONF_LABEL:   Record<string, string> = { HIGH: '신뢰도 높음', MEDIUM: '신뢰도 중간', LOW: '신뢰도 낮음' };
-const RS_LABEL:     Record<string, string> = { STRONG: '강세', NEUTRAL: '중립', WEAK: '약세' };
-const MA50_LABEL:   Record<string, string> = { ABOVE: '50일선 위', AT: '50일선 근접', BELOW: '50일선 아래' };
-const PATTERN_LABEL: Record<string, string> = {
-  CUP: '컵앤핸들', W_BASE: 'W베이스', BREAKOUT: '돌파', DOWNTREND: '하락추세', NONE: '패턴없음',
+const SIG_KO: Record<string, string> = {
+  STRONG_BUY: '즉시매수', BUY: '매수', HOLD: '관망', SELL: '매도', STRONG_SELL: '즉시매도',
 };
+const RS_KO:  Record<string, string> = { STRONG: '강세', NEUTRAL: '중립', WEAK: '약세' };
+const MA_KO:  Record<string, string> = { ABOVE: '50일선 위', AT: '50일선 근접', BELOW: '50일선 아래' };
+const PT_KO:  Record<string, string> = { CUP: '컵앤핸들', W_BASE: 'W베이스', BREAKOUT: '돌파', DOWNTREND: '하락추세', NONE: '패턴없음' };
 
-function signalColor(s: string) {
-  if (s === 'BUY')  return 'text-emerald-400';
-  if (s === 'SELL') return 'text-red-400';
-  return 'text-amber-400';
+function sigColors(s: string) {
+  switch (s) {
+    case 'STRONG_BUY':  return { border: 'border-l-emerald-400', badge: 'bg-emerald-900 text-emerald-200 border-emerald-600', bar: '#10b981' };
+    case 'BUY':         return { border: 'border-l-emerald-700', badge: 'bg-emerald-950 text-emerald-400 border-emerald-800', bar: '#34d399' };
+    case 'HOLD':        return { border: 'border-l-amber-600',   badge: 'bg-amber-950  text-amber-300   border-amber-800',   bar: '#f59e0b' };
+    case 'SELL':        return { border: 'border-l-red-700',     badge: 'bg-red-950    text-red-400     border-red-800',     bar: '#f87171' };
+    case 'STRONG_SELL': return { border: 'border-l-red-400',     badge: 'bg-red-900    text-red-200     border-red-500',     bar: '#ef4444' };
+    default:            return { border: 'border-l-zinc-600',    badge: 'bg-zinc-900   text-zinc-400    border-zinc-700',    bar: '#71717a' };
+  }
 }
-function signalBg(s: string) {
-  if (s === 'BUY')  return 'bg-emerald-950 text-emerald-300 border-emerald-800';
-  if (s === 'SELL') return 'bg-red-950 text-red-300 border-red-800';
-  return 'bg-amber-950 text-amber-300 border-amber-800';
-}
-function signalBorder(s: string) {
-  if (s === 'BUY')  return 'border-l-emerald-500 glow-buy';
-  if (s === 'SELL') return 'border-l-red-500 glow-sell';
-  return 'border-l-amber-500 glow-hold';
-}
-function rsColor(r: string) {
-  if (r === 'STRONG') return 'text-emerald-400';
-  if (r === 'WEAK')   return 'text-red-400';
-  return 'text-zinc-400';
-}
-function barColor(score: number) {
-  if (score >= 7) return '#10b981';
-  if (score >= 4) return '#f59e0b';
-  return '#ef4444';
-}
-function confDot(c: string) {
-  if (c === 'HIGH')   return 'bg-emerald-400';
-  if (c === 'MEDIUM') return 'bg-amber-400';
-  return 'bg-zinc-500';
+function rsClass(r: string) { return r === 'STRONG' ? 'text-emerald-400' : r === 'WEAK' ? 'text-red-400' : 'text-zinc-400'; }
+function confDot(c: string) { return c === 'HIGH' ? 'bg-emerald-400' : c === 'MEDIUM' ? 'bg-amber-400' : 'bg-zinc-500'; }
+
+function GaugeBar({ value, max, color }: { value: number; max: number; color: string }) {
+  const w = Math.round(Math.min(100, Math.max(0, (value / max) * 100)));
+  return (
+    <div className="h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+      <div className="h-full rounded-full transition-all duration-500" style={{ width: `${w}%`, background: color }} />
+    </div>
+  );
 }
 
 export default function StockCard({ stock, highlight = false }: { stock: StockAnalysis; highlight?: boolean }) {
-  const score = Math.min(10, Math.max(1, Math.round(Number(stock.momentum_score) || 5)));
-  const barW  = Math.round((score / 10) * 100);
+  const score  = Math.min(10, Math.max(1, Math.round(Number(stock.momentum_score) * 2) / 2));
+  const c      = sigColors(stock.signal);
 
   return (
-    <div
-      className={`stock-card border border-border border-l-4 ${signalBorder(stock.signal)} rounded-xl p-5 bg-bg-card ${highlight ? 'ring-1 ring-emerald-500/30' : ''}`}
-    >
+    <div className={`stock-card border border-zinc-800 border-l-4 ${c.border} rounded-xl p-5 bg-bg-card
+      ${highlight ? 'ring-1 ring-emerald-500/20' : ''}`}>
+
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
-          <span className="text-xl font-semibold tracking-tight text-zinc-100">{stock.ticker}</span>
+          <span className="text-xl font-semibold text-zinc-100">{stock.ticker}</span>
           <span className={`w-2 h-2 rounded-full ${confDot(stock.confidence)}`} />
-          <span className="text-xs text-zinc-500">{CONF_LABEL[stock.confidence]}</span>
+          <span className="text-xs text-zinc-500">
+            {stock.confidence === 'HIGH' ? '신뢰↑' : stock.confidence === 'MEDIUM' ? '신뢰중' : '신뢰↓'}
+          </span>
         </div>
-        <span className={`text-xs font-semibold px-3 py-1 rounded-md border ${signalBg(stock.signal)}`}>
-          {SIGNAL_LABEL[stock.signal]}
+        <span className={`text-xs font-semibold px-3 py-1 rounded-md border ${c.badge}`}>
+          {SIG_KO[stock.signal] ?? stock.signal}
         </span>
       </div>
 
-      {/* Momentum bar */}
-      <div className="mb-4">
+      {/* Momentum score */}
+      <div className="mb-3">
         <div className="flex justify-between text-xs text-zinc-500 mb-1.5">
           <span>모멘텀 강도</span>
-          <span className={`font-semibold ${signalColor(stock.signal)}`}>{score} / 10</span>
+          <span className="font-semibold" style={{ color: c.bar }}>{score} / 10</span>
         </div>
-        <div className="h-1.5 bg-zinc-800 rounded-full overflow-hidden">
-          <div
-            className="momentum-bar-fill h-full rounded-full"
-            style={{ '--target-width': `${barW}%`, width: `${barW}%`, background: barColor(score) } as React.CSSProperties}
-          />
-        </div>
+        <GaugeBar value={score} max={10} color={c.bar} />
       </div>
 
-      {/* Metrics grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
-        <Metric label="지수 대비 RS">
-          <span className={`text-sm font-medium ${rsColor(stock.rs_vs_index)}`}>{RS_LABEL[stock.rs_vs_index]}</span>
-        </Metric>
-        <Metric label="섹터 내 RS">
-          <span className={`text-sm font-medium ${rsColor(stock.rs_vs_sector)}`}>{RS_LABEL[stock.rs_vs_sector]}</span>
-        </Metric>
-        <Metric label="이동평균선">
+      {/* Main metrics grid */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
+        <Metric label="지수 RS"><span className={`text-sm font-medium ${rsClass(stock.rs_vs_index)}`}>{RS_KO[stock.rs_vs_index]}</span></Metric>
+        <Metric label="섹터 RS"><span className={`text-sm font-medium ${rsClass(stock.rs_vs_sector)}`}>{RS_KO[stock.rs_vs_sector]}</span></Metric>
+        <Metric label="이동평균">
           <span className={`text-sm font-medium ${stock.ma50_status === 'ABOVE' ? 'text-emerald-400' : stock.ma50_status === 'BELOW' ? 'text-red-400' : 'text-zinc-400'}`}>
-            {MA50_LABEL[stock.ma50_status]}
+            {MA_KO[stock.ma50_status]}
           </span>
         </Metric>
-        <Metric label="차트 패턴">
-          <span className="text-sm font-medium text-zinc-300">{PATTERN_LABEL[stock.pattern]}</span>
-        </Metric>
+        <Metric label="패턴"><span className="text-sm font-medium text-zinc-300">{PT_KO[stock.pattern]}</span></Metric>
+      </div>
+
+      {/* Extended indicators */}
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 mb-4 p-3 bg-zinc-900/50 rounded-lg">
+        <IndBox label="RSI(14)" value={stock.rsi}
+          color={stock.rsi > 78 ? 'text-red-400' : stock.rsi < 35 ? 'text-sky-400' : 'text-emerald-400'}
+          sub={stock.rsi > 78 ? '과열' : stock.rsi < 35 ? '침체' : '정상'} />
+        <IndBox label="MACD" value={stock.macd_histogram}
+          color={stock.macd_histogram > 0 ? 'text-emerald-400' : 'text-red-400'}
+          sub={stock.macd_histogram > 0 ? '상승' : '하락'} />
+        <IndBox label="거래량" value={`${stock.volume_ratio}x`}
+          color={stock.volume_ratio > 1.5 ? 'text-emerald-400' : stock.volume_ratio < 0.7 ? 'text-red-400' : 'text-zinc-400'}
+          sub={stock.volume_ratio > 1.5 ? '강함' : stock.volume_ratio < 0.7 ? '약함' : '보통'} />
+        <IndBox label="BB위치" value={`${stock.bb_position}%`}
+          color={stock.bb_position > 80 ? 'text-amber-400' : stock.bb_position < 20 ? 'text-sky-400' : 'text-zinc-400'}
+          sub={stock.bb_position > 80 ? '상단' : stock.bb_position < 20 ? '하단' : '중간'} />
+        <IndBox label="ATR%" value={`${stock.atr_pct}%`}
+          color="text-zinc-400" sub="변동성" />
+      </div>
+
+      {/* RSI bar */}
+      <div className="mb-4">
+        <div className="flex justify-between text-[10px] text-zinc-600 mb-1">
+          <span>RSI</span>
+          <span className="flex gap-3">
+            <span className="text-sky-700">침체30</span>
+            <span className="text-emerald-700">정상45–75</span>
+            <span className="text-red-700">과열80</span>
+          </span>
+        </div>
+        <div className="relative h-1.5 bg-zinc-800 rounded-full">
+          <div className="absolute h-full bg-sky-900/60 rounded-l-full" style={{ width: '30%' }} />
+          <div className="absolute h-full bg-emerald-900/40" style={{ left: '45%', width: '30%' }} />
+          <div className="absolute h-full bg-red-900/60 rounded-r-full" style={{ left: '80%', width: '20%' }} />
+          <div className="absolute top-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full border-2 border-zinc-100 bg-zinc-900 -translate-x-1/2 transition-all"
+            style={{ left: `${Math.min(99, stock.rsi)}%` }} />
+        </div>
       </div>
 
       {/* Summary */}
-      <p className="text-xs text-zinc-400 leading-relaxed font-sans mb-3" style={{ fontFamily: 'system-ui, sans-serif' }}>
+      <p className="text-xs text-zinc-400 leading-relaxed mb-3" style={{ fontFamily: 'system-ui, sans-serif' }}>
         {stock.summary}
       </p>
 
       {/* Caution */}
       {stock.caution && (
-        <div className="text-xs text-amber-400 bg-amber-950/40 border-l-2 border-amber-500 pl-3 py-2 rounded-r-md mb-3" style={{ fontFamily: 'system-ui, sans-serif' }}>
+        <div className="text-xs text-amber-400 bg-amber-950/30 border-l-2 border-amber-600 pl-3 py-2 rounded-r-md mb-3"
+          style={{ fontFamily: 'system-ui, sans-serif' }}>
           ⚡ {stock.caution}
         </div>
       )}
 
       {/* Price levels */}
       <div className="flex flex-wrap gap-2">
-        {stock.entry_zone  && <LevelPill label="진입" value={stock.entry_zone} color="text-emerald-300 border-emerald-800 bg-emerald-950/40" />}
-        {stock.key_support && <LevelPill label="지지" value={stock.key_support} color="text-sky-300 border-sky-800 bg-sky-950/40" />}
-        {stock.key_resistance && <LevelPill label="저항" value={stock.key_resistance} color="text-purple-300 border-purple-800 bg-purple-950/40" />}
-        {stock.stop_loss   && <LevelPill label="손절" value={stock.stop_loss} color="text-red-300 border-red-800 bg-red-950/40" />}
+        {stock.entry_zone    && <LvPill label="진입" val={stock.entry_zone}    c="text-emerald-300 border-emerald-800 bg-emerald-950/40" />}
+        {stock.key_support   && <LvPill label="지지" val={stock.key_support}   c="text-sky-300     border-sky-800     bg-sky-950/40" />}
+        {stock.key_resistance && <LvPill label="저항" val={stock.key_resistance} c="text-purple-300  border-purple-800  bg-purple-950/40" />}
+        {stock.stop_loss     && <LvPill label="손절" val={stock.stop_loss}     c="text-red-300     border-red-800     bg-red-950/40" />}
       </div>
     </div>
   );
@@ -125,10 +143,16 @@ function Metric({ label, children }: { label: string; children: React.ReactNode 
   );
 }
 
-function LevelPill({ label, value, color }: { label: string; value: string; color: string }) {
+function IndBox({ label, value, color, sub }: { label: string; value: string | number; color: string; sub: string }) {
   return (
-    <span className={`text-xs px-2 py-1 border rounded-md ${color}`}>
-      {label} {value}
-    </span>
+    <div className="text-center">
+      <div className="text-[9px] text-zinc-600 uppercase tracking-widest mb-0.5">{label}</div>
+      <div className={`text-sm font-semibold font-mono ${color}`}>{value}</div>
+      <div className="text-[9px] text-zinc-600">{sub}</div>
+    </div>
   );
+}
+
+function LvPill({ label, val, c }: { label: string; val: string; c: string }) {
+  return <span className={`text-xs px-2 py-1 border rounded-md ${c}`}>{label} {val}</span>;
 }
