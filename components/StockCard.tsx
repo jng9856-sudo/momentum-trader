@@ -131,6 +131,30 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
         </div>
       )}
 
+      {/* Short Interest */}
+      {stock.short_pct !== undefined && stock.short_pct !== null && (
+        <div className={`mb-3 p-3 rounded-lg border ${
+          stock.short_squeeze === 'HIGH' ? 'border-amber-800 bg-amber-950/20' :
+          stock.short_squeeze === 'MEDIUM' ? 'border-zinc-700 bg-zinc-900/40' : 'border-zinc-800 bg-zinc-900/20'
+        }`}>
+          <div className="flex items-center justify-between mb-1">
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] text-zinc-500 uppercase tracking-widest">공매도 현황</span>
+              {stock.short_squeeze === 'HIGH' && (
+                <span className="text-[9px] bg-amber-900 text-amber-300 border border-amber-700 px-1.5 py-0.5 rounded">숏스퀴즈 주의 ⚡</span>
+              )}
+            </div>
+            <div className="flex items-center gap-2 font-mono text-xs">
+              <span className={stock.short_pct > 20 ? 'text-red-400' : stock.short_pct > 10 ? 'text-amber-400' : 'text-zinc-400'}>
+                {stock.short_pct}%
+              </span>
+              {stock.short_ratio && <span className="text-zinc-600">/ {stock.short_ratio}일</span>}
+            </div>
+          </div>
+          <p className="text-[10px] text-zinc-500" style={{ fontFamily: 'system-ui' }}>{stock.short_detail ?? ''}</p>
+        </div>
+      )}
+
       {/* RSI bar */}
       <div className="mb-4">
         <div className="flex justify-between text-[10px] text-zinc-600 mb-1">
