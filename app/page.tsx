@@ -6,6 +6,8 @@ import StockCard        from '@/components/StockCard';
 import TopPicks         from '@/components/TopPicks';
 import WatchlistManager from '@/components/WatchlistManager';
 import PortfolioTab     from '@/components/PortfolioTab';
+import SectorHeatmap   from '@/components/SectorHeatmap';
+import BacktestPanel   from '@/components/BacktestPanel';
 
 const DEFAULT_TICKERS = ['AMD', 'MRVL', 'AVGO', 'MU', 'INTC', 'ARM', 'NVDA', 'TSM'];
 const CACHE_KEY        = 'mt_analysis_v4';
@@ -15,7 +17,7 @@ const BATCH_SIZE       = 50;
 
 type FilterType = 'ALL' | 'STRONG_BUY' | 'BUY' | 'HOLD' | 'SELL' | 'STRONG_SELL';
 type SortType   = 'SCORE' | 'TICKER' | 'SIGNAL';
-type TabType    = 'scanner' | 'portfolio';
+type TabType    = 'scanner' | 'portfolio' | 'sectors' | 'backtest';
 
 function todayKey() { return new Date().toISOString().slice(0, 10); }
 
@@ -236,14 +238,19 @@ export default function Home() {
           </div>
 
           {/* Tab buttons */}
-          <div className="flex gap-1">
-            {(['scanner', 'portfolio'] as TabType[]).map(tab => (
+          <div className="flex flex-wrap gap-1">
+            {([
+              ['scanner',   '모멘텀 스캐너'],
+              ['portfolio', '내 포트폴리오'],
+              ['sectors',   '섹터 히트맵'],
+              ['backtest',  '백테스트'],
+            ] as [TabType, string][]).map(([tab, label]) => (
               <button key={tab} onClick={() => setActiveTab(tab)}
-                className={`px-4 py-2 text-sm font-medium rounded-lg border transition-colors
+                className={`px-3 py-2 text-sm font-medium rounded-lg border transition-colors
                   ${activeTab === tab
                     ? 'bg-zinc-700 border-zinc-600 text-zinc-100'
                     : 'bg-transparent border-zinc-800 text-zinc-500 hover:text-zinc-300'}`}>
-                {tab === 'scanner' ? '모멘텀 스캐너' : '내 포트폴리오'}
+                {label}
               </button>
             ))}
           </div>
@@ -251,6 +258,12 @@ export default function Home() {
 
         {/* ── Portfolio Tab ── */}
         {activeTab === 'portfolio' && <PortfolioTab />}
+
+        {/* ── Sector Heatmap Tab ── */}
+        {activeTab === 'sectors' && <SectorHeatmap />}
+
+        {/* ── Backtest Tab ── */}
+        {activeTab === 'backtest' && <BacktestPanel />}
 
         {/* ── Scanner Tab ── */}
         {activeTab === 'scanner' && (
