@@ -1,6 +1,7 @@
 'use client';
 import { StockAnalysis } from '@/types/stock';
 import { useRouter } from 'next/navigation';
+import EarningsBadge from '@/components/EarningsBadge';
 
 const SIG_KO: Record<string, string> = {
   STRONG_BUY: '즉시매수', BUY: '매수', HOLD: '관망', SELL: '매도', STRONG_SELL: '즉시매도',
@@ -31,7 +32,9 @@ function GaugeBar({ value, max, color }: { value: number; max: number; color: st
   );
 }
 
-export default function StockCard({ stock, highlight = false, onRemove }: { stock: StockAnalysis; highlight?: boolean; onRemove?: (ticker: string) => void }) {
+interface EarningsInfo { earningsDate: string | null; daysUntil: number | null; epsEstimate: number | null; revenueEstimate: string | null; lastEPS: number | null; }
+
+export default function StockCard({ stock, highlight = false, onRemove, earnings }: { stock: StockAnalysis; highlight?: boolean; onRemove?: (ticker: string) => void; earnings?: EarningsInfo }) {
   const router = useRouter();
   const score  = Math.min(10, Math.max(1, Math.round(Number(stock.momentum_score) * 2) / 2));
   const c      = sigColors(stock.signal);
@@ -60,6 +63,9 @@ export default function StockCard({ stock, highlight = false, onRemove }: { stoc
           {SIG_KO[stock.signal] ?? stock.signal}
         </span>
       </div>
+
+      {/* Earnings badge */}
+      {earnings && <div className="mb-3"><EarningsBadge info={earnings} /></div>}
 
       {/* Momentum score */}
       <div className="mb-3">
