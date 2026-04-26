@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import EarningsBadge from '@/components/EarningsBadge';
 
 interface Holding { ticker: string; avgPrice: number; shares: number; }
 interface SellSignal { text: string; severity: 'high' | 'medium' | 'low'; }
@@ -81,7 +82,8 @@ function DivergenceRow({ divs }: { divs: HoldingResult['divergences'] }) {
   );
 }
 
-function HoldingCard({ result: r, onRemove }: { result: HoldingResult; onRemove?: () => void }) {
+interface EarningsInfo { earningsDate: string|null; daysUntil: number|null; epsEstimate: number|null; revenueEstimate: string|null; lastEPS: number|null; }
+function HoldingCard({ result: r, onRemove, earnings }: { result: HoldingResult; onRemove?: () => void; earnings?: EarningsInfo }) {
   const router = useRouter();
   const pnlPos = r.pnlPct >= 0;
   const borderColor = r.action === '즉시매도' ? 'border-l-red-400' :
@@ -112,6 +114,9 @@ function HoldingCard({ result: r, onRemove }: { result: HoldingResult; onRemove?
           </div>
         </div>
       </div>
+
+      {/* Earnings badge */}
+      {earnings && <div className="mb-3"><EarningsBadge info={earnings} /></div>}
 
       {/* Upside potential bar */}
       <UpsideBar score={r.upside.score} label={r.upside.label} />
@@ -216,6 +221,7 @@ export default function PortfolioTab() {
   const [status,    setStatus]    = useState('');
   const [error,     setError]     = useState('');
   const [analyzedAt,setAnalyzedAt]= useState('');
+  const [earningsMap,setEarningsMap]= useState<Record<string,{earningsDate:string|null;daysUntil:number|null;epsEstimate:number|null;revenueEstimate:string|null;lastEPS:number|null}>>({});
   const [form,      setForm]      = useState({ ticker: '', avgPrice: '', shares: '' });
   const [editIdx,   setEditIdx]   = useState<number | null>(null);
 
@@ -279,6 +285,16 @@ export default function PortfolioTab() {
       setAnalyzedAt(data.analyzed_at);
       setStatus(`> 분석 완료 — ${data.holdings.length}개 종목 | ${new Date().toLocaleTimeString('ko-KR')}`);
       try { localStorage.setItem(PORTFOLIO_CACHE, JSON.stringify({ results: data.holdings, analyzed_at: data.analyzed_at })); } catch {}
+      // Fetch earnings for portfolio holdings
+      try {
+        const er = await fetch('/api/earnings', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ tickers: holdings.map(h => h.ticker) }) });
+        if (er.ok) {
+          const ed = await er.json();
+          const eMap: Record<string,{earningsDate:string|null;daysUntil:number|null;epsEstimate:number|null;revenueEstimate:string|null;lastEPS:number|null}> = {};
+          (ed.earnings ?? []).forEach((e: {ticker:string;earningsDate:string|null;daysUntil:number|null;epsEstimate:number|null;revenueEstimate:string|null;lastEPS:number|null}) => { eMap[e.ticker] = e; });
+          setEarningsMap(eMap);
+        }
+      } catch {}
     } catch (e) { setError(String(e)); setStatus(''); }
     setLoading(false);
   }
@@ -374,7 +390,8 @@ export default function PortfolioTab() {
           </div>
         ) : (
           <HoldingCard key={r.ticker} result={r}
-            onRemove={() => removeHolding(holdings.findIndex(h => h.ticker === r.ticker))} />
+            onRemove={() => removeHolding(holdings.findIndex(h => h.ticker === r.ticker))}
+            earnings={earningsMap[r.ticker]} />
         ))}
       </div>
 
