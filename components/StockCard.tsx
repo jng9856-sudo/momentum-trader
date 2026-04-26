@@ -67,7 +67,16 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
             <button onClick={() => router.push(`/stock/${stock.ticker}`)} className="text-xl font-semibold text-zinc-100 hover:text-emerald-300 transition-colors underline-offset-2 hover:underline cursor-pointer">{stock.ticker} ↗</button>
-            {rtPrice && (
+            {/* RS Rank Badge */}
+          {stock.rs_rank !== undefined && (
+            <div className={`flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold border
+              ${stock.rs_rank >= 90 ? 'bg-emerald-950 text-emerald-300 border-emerald-700' :
+                stock.rs_rank >= 70 ? 'bg-zinc-900 text-zinc-300 border-zinc-700' :
+                stock.rs_rank < 10  ? 'bg-red-950 text-red-400 border-red-800' : 'bg-zinc-900 text-zinc-500 border-zinc-800'}`}>
+              RS {stock.rs_rank}%{stock.rs_rank >= 90 ? ' 🏆' : ''}
+            </div>
+          )}
+          {rtPrice && (
               <div className="flex items-center gap-1.5 ml-1">
                 <span className="text-base font-semibold text-zinc-100 font-mono">${rtPrice.price}</span>
                 <span className={`text-xs font-mono ${rtPrice.changePct >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
@@ -133,6 +142,42 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
         <IndBox label="ATR%" value={`${stock.atr_pct}%`}
           color="text-zinc-400" sub="변동성" />
       </div>
+
+      {/* 52w 신고가 돌파 배지 */}
+      {stock.breakout_52w && (
+        <div className="mb-3 p-3 rounded-lg border border-emerald-600 bg-emerald-950/30">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-sm">🚀</span>
+            <span className="text-xs font-semibold text-emerald-300">
+              {stock.breakout_52w_day === 0 ? '오늘 52주 신고가 돌파!' : '어제 52주 신고가 돌파 — 추격 기회'}
+            </span>
+            {stock.breakout_52w_vol && (
+              <span className="text-[9px] bg-emerald-900 text-emerald-200 border border-emerald-700 px-1.5 py-0.5 rounded">거래량 ✓</span>
+            )}
+          </div>
+          <p className="text-[10px] text-zinc-400" style={{ fontFamily:'system-ui' }}>{stock.breakout_52w_detail}</p>
+        </div>
+      )}
+
+      {/* PEAD 어닝 드리프트 */}
+      {stock.pead_signal && (
+        <div className="mb-3 p-3 rounded-lg border border-sky-800 bg-sky-950/20">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-[10px] text-zinc-500 uppercase tracking-widest">PEAD 어닝 드리프트</span>
+            <span className="text-[9px] bg-sky-900 text-sky-300 border border-sky-700 px-1.5 py-0.5 rounded">
+              서프라이즈 +{stock.pead_surprise_pct}%
+            </span>
+          </div>
+          <p className="text-[10px] text-zinc-500" style={{ fontFamily:'system-ui' }}>{stock.pead_detail}</p>
+        </div>
+      )}
+
+      {/* 섹터 경고 */}
+      {stock.sector_warning && (
+        <div className="mb-3 p-2 rounded-lg border border-amber-800 bg-amber-950/20">
+          <p className="text-[10px] text-amber-400" style={{ fontFamily:'system-ui' }}>⚠ {stock.sector_warning}</p>
+        </div>
+      )}
 
       {/* Weekly Timeframe Section */}
       {stock.weekly_trend && (
