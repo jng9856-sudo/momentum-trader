@@ -40,6 +40,12 @@ export interface StockAnalysis {
   obv_divergence?:    boolean;
   obv_detail?:        string;
 
+  // Short Interest
+  short_pct?:         number | null;
+  short_ratio?:       number | null;
+  short_squeeze?:     'HIGH' | 'MEDIUM' | 'LOW';
+  short_detail?:      string | null;
+
   // VCP / Pivot data
   vcp_score?:         number;
   vcp_is_vcp?:        boolean;
