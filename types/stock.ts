@@ -40,6 +40,23 @@ export interface StockAnalysis {
   obv_divergence?:    boolean;
   obv_detail?:        string;
 
+  // RS Ranking
+  rs_rank?:          number;        // 0~100, 상위 % (높을수록 강함)
+  rs_rank_warning?:  boolean;
+  sector_ytd?:       number | null;
+  sector_warning?:   string | null;
+
+  // 52w Breakout
+  breakout_52w?:         boolean;
+  breakout_52w_day?:     number;
+  breakout_52w_vol?:     boolean;
+  breakout_52w_detail?:  string;
+
+  // PEAD (어닝 드리프트)
+  pead_signal?:       boolean;
+  pead_surprise_pct?: number | null;
+  pead_detail?:       string | null;
+
   // Weekly timeframe
   weekly_trend?:       'UPTREND' | 'DOWNTREND' | 'SIDEWAYS' | null;
   weekly_align_score?: number | null;
