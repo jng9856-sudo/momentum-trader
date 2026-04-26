@@ -69,26 +69,36 @@ export default function Home() {
   const abortRef = useRef(false);
 
   useEffect(() => {
-    try { const wl = localStorage.getItem(WATCHLIST_KEY); if (wl) setWatchlist(JSON.parse(wl)); } catch {}
+    // Try loading watchlist from DB first
+    fetch('/api/db?type=watchlist').then(r => r.json()).then(d => {
+      if (d.tickers?.length > 0) setWatchlist(d.tickers);
+      else { try { const wl = localStorage.getItem(WATCHLIST_KEY); if (wl) setWatchlist(JSON.parse(wl)); } catch {} }
+    }).catch(() => { try { const wl = localStorage.getItem(WATCHLIST_KEY); if (wl) setWatchlist(JSON.parse(wl)); } catch {} });
+    // Try loading today's analysis from DB (cron result)
+    fetch(`/api/db?type=analysis&date=${todayKey()}`).then(r => r.json()).then(d => {
+      if (d && !d.empty && d.stocks?.length > 0) {
+        setAllStocks(d.stocks); setMarketCtx(d.market_context ?? '');
+        setAnalyzedAt(d.analyzed_at ?? new Date().toISOString());
+        setStatus(`> 크론 분석 결과 로드 완료 — ${d.stocks.length}개 종목`);
+        return;
+      }
+      // Fallback to localStorage
+      try {
+        const cached = localStorage.getItem(CACHE_KEY);
+        if (cached) { const p = JSON.parse(cached); if (p.date === todayKey()) { setAllStocks(p.stocks ?? []); setMarketCtx(p.market_context ?? ''); setAnalyzedAt(p.analyzed_at ?? ''); } }
+      } catch {}
+    }).catch(() => {
+      try { const cached = localStorage.getItem(CACHE_KEY); if (cached) { const p = JSON.parse(cached); if (p.date === todayKey()) { setAllStocks(p.stocks ?? []); setMarketCtx(p.market_context ?? ''); setAnalyzedAt(p.analyzed_at ?? ''); } } } catch {}
+    });
     try {
       const ec = localStorage.getItem('mt_earnings_v1');
       if (ec) { const ep = JSON.parse(ec); if (ep.date === todayKey()) setEarningsMap(ep.data ?? {}); }
-    } catch {}
-    try {
-      const c = localStorage.getItem(CACHE_KEY);
-      if (c) {
-        const p = JSON.parse(c);
-        if (p.date === todayKey()) {
-          setAllStocks(p.stocks ?? []);
-          setMarketCtx(p.market_context ?? '');
-          setAnalyzedAt(p.analyzed_at ?? '');
-        }
-      }
     } catch {}
   }, []);
 
   useEffect(() => {
     try { localStorage.setItem(WATCHLIST_KEY, JSON.stringify(watchlist)); } catch {}
+    saveWatchlistToDB(watchlist);
   }, [watchlist]);
 
   function addTicker(t: string)    { if (watchlist.length < MAX_TICKERS) setWatchlist(w => [...w, t]); }
@@ -156,6 +166,8 @@ export default function Home() {
     setAnalyzedAt(ts);
     setStatus(`> 완료 — ${accumulated.length}개 종목 · 실적 발표일 조회 중...`);
     try { localStorage.setItem(CACHE_KEY, JSON.stringify({ date: todayKey(), stocks: accumulated, market_context: firstCtx, analyzed_at: ts })); } catch {}
+    // Save to Supabase DB for cross-device sync
+    await saveAnalysisToDB(accumulated, firstCtx, ts);
 
     // Fetch earnings calendar in background
     try {
@@ -184,6 +196,40 @@ export default function Home() {
     setStatus(''); setError(''); setSearch(''); setFilter('ALL'); setSort('SCORE');
     setWatchlist(DEFAULT_TICKERS); setXlsxMsg(''); setEarningsMap({});
     try { localStorage.removeItem(CACHE_KEY); localStorage.removeItem(WATCHLIST_KEY); localStorage.removeItem('mt_earnings_v1'); } catch {}
+  }
+
+  // ── Supabase DB sync ──────────────────────────────────────────────────────
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  async function loadFromDB() {
+    try {
+      // Load analysis cache from DB
+      const res = await fetch(`/api/db?type=analysis&date=${todayKey()}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data && !data.empty && data.stocks?.length > 0) {
+          setAllStocks(data.stocks);
+          setMarketCtx(data.market_context ?? '');
+          setAnalyzedAt(data.analyzed_at ?? new Date().toISOString());
+          setStatus(`> DB에서 로드 완료 — ${data.stocks.length}개 종목 | 크론 분석 결과`);
+          return true;
+        }
+      }
+    } catch {}
+    return false;
+  }
+
+  async function saveWatchlistToDB(wl: string[]) {
+    try {
+      await fetch('/api/db', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'watchlist', tickers: wl }) });
+    } catch {}
+  }
+
+  async function saveAnalysisToDB(stocks: StockAnalysis[], ctx: string, ts: string) {
+    try {
+      await fetch('/api/db', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'analysis', stocks, market_context: ctx, date: todayKey(), analyzed_at: ts }) });
+    } catch {}
   }
 
   const displayed = [...allStocks]
