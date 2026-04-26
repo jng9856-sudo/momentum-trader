@@ -36,7 +36,8 @@ const SEV_COLOR: Record<string, string> = {
 const SEV_DOT: Record<string, string> = {
   high: 'bg-red-400', medium: 'bg-amber-400', low: 'bg-zinc-500',
 };
-const PORTFOLIO_KEY = 'mt_portfolio_v2';
+const PORTFOLIO_KEY   = 'mt_portfolio_v2';
+const PORTFOLIO_CACHE = 'mt_portfolio_cache_v2';
 
 function UpsideBar({ score, label }: { score: number; label: string }) {
   const color = score >= 70 ? '#10b981' : score >= 50 ? '#f59e0b' : score >= 30 ? '#f97316' : '#ef4444';
@@ -220,6 +221,15 @@ export default function PortfolioTab() {
 
   useEffect(() => {
     try { const s = localStorage.getItem(PORTFOLIO_KEY); if (s) setHoldings(JSON.parse(s)); } catch {}
+    try {
+      const cached = localStorage.getItem(PORTFOLIO_CACHE);
+      if (cached) {
+        const p = JSON.parse(cached);
+        setResults(p.results ?? []);
+        setAnalyzedAt(p.analyzed_at ?? '');
+        setStatus(p.analyzed_at ? `> 캐시된 분석 결과 | ${new Date(p.analyzed_at).toLocaleString('ko-KR')}` : '');
+      }
+    } catch {}
   }, []);
 
   function saveHoldings(h: Holding[]) {
@@ -240,8 +250,12 @@ export default function PortfolioTab() {
   }
 
   function removeHolding(i: number) {
-    saveHoldings(holdings.filter((_, idx) => idx !== i));
-    setResults(r => r.filter(x => x.ticker !== holdings[i].ticker));
+    const removed = holdings[i].ticker;
+    const newHoldings = holdings.filter((_, idx) => idx !== i);
+    saveHoldings(newHoldings);
+    const newResults = results.filter(x => x.ticker !== removed);
+    setResults(newResults);
+    try { localStorage.setItem(PORTFOLIO_CACHE, JSON.stringify({ results: newResults, analyzed_at: analyzedAt })); } catch {}
   }
 
   function startEdit(i: number) {
@@ -253,6 +267,7 @@ export default function PortfolioTab() {
     if (holdings.length === 0 || loading) return;
     setLoading(true); setError(''); setResults([]);
     setStatus('> 7가지 매도 지표 계산 중...');
+    try { localStorage.removeItem(PORTFOLIO_CACHE); } catch {}
     try {
       const res = await fetch('/api/portfolio', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -263,6 +278,7 @@ export default function PortfolioTab() {
       setResults(data.holdings);
       setAnalyzedAt(data.analyzed_at);
       setStatus(`> 분석 완료 — ${data.holdings.length}개 종목 | ${new Date().toLocaleTimeString('ko-KR')}`);
+      try { localStorage.setItem(PORTFOLIO_CACHE, JSON.stringify({ results: data.holdings, analyzed_at: data.analyzed_at })); } catch {}
     } catch (e) { setError(String(e)); setStatus(''); }
     setLoading(false);
   }
@@ -319,7 +335,7 @@ export default function PortfolioTab() {
             className={`w-full py-3 text-sm font-semibold rounded-lg border transition-all
               ${loading ? 'bg-zinc-900 border-zinc-700 text-zinc-500 cursor-not-allowed'
                         : 'bg-emerald-500 border-emerald-400 text-black hover:bg-emerald-400'}`}>
-            {loading ? '분석 중...' : '포트폴리오 분석 실행 →'}
+            {loading ? '분석 중...' : results.length > 0 ? '재분석 실행 →' : '포트폴리오 분석 실행 →'}
           </button>
         </div>
       )}
