@@ -283,6 +283,87 @@ function calcEntryZone(price: number, mas: Record<string, number>, atrAbs: numbe
 }
 
 
+
+// ── Multi-Timeframe: Weekly Analysis ─────────────────────────────────────────
+interface WeeklyData {
+  trend:        'UPTREND' | 'DOWNTREND' | 'SIDEWAYS';
+  ma10w:        number;
+  ma20w:        number;
+  ma40w:        number;   // ~200일선 (주봉 40주)
+  rsi:          number;
+  macdHist:     number;
+  aboveAllMAs:  boolean;
+  pullbackPct:  number;   // 주봉 고점 대비 현재 얼마나 눌렸나
+  isEntry:      boolean;  // 주봉 강세 + 일봉 눌림목 = 최고 타점
+  alignScore:   number;   // 0-10 주봉-일봉 정렬 점수
+  detail:       string;
+}
+
+async function fetchWeeklyData(ticker: string): Promise<WeeklyData | null> {
+  try {
+    const res = await fetch(
+      `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1wk&range=2y`,
+      { headers: { 'User-Agent': 'Mozilla/5.0' }, next: { revalidate: 0 } }
+    );
+    if (!res.ok) return null;
+    const data   = await res.json();
+    const result = data?.chart?.result?.[0];
+    if (!result) return null;
+
+    const closes: number[] = (result.indicators?.quote?.[0]?.close ?? [])
+      .filter((c: number) => c != null && !isNaN(c));
+    if (closes.length < 20) return null;
+
+    const price  = closes[closes.length - 1];
+    const ma10w  = calcMA(closes, 10);
+    const ma20w  = calcMA(closes, 20);
+    const ma40w  = calcMA(closes, Math.min(40, closes.length));
+    const rsi    = calcRSI(closes.slice(-20));
+    const { histogram: macdHist } = calcMACD(closes);
+
+    const aboveAllMAs = price > ma10w && price > ma20w && price > ma40w;
+
+    // Weekly trend
+    const week8ago = closes[Math.max(0, closes.length - 8)];
+    const trendPct = ((price - week8ago) / week8ago) * 100;
+    const trend: 'UPTREND' | 'DOWNTREND' | 'SIDEWAYS' =
+      trendPct > 5 ? 'UPTREND' : trendPct < -5 ? 'DOWNTREND' : 'SIDEWAYS';
+
+    // Pullback from recent 13-week high
+    const high13w   = Math.max(...closes.slice(-13));
+    const pullbackPct = ((price - high13w) / high13w) * 100;
+
+    // Best entry: weekly uptrend + daily pullback (-3% ~ -8% from 13w high)
+    const isEntry = trend === 'UPTREND' && aboveAllMAs && pullbackPct >= -8 && pullbackPct <= -2;
+
+    // Alignment score (0-10)
+    let alignScore = 5;
+    if (trend === 'UPTREND')    alignScore += 2; else if (trend === 'DOWNTREND') alignScore -= 2;
+    if (aboveAllMAs)            alignScore += 1.5;
+    if (rsi >= 40 && rsi <= 70) alignScore += 0.5;
+    if (macdHist > 0)           alignScore += 0.5;
+    if (isEntry)                alignScore += 0.5; // bonus for pullback entry
+    alignScore = Math.max(1, Math.min(10, Math.round(alignScore * 2) / 2));
+
+    const detail = isEntry
+      ? `🎯 최고 타점: 주봉 상승추세 + ${Math.abs(Math.round(pullbackPct*10)/10)}% 눌림목 — 진입 구간`
+      : trend === 'UPTREND'
+        ? `주봉 상승추세 (8주 +${Math.round(trendPct*10)/10}%) · MA 정렬 ${aboveAllMAs ? '완성' : '미완성'}`
+        : trend === 'DOWNTREND'
+          ? `주봉 하락추세 — 일봉 매수 신호 신뢰도 낮음`
+          : `주봉 횡보 — 돌파 방향 확인 필요`;
+
+    const r = (n: number) => Math.round(n * 100) / 100;
+    return {
+      trend, ma10w: r(ma10w), ma20w: r(ma20w), ma40w: r(ma40w),
+      rsi: Math.round(rsi * 10) / 10,
+      macdHist: Math.round(macdHist * 1000) / 1000,
+      aboveAllMAs, pullbackPct: Math.round(pullbackPct * 10) / 10,
+      isEntry, alignScore, detail,
+    };
+  } catch { return null; }
+}
+
 // ── Short Interest (Yahoo Finance quoteSummary) ───────────────────────────────
 async function fetchShortInterest(ticker: string): Promise<{
   shortPct: number | null;      // % of float shorted
@@ -335,6 +416,7 @@ interface QuoteData {
   pivot: { isBroken: boolean; distFromPivot: number; withinChaseLimit: boolean };
   obv: { trend: 'UP' | 'DOWN' | 'FLAT'; divergence: boolean; detail: string };
   shortInterest: { shortPct: number | null; shortRatio: number | null; squeezePotential: 'HIGH' | 'MEDIUM' | 'LOW'; shortDetail: string } | null;
+  weekly: WeeklyData | null;
 }
 
 async function fetchQuote(ticker: string): Promise<QuoteData | null> {
@@ -395,8 +477,11 @@ async function fetchQuote(ticker: string): Promise<QuoteData | null> {
     // OBV
     const obv = calcOBV(cs.slice(-60), vs.slice(-60));
 
-    // Short Interest
-    const shortInterest = await fetchShortInterest(ticker);
+    // Short Interest + Weekly (parallel)
+    const [shortInterest, weekly] = await Promise.all([
+      fetchShortInterest(ticker),
+      fetchWeeklyData(ticker),
+    ]);
 
     // VCP detection
     const vcp   = detectVCP(cs, vs, high52w);
@@ -414,7 +499,7 @@ async function fetchQuote(ticker: string): Promise<QuoteData | null> {
       bbPosition: Math.round(position),
       atrPct: r((atrVal / price) * 100, 2), atrAbs: r(atrVal, 2),
       volumeRatio: r(volRatio, 2),
-      vcp, pivot, obv, shortInterest,
+      vcp, pivot, obv, shortInterest, weekly,
     };
   } catch { return null; }
 }
@@ -471,6 +556,13 @@ function analyzeStock(q: QuoteData, spyYtd: number, sectorAvgYtd: number) {
 
   // VCP bonus (최대 +2점)
   score += (q.vcp.score / 100) * 2;
+
+  // Weekly timeframe alignment bonus
+  if (q.weekly) {
+    score += (q.weekly.alignScore - 5) * 0.3; // -1.5 ~ +1.5
+    if (q.weekly.isEntry) score += 1.0;        // best entry signal bonus
+    if (q.weekly.trend === 'DOWNTREND') score -= 1.0; // weekly downtrend = red flag
+  }
 
   // Short Interest adjustment
   if (q.shortInterest) {
@@ -542,6 +634,9 @@ function analyzeStock(q: QuoteData, spyYtd: number, sectorAvgYtd: number) {
   if (q.pivot.isBroken && !q.pivot.withinChaseLimit) cautions.push(`피봇 돌파 후 ${q.pivot.distFromPivot}% 상승 — 추격 한도(3%) 초과`);
   if (q.volumeRatio < 0.6) cautions.push('거래량 부족 — 돌파 신뢰도 낮음');
   if (q.obv.divergence) cautions.push(q.obv.detail);
+  if (q.weekly?.isEntry) {/* No caution — it's a positive signal */}
+  if (q.weekly?.trend === 'DOWNTREND')
+    cautions.push('주봉 하락추세 — 일봉 매수 신호 신뢰도 저하');
   if (q.shortInterest?.shortPct && q.shortInterest.shortPct > 20)
     cautions.push(q.shortInterest.shortDetail);
   if (q.shortInterest?.squeezePotential === 'HIGH' && signal.includes('BUY'))
@@ -576,6 +671,14 @@ function analyzeStock(q: QuoteData, spyYtd: number, sectorAvgYtd: number) {
     obv_trend: q.obv.trend,
     obv_divergence: q.obv.divergence,
     obv_detail: q.obv.detail,
+    // Weekly timeframe
+    weekly_trend:       q.weekly?.trend ?? null,
+    weekly_align_score: q.weekly?.alignScore ?? null,
+    weekly_is_entry:    q.weekly?.isEntry ?? false,
+    weekly_pullback:    q.weekly?.pullbackPct ?? null,
+    weekly_above_mas:   q.weekly?.aboveAllMAs ?? false,
+    weekly_detail:      q.weekly?.detail ?? null,
+    weekly_rsi:         q.weekly?.rsi ?? null,
     // Short Interest
     short_pct: q.shortInterest?.shortPct ?? null,
     short_ratio: q.shortInterest?.shortRatio ?? null,
