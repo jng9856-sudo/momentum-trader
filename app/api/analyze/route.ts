@@ -421,18 +421,17 @@ interface QuoteData {
 
 async function fetchQuote(ticker: string): Promise<QuoteData | null> {
   try {
-    // Finnhub for real-time price (if API key set)
+    // KIS 실시간 현재가 (한국투자증권 OpenAPI - 지연 없음)
     let realtimePrice: number | null = null;
-    const finnhubKey = process.env.FINNHUB_API_KEY;
-    if (finnhubKey) {
+    if (process.env.KIS_APP_KEY) {
       try {
-        const fRes = await fetch(
-          `https://finnhub.io/api/v1/quote?symbol=${ticker}&token=${finnhubKey}`,
-          { next: { revalidate: 0 } }
-        );
-        if (fRes.ok) {
-          const fData = await fRes.json();
-          if (fData.c && fData.c > 0) realtimePrice = fData.c;
+        const { getUSStockPrice, isKRStock, getKRStockPrice, toKISCode } = await import('@/lib/kis');
+        if (isKRStock(ticker)) {
+          const kr = await getKRStockPrice(toKISCode(ticker));
+          if (kr?.price) realtimePrice = kr.price;
+        } else {
+          const us = await getUSStockPrice(ticker);
+          if (us?.price) realtimePrice = us.price;
         }
       } catch { /* fallback to Yahoo */ }
     }
