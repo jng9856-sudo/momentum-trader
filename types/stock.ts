@@ -40,6 +40,15 @@ export interface StockAnalysis {
   obv_divergence?:    boolean;
   obv_detail?:        string;
 
+  // Weekly timeframe
+  weekly_trend?:       'UPTREND' | 'DOWNTREND' | 'SIDEWAYS' | null;
+  weekly_align_score?: number | null;
+  weekly_is_entry?:    boolean;
+  weekly_pullback?:    number | null;
+  weekly_above_mas?:   boolean;
+  weekly_detail?:      string | null;
+  weekly_rsi?:         number | null;
+
   // Short Interest
   short_pct?:         number | null;
   short_ratio?:       number | null;
