@@ -429,7 +429,7 @@ export async function POST(req: NextRequest) {
     // Trailing stops
     const trailing = calcTrailingStop(price, avgPrice, atr, high52w, pnlPct);
     // Fibonacci targets
-    const fibTargets = calcFibTargets(avgPrice, high52w, d.low52w ?? price * 0.7, price);
+    const fibTargets = calcFibTargets(avgPrice, high52w, price * 0.7, price);
 
     return {
       ticker: h.ticker, avgPrice, shares, currentPrice: r(price),
