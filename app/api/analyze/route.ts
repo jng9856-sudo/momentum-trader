@@ -177,6 +177,49 @@ function checkPivotBreakout(closes: number[], volumes: number[], pivotPrice: num
   return { isBroken, distFromPivot: Math.round(distFromPivot * 10) / 10, withinChaseLimit };
 }
 
+
+// ── OBV (On-Balance Volume) ───────────────────────────────────────────────────
+function calcOBV(closes: number[], volumes: number[]): {
+  trend: 'UP' | 'DOWN' | 'FLAT';
+  divergence: boolean;
+  detail: string;
+} {
+  if (closes.length < 20) return { trend: 'FLAT', divergence: false, detail: '데이터 부족' };
+
+  // Calculate OBV series
+  const obvSeries: number[] = [0];
+  for (let i = 1; i < closes.length; i++) {
+    if (closes[i] > closes[i-1])      obvSeries.push(obvSeries[i-1] + volumes[i]);
+    else if (closes[i] < closes[i-1]) obvSeries.push(obvSeries[i-1] - volumes[i]);
+    else                               obvSeries.push(obvSeries[i-1]);
+  }
+
+  // OBV trend: compare recent 10 vs previous 10
+  const recent = obvSeries.slice(-10);
+  const prev   = obvSeries.slice(-20, -10);
+  const recentAvg = recent.reduce((a, b) => a + b, 0) / recent.length;
+  const prevAvg   = prev.reduce((a, b)   => a + b, 0) / prev.length;
+  const obvChange = ((recentAvg - prevAvg) / Math.abs(prevAvg || 1)) * 100;
+
+  const trend: 'UP' | 'DOWN' | 'FLAT' = obvChange > 2 ? 'UP' : obvChange < -2 ? 'DOWN' : 'FLAT';
+
+  // Divergence: price up but OBV down (bearish) or price down but OBV up (bullish)
+  const priceRecent = closes.slice(-10);
+  const pricePrev   = closes.slice(-20, -10);
+  const priceChange = ((priceRecent[priceRecent.length-1] - pricePrev[0]) / pricePrev[0]) * 100;
+
+  const divergence = (priceChange > 3 && obvChange < -1) || (priceChange < -3 && obvChange > 1);
+
+  let detail: string;
+  if (divergence && priceChange > 0) detail = 'OBV 베어리시 다이버전스 — 주가 상승 but 거래량 이탈 (분산 신호)';
+  else if (divergence && priceChange < 0) detail = 'OBV 불리시 다이버전스 — 주가 하락 but 거래량 유입 (매집 신호)';
+  else if (trend === 'UP') detail = 'OBV 상승 추세 — 기관 매집 진행 중';
+  else if (trend === 'DOWN') detail = 'OBV 하락 추세 — 기관 분산 진행 중';
+  else detail = 'OBV 횡보 — 방향성 중립';
+
+  return { trend, divergence, detail };
+}
+
 // ── MA alignment ──────────────────────────────────────────────────────────────
 function calcMAAlignment(price: number, mas: Record<string, number>) {
   const periods = [10, 20, 30, 50, 120] as const;
@@ -248,6 +291,7 @@ interface QuoteData {
   atrPct: number; atrAbs: number; volumeRatio: number;
   vcp: VCPResult;
   pivot: { isBroken: boolean; distFromPivot: number; withinChaseLimit: boolean };
+  obv: { trend: 'UP' | 'DOWN' | 'FLAT'; divergence: boolean; detail: string };
 }
 
 async function fetchQuote(ticker: string): Promise<QuoteData | null> {
@@ -305,6 +349,9 @@ async function fetchQuote(ticker: string): Promise<QuoteData | null> {
     const atrVal         = calcATR(hs.slice(-20), ls.slice(-20), cs.slice(-20));
     const volRatio       = calcVolumeRatio(vs);
 
+    // OBV
+    const obv = calcOBV(cs.slice(-60), vs.slice(-60));
+
     // VCP detection
     const vcp   = detectVCP(cs, vs, high52w);
     const pivot = checkPivotBreakout(cs, vs, vcp.pivotPrice);
@@ -321,7 +368,7 @@ async function fetchQuote(ticker: string): Promise<QuoteData | null> {
       bbPosition: Math.round(position),
       atrPct: r((atrVal / price) * 100, 2), atrAbs: r(atrVal, 2),
       volumeRatio: r(volRatio, 2),
-      vcp, pivot,
+      vcp, pivot, obv,
     };
   } catch { return null; }
 }
@@ -379,6 +426,11 @@ function analyzeStock(q: QuoteData, spyYtd: number, sectorAvgYtd: number) {
   // VCP bonus (최대 +2점)
   score += (q.vcp.score / 100) * 2;
 
+  // OBV bonus/penalty
+  if (q.obv.trend === 'UP' && !q.obv.divergence) score += 0.5;
+  else if (q.obv.trend === 'DOWN') score -= 0.3;
+  if (q.obv.divergence && q.obv.trend === 'DOWN') score -= 0.5; // bearish divergence
+
   // Pivot breakout within 3% bonus
   if (q.pivot.isBroken && q.pivot.withinChaseLimit) score += 0.5;
 
@@ -431,6 +483,7 @@ function analyzeStock(q: QuoteData, spyYtd: number, sectorAvgYtd: number) {
   if (q.distFromHigh > -3 && signal.includes('BUY') && !q.pivot.isBroken) cautions.push('52주 고점 근접 — 돌파 확인 후 진입');
   if (q.pivot.isBroken && !q.pivot.withinChaseLimit) cautions.push(`피봇 돌파 후 ${q.pivot.distFromPivot}% 상승 — 추격 한도(3%) 초과`);
   if (q.volumeRatio < 0.6) cautions.push('거래량 부족 — 돌파 신뢰도 낮음');
+  if (q.obv.divergence) cautions.push(q.obv.detail);
   if (aboveCount <= 1 && signal === 'HOLD') cautions.push('MA 다수 아래 — 추세 약화');
 
   return {
@@ -457,6 +510,10 @@ function analyzeStock(q: QuoteData, spyYtd: number, sectorAvgYtd: number) {
     pivot_broken: q.pivot.isBroken,
     pivot_dist: q.pivot.distFromPivot,
     pivot_within_chase: q.pivot.withinChaseLimit,
+    // OBV
+    obv_trend: q.obv.trend,
+    obv_divergence: q.obv.divergence,
+    obv_detail: q.obv.detail,
   };
 }
 
