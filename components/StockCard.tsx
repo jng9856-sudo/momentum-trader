@@ -106,6 +106,31 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
           color="text-zinc-400" sub="변동성" />
       </div>
 
+      {/* OBV Section */}
+      {stock.obv_trend !== undefined && (
+        <div className={`mb-3 p-3 rounded-lg border ${
+          stock.obv_divergence ? 'border-red-800 bg-red-950/20' :
+          stock.obv_trend === 'UP' ? 'border-emerald-900 bg-emerald-950/10' :
+          stock.obv_trend === 'DOWN' ? 'border-red-900 bg-red-950/10' : 'border-zinc-800 bg-zinc-900/30'
+        }`}>
+          <div className="flex items-center justify-between mb-1">
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] text-zinc-500 uppercase tracking-widest">OBV 기관 매집 분석</span>
+              {stock.obv_divergence && (
+                <span className="text-[9px] bg-red-900 text-red-300 border border-red-700 px-1.5 py-0.5 rounded">다이버전스 ⚠</span>
+              )}
+            </div>
+            <span className={`text-xs font-semibold font-mono ${
+              stock.obv_trend === 'UP' ? 'text-emerald-400' :
+              stock.obv_trend === 'DOWN' ? 'text-red-400' : 'text-zinc-400'
+            }`}>
+              {stock.obv_trend === 'UP' ? '▲ 매집' : stock.obv_trend === 'DOWN' ? '▼ 분산' : '— 중립'}
+            </span>
+          </div>
+          <p className="text-[10px] text-zinc-500" style={{ fontFamily: 'system-ui' }}>{stock.obv_detail ?? ''}</p>
+        </div>
+      )}
+
       {/* RSI bar */}
       <div className="mb-4">
         <div className="flex justify-between text-[10px] text-zinc-600 mb-1">
