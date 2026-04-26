@@ -6,6 +6,7 @@ import StockCard        from '@/components/StockCard';
 import TopPicks         from '@/components/TopPicks';
 import WatchlistManager from '@/components/WatchlistManager';
 import PortfolioTab     from '@/components/PortfolioTab';
+import MarketStatus    from '@/components/MarketStatus';
 import SectorHeatmap   from '@/components/SectorHeatmap';
 import BacktestPanel   from '@/components/BacktestPanel';
 
@@ -314,6 +315,7 @@ export default function Home() {
         {/* ── Scanner Tab ── */}
         {activeTab === 'scanner' && (
           <>
+            <MarketStatus />
             <WatchlistManager watchlist={watchlist} onAdd={addTicker} onRemove={removeTicker} maxTickers={MAX_TICKERS} />
 
             {/* Excel Upload */}
