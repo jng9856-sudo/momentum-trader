@@ -40,17 +40,14 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
   const [rtPrice, setRtPrice] = useState<{ price: number; changePct: number } | null>(null);
 
   useEffect(() => {
-    const key = process.env.NEXT_PUBLIC_KIS_ENABLED;
-    if (!key) return;
     fetch(`/api/realtime?tickers=${stock.ticker}`)
       .then(r => r.json())
-      .then(d => { if (d.price) setRtPrice({ price: d.price, changePct: d.changePct }); })
+      .then(d => { if (d.price && d.price > 0) setRtPrice({ price: d.price, changePct: d.changePct }); })
       .catch(() => {});
-    // Refresh every 30 seconds during market hours
     const iv = setInterval(() => {
       fetch(`/api/realtime?tickers=${stock.ticker}`)
         .then(r => r.json())
-        .then(d => { if (d.price) setRtPrice({ price: d.price, changePct: d.changePct }); })
+        .then(d => { if (d.price && d.price > 0) setRtPrice({ price: d.price, changePct: d.changePct }); })
         .catch(() => {});
     }, 30000);
     return () => clearInterval(iv);
@@ -78,11 +75,11 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
           )}
           {rtPrice && (
               <div className="flex items-center gap-1.5 ml-1">
-                <span className="text-base font-semibold text-zinc-100 font-mono">${rtPrice.price}</span>
-                <span className={`text-xs font-mono ${rtPrice.changePct >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                <span className="text-lg font-bold text-zinc-100 font-mono">${rtPrice.price.toLocaleString()}</span>
+                <span className={`text-xs font-semibold font-mono ${rtPrice.changePct >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                   {rtPrice.changePct >= 0 ? '+' : ''}{rtPrice.changePct?.toFixed(2)}%
                 </span>
-                <span className="text-[9px] text-emerald-600 bg-emerald-950 border border-emerald-800 px-1 py-0.5 rounded">실시간</span>
+                <span className="text-[9px] text-emerald-600 bg-emerald-950 border border-emerald-800 px-1 py-0.5 rounded animate-pulse">실시간</span>
               </div>
             )}
           {onRemove && (
