@@ -62,11 +62,16 @@ export default function Home() {
   const [sort,       setSort]       = useState<SortType>('SCORE');
   const [xlsxMsg,    setXlsxMsg]    = useState('');
   const [search,     setSearch]     = useState('');
+  const [earningsMap, setEarningsMap] = useState<Record<string, { earningsDate: string | null; daysUntil: number | null; epsEstimate: number | null; revenueEstimate: string | null; lastEPS: number | null }>>({});
   const fileRef  = useRef<HTMLInputElement>(null);
   const abortRef = useRef(false);
 
   useEffect(() => {
     try { const wl = localStorage.getItem(WATCHLIST_KEY); if (wl) setWatchlist(JSON.parse(wl)); } catch {}
+    try {
+      const ec = localStorage.getItem('mt_earnings_v1');
+      if (ec) { const ep = JSON.parse(ec); if (ep.date === todayKey()) setEarningsMap(ep.data ?? {}); }
+    } catch {}
     try {
       const c = localStorage.getItem(CACHE_KEY);
       if (c) {
@@ -89,6 +94,10 @@ export default function Home() {
   function removeFromResults(ticker: string) {
     setAllStocks(s => s.filter(x => x.ticker !== ticker));
     setWatchlist(w => w.filter(x => x !== ticker));
+    try {
+      const ec = localStorage.getItem('mt_earnings_v1');
+      if (ec) { const ep = JSON.parse(ec); if (ep.date === todayKey()) setEarningsMap(ep.data ?? {}); }
+    } catch {}
     try {
       const c = localStorage.getItem(CACHE_KEY);
       if (c) {
@@ -143,8 +152,25 @@ export default function Home() {
     }
     const ts = new Date().toISOString();
     setAnalyzedAt(ts);
-    setStatus(`> 완료 — ${accumulated.length}개 종목 | ${new Date().toLocaleTimeString('ko-KR')}`);
+    setStatus(`> 완료 — ${accumulated.length}개 종목 · 실적 발표일 조회 중...`);
     try { localStorage.setItem(CACHE_KEY, JSON.stringify({ date: todayKey(), stocks: accumulated, market_context: firstCtx, analyzed_at: ts })); } catch {}
+
+    // Fetch earnings calendar in background
+    try {
+      const tBatches = chunk(watchlist, 20);
+      const eMap: Record<string, { earningsDate: string | null; daysUntil: number | null; epsEstimate: number | null; revenueEstimate: string | null; lastEPS: number | null }> = {};
+      for (const tb of tBatches) {
+        const er = await fetch('/api/earnings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tickers: tb }) });
+        if (er.ok) {
+          const ed = await er.json();
+          (ed.earnings ?? []).forEach((e: { ticker: string; earningsDate: string | null; daysUntil: number | null; epsEstimate: number | null; revenueEstimate: string | null; lastEPS: number | null }) => { eMap[e.ticker] = e; });
+        }
+      }
+      setEarningsMap(eMap);
+      try { localStorage.setItem('mt_earnings_v1', JSON.stringify({ date: todayKey(), data: eMap })); } catch {}
+    } catch {}
+
+    setStatus(`> 완료 — ${accumulated.length}개 종목 | ${new Date().toLocaleTimeString('ko-KR')}`);
     setLoading(false);
   }, [watchlist, loading]);
 
@@ -154,8 +180,8 @@ export default function Home() {
     abortRef.current = true;
     setLoading(false); setAllStocks([]); setMarketCtx(''); setAnalyzedAt('');
     setStatus(''); setError(''); setSearch(''); setFilter('ALL'); setSort('SCORE');
-    setWatchlist(DEFAULT_TICKERS); setXlsxMsg('');
-    try { localStorage.removeItem(CACHE_KEY); localStorage.removeItem(WATCHLIST_KEY); } catch {}
+    setWatchlist(DEFAULT_TICKERS); setXlsxMsg(''); setEarningsMap({});
+    try { localStorage.removeItem(CACHE_KEY); localStorage.removeItem(WATCHLIST_KEY); localStorage.removeItem('mt_earnings_v1'); } catch {}
   }
 
   const displayed = [...allStocks]
@@ -336,7 +362,7 @@ export default function Home() {
 
                 <div className="flex flex-col gap-4">
                   {displayed.map((s, i) => (
-                    <StockCard key={s.ticker} stock={s} highlight={i===0 && filter!=='SELL' && filter!=='STRONG_SELL'} onRemove={removeFromResults} />
+                    <StockCard key={s.ticker} stock={s} highlight={i===0 && filter!=='SELL' && filter!=='STRONG_SELL'} onRemove={removeFromResults} earnings={earningsMap[s.ticker]} />
                   ))}
                   {displayed.length === 0 && (
                     <p className="text-sm text-zinc-600 py-6 text-center">해당 조건의 종목이 없습니다.</p>
