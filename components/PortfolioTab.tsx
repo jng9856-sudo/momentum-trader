@@ -14,6 +14,17 @@ interface HoldingResult {
   indicators: { rsi: number; macd: number; adx: number; volRatio: number; aboveCount: number; bbPos: number; distFromHigh: number };
   stopLoss: { tight: number; standard: number; ma20: number|null; ma50: number|null; recommended: { price: number|null; label: string } };
   targets: { t1: number; t2: number; t3: number };
+  trailing: {
+    trail2xATR: number; trail3xATR: number;
+    trailPct8: number; trailPct15: number;
+    highWaterMark: number;
+    recommended: { price: number; label: string; reasoning: string };
+  };
+  fibTargets: {
+    fib618: number; fib100: number; fib162: number;
+    pct10: number; pct20: number; pct30: number;
+    nextTarget: number; nextTargetLabel: string; remainingUpside: number;
+  };
   mas: { ma10: number; ma20: number; ma50: number; ma120: number };
   divergences: {
     rsi: { bearish: boolean; bullish: boolean; detail: string };
@@ -188,15 +199,46 @@ function HoldingCard({ result: r, onRemove, earnings }: { result: HoldingResult;
         </p>
       </div>
 
-      {/* Targets */}
-      <div className="p-3 bg-zinc-900/50 rounded-lg">
-        <div className="text-[10px] text-zinc-600 uppercase tracking-widest mb-2">매도 목표가 (단계적 익절)</div>
-        <div className="flex flex-wrap gap-2">
-          <TargetPill label="+10% 1차" val={`$${r.targets.t1}`} color="text-emerald-300 border-emerald-800" />
-          <TargetPill label="+20% 2차" val={`$${r.targets.t2}`} color="text-sky-300 border-sky-800" />
-          <TargetPill label="최대 목표" val={`$${r.targets.t3}`} color="text-purple-300 border-purple-800" />
+      {/* Trailing Stop */}
+      {r.trailing && (
+        <div className="mb-4 p-3 bg-zinc-900/50 rounded-lg border border-amber-900/40">
+          <div className="text-[10px] text-zinc-600 uppercase tracking-widest mb-2">트레일링 스탑 (동적 손절)</div>
+          <div className="flex flex-wrap gap-2 mb-2">
+            <StopPill label="ATR 2x" val={`$${r.trailing.trail2xATR}`} highlight={false} />
+            <StopPill label="ATR 3x" val={`$${r.trailing.trail3xATR}`} highlight={false} />
+            <StopPill label="-8%" val={`$${r.trailing.trailPct8}`} highlight={false} />
+            <StopPill label="-15%" val={`$${r.trailing.trailPct15}`} highlight={false} />
+          </div>
+          <div className="text-[10px] text-amber-400 font-semibold mb-0.5">
+            ★ 추천: ${r.trailing.recommended.price} ({r.trailing.recommended.label})
+          </div>
+          <p className="text-[10px] text-zinc-600" style={{ fontFamily: 'system-ui' }}>{r.trailing.recommended.reasoning}</p>
         </div>
-      </div>
+      )}
+
+      {/* Targets — Fibonacci + % */}
+      {r.fibTargets && (
+        <div className="p-3 bg-zinc-900/50 rounded-lg">
+          <div className="flex items-center justify-between mb-2">
+            <div className="text-[10px] text-zinc-600 uppercase tracking-widest">매도 목표가</div>
+            <span className="text-[10px] text-emerald-400">
+              다음 목표: {r.fibTargets.nextTargetLabel} ${r.fibTargets.nextTarget}
+              <span className="text-zinc-600 ml-1">(+{r.fibTargets.remainingUpside}% 여력)</span>
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-2 mb-2">
+            <TargetPill label="+10%" val={`$${r.fibTargets.pct10}`} color={r.currentPrice >= r.fibTargets.pct10 ? 'text-zinc-600 border-zinc-800 line-through' : 'text-emerald-300 border-emerald-800'} />
+            <TargetPill label="+20%" val={`$${r.fibTargets.pct20}`} color={r.currentPrice >= r.fibTargets.pct20 ? 'text-zinc-600 border-zinc-800 line-through' : 'text-sky-300 border-sky-800'} />
+            <TargetPill label="+30%" val={`$${r.fibTargets.pct30}`} color={r.currentPrice >= r.fibTargets.pct30 ? 'text-zinc-600 border-zinc-800 line-through' : 'text-blue-300 border-blue-800'} />
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <TargetPill label="Fib 61.8%" val={`$${r.fibTargets.fib618}`} color="text-purple-300 border-purple-800" />
+            <TargetPill label="Fib 100%" val={`$${r.fibTargets.fib100}`} color="text-purple-400 border-purple-700" />
+            <TargetPill label="Fib 161.8%" val={`$${r.fibTargets.fib162}`} color="text-purple-500 border-purple-600" />
+          </div>
+          <p className="text-[10px] text-zinc-700 mt-2">이미 달성한 목표는 취소선 표시. 피보나치 목표는 평균매수가 기준 계산.</p>
+        </div>
+      )}
     </div>
   );
 }
