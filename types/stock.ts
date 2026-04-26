@@ -35,6 +35,11 @@ export interface StockAnalysis {
   above_ma_count?:    number;
   stacked_bull?:      boolean;
   stacked_bear?:      boolean;
+  // OBV
+  obv_trend?:         'UP' | 'DOWN' | 'FLAT';
+  obv_divergence?:    boolean;
+  obv_detail?:        string;
+
   // VCP / Pivot data
   vcp_score?:         number;
   vcp_is_vcp?:        boolean;
