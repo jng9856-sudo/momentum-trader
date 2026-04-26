@@ -37,19 +37,35 @@ interface EarningsInfo { earningsDate: string | null; daysUntil: number | null; 
 
 export default function StockCard({ stock, highlight = false, onRemove, earnings }: { stock: StockAnalysis; highlight?: boolean; onRemove?: (ticker: string) => void; earnings?: EarningsInfo }) {
   const router = useRouter();
-  const [rtPrice, setRtPrice] = useState<{ price: number; changePct: number } | null>(null);
+  const [rtPrice, setRtPrice] = useState<{ price: number; changePct: number; isRealtime?: boolean } | null>(null);
 
   useEffect(() => {
+    // Yahoo Finance 현재가 fallback (분석 시점 데이터)
+    // entry_zone에서 현재가 추출 시도
+    const extractPrice = (entryZone: string | null) => {
+      if (!entryZone) return null;
+      const m = entryZone.match(/\$([\d.]+)/);
+      return m ? parseFloat(m[1]) : null;
+    };
+
+    // KIS 실시간 시도
     fetch(`/api/realtime?tickers=${stock.ticker}`)
       .then(r => r.json())
-      .then(d => { if (d.price && d.price > 0) setRtPrice({ price: d.price, changePct: d.changePct }); })
+      .then(d => {
+        if (d.price && d.price > 0) {
+          setRtPrice({ price: d.price, changePct: d.changePct ?? 0, isRealtime: d.isRealtime });
+        }
+      })
       .catch(() => {});
+
     const iv = setInterval(() => {
       fetch(`/api/realtime?tickers=${stock.ticker}`)
         .then(r => r.json())
-        .then(d => { if (d.price && d.price > 0) setRtPrice({ price: d.price, changePct: d.changePct }); })
+        .then(d => { if (d.price && d.price > 0) setRtPrice({ price: d.price, changePct: d.changePct ?? 0, isRealtime: d.isRealtime }); })
         .catch(() => {});
     }, 30000);
+
+    void extractPrice;
     return () => clearInterval(iv);
   }, [stock.ticker]);
   const score  = Math.min(10, Math.max(1, Math.round(Number(stock.momentum_score) * 2) / 2));
@@ -64,7 +80,15 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
             <button onClick={() => router.push(`/stock/${stock.ticker}`)} className="text-xl font-semibold text-zinc-100 hover:text-emerald-300 transition-colors underline-offset-2 hover:underline cursor-pointer">{stock.ticker} ↗</button>
-            {/* RS Rank Badge */}
+            {/* 현재가 — KIS 실시간 또는 분석 시점가 */}
+          {stock.key_resistance && !rtPrice && (() => {
+            // 지지선에서 현재가 근사치 추출 (MA10 = 단기 지지 = 현재가 근처)
+            const supportMatch = stock.key_support?.match(/\$([\d.]+)/);
+            if (!supportMatch) return null;
+            return null; // key_support는 MA값이라 현재가 아님, rtPrice만 사용
+          })()}
+
+          {/* RS Rank Badge */}
           {stock.rs_rank !== undefined && (
             <div className={`flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold border
               ${stock.rs_rank >= 90 ? 'bg-emerald-950 text-emerald-300 border-emerald-700' :
