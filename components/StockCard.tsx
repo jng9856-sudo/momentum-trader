@@ -106,6 +106,43 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
           color="text-zinc-400" sub="변동성" />
       </div>
 
+      {/* Weekly Timeframe Section */}
+      {stock.weekly_trend && (
+        <div className={`mb-3 p-3 rounded-lg border ${
+          stock.weekly_is_entry ? 'border-emerald-600 bg-emerald-950/30' :
+          stock.weekly_trend === 'UPTREND' ? 'border-emerald-900 bg-emerald-950/10' :
+          stock.weekly_trend === 'DOWNTREND' ? 'border-red-900 bg-red-950/10' :
+          'border-zinc-800 bg-zinc-900/20'
+        }`}>
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] text-zinc-500 uppercase tracking-widest">주봉 멀티 타임프레임</span>
+              {stock.weekly_is_entry && (
+                <span className="text-[9px] bg-emerald-800 text-emerald-200 border border-emerald-600 px-1.5 py-0.5 rounded font-semibold">🎯 최고 타점</span>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <span className={`text-xs font-semibold font-mono ${
+                stock.weekly_align_score && stock.weekly_align_score >= 7 ? 'text-emerald-400' :
+                stock.weekly_align_score && stock.weekly_align_score >= 5 ? 'text-amber-400' : 'text-red-400'
+              }`}>{stock.weekly_align_score ?? '-'}/10</span>
+              <span className={`text-xs font-semibold ${
+                stock.weekly_trend === 'UPTREND' ? 'text-emerald-400' :
+                stock.weekly_trend === 'DOWNTREND' ? 'text-red-400' : 'text-zinc-400'
+              }`}>
+                {stock.weekly_trend === 'UPTREND' ? '▲ 주봉 상승' : stock.weekly_trend === 'DOWNTREND' ? '▼ 주봉 하락' : '— 횡보'}
+              </span>
+            </div>
+          </div>
+          <div className="grid grid-cols-3 gap-2 text-[10px] text-zinc-500 mb-2">
+            <span>MA 정렬 <span className={stock.weekly_above_mas ? 'text-emerald-400' : 'text-red-400'}>{stock.weekly_above_mas ? '✓ 완성' : '✕ 미완성'}</span></span>
+            <span>주봉 RSI <span className="text-zinc-300">{stock.weekly_rsi ?? '-'}</span></span>
+            <span>눌림폭 <span className={stock.weekly_pullback && stock.weekly_pullback >= -8 && stock.weekly_pullback <= -2 ? 'text-emerald-400' : 'text-zinc-400'}>{stock.weekly_pullback ? `${stock.weekly_pullback}%` : '-'}</span></span>
+          </div>
+          <p className="text-[10px] text-zinc-500" style={{ fontFamily: 'system-ui' }}>{stock.weekly_detail ?? ''}</p>
+        </div>
+      )}
+
       {/* OBV Section */}
       {stock.obv_trend !== undefined && (
         <div className={`mb-3 p-3 rounded-lg border ${
