@@ -421,6 +421,23 @@ interface QuoteData {
 
 async function fetchQuote(ticker: string): Promise<QuoteData | null> {
   try {
+    // Finnhub for real-time price (if API key set)
+    let realtimePrice: number | null = null;
+    const finnhubKey = process.env.FINNHUB_API_KEY;
+    if (finnhubKey) {
+      try {
+        const fRes = await fetch(
+          `https://finnhub.io/api/v1/quote?symbol=${ticker}&token=${finnhubKey}`,
+          { next: { revalidate: 0 } }
+        );
+        if (fRes.ok) {
+          const fData = await fRes.json();
+          if (fData.c && fData.c > 0) realtimePrice = fData.c;
+        }
+      } catch { /* fallback to Yahoo */ }
+    }
+
+    // Yahoo Finance for historical OHLCV (free, needed for indicators)
     const res = await fetch(
       `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=2y`,
       { headers: { 'User-Agent': 'Mozilla/5.0' }, next: { revalidate: 0 } }
@@ -448,8 +465,10 @@ async function fetchQuote(ticker: string): Promise<QuoteData | null> {
     const ls = valid.map(x => x.l);
     const vs = valid.map(x => x.v);
 
-    const price    = cs[cs.length - 1];
-    const change1d = ((price - cs[cs.length - 2]) / cs[cs.length - 2]) * 100;
+    // Use Finnhub real-time price if available, else Yahoo last close
+    const yahooPrice = cs[cs.length - 1];
+    const price      = realtimePrice ?? yahooPrice;
+    const change1d   = ((price - cs[cs.length - 2]) / cs[cs.length - 2]) * 100;
 
     // YTD
     const yearStart = new Date(new Date().getFullYear(), 0, 1).getTime() / 1000;
