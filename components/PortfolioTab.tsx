@@ -1,5 +1,6 @@
 'use client';
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 
 interface Holding { ticker: string; avgPrice: number; shares: number; }
 interface SellSignal { text: string; severity: 'high' | 'medium' | 'low'; }
@@ -80,6 +81,7 @@ function DivergenceRow({ divs }: { divs: HoldingResult['divergences'] }) {
 }
 
 function HoldingCard({ result: r, onRemove }: { result: HoldingResult; onRemove?: () => void }) {
+  const router = useRouter();
   const pnlPos = r.pnlPct >= 0;
   const borderColor = r.action === '즉시매도' ? 'border-l-red-400' :
     r.action === '매도' ? 'border-l-red-700' :
@@ -92,7 +94,7 @@ function HoldingCard({ result: r, onRemove }: { result: HoldingResult; onRemove?
       <div className="flex items-start justify-between mb-4">
         <div>
           <div className="flex items-center gap-3 mb-1">
-            <span className="text-xl font-semibold text-zinc-100">{r.ticker}</span>
+            <button onClick={() => router.push(`/stock/${r.ticker}`)} className="text-xl font-semibold text-zinc-100 hover:text-emerald-300 transition-colors underline-offset-2 hover:underline cursor-pointer">{r.ticker} ↗</button>
             <span className={`text-xs font-semibold px-3 py-1 rounded-md border ${ACTION_STYLE[r.action] ?? 'bg-zinc-900 text-zinc-400 border-zinc-700'}`}>{r.action}</span>
             {onRemove && (
               <button onClick={onRemove}
