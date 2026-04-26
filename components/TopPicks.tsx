@@ -11,7 +11,7 @@ interface RtPrice { price: number; changePct: number; }
 
 export default function TopPicks({ stocks }: { stocks: StockAnalysis[] }) {
   const router = useRouter();
-  const [rtPrices, setRtPrices] = useState<Record<string, RtPrice>>({});
+  const [rtPrices, setRtPrices] = useState<Record<string, RtPrice & { isRealtime?: boolean }>>({});
 
   const picks = [...stocks]
     .filter(s => s.signal === 'STRONG_BUY' || s.signal === 'BUY')
@@ -34,7 +34,7 @@ export default function TopPicks({ stocks }: { stocks: StockAnalysis[] }) {
       .then(d => {
         const map: Record<string, RtPrice> = {};
         const quotes = d.quotes ?? (d.price ? [{ ticker: picks[0].ticker, ...d }] : []);
-        for (const q of quotes) if (q?.price > 0) map[q.ticker] = { price: q.price, changePct: q.changePct };
+        for (const q of quotes) if (q?.price > 0) map[q.ticker] = { price: q.price, changePct: q.changePct, isRealtime: q.isRealtime };
         setRtPrices(map);
       }).catch(() => {});
     const iv = setInterval(() => {
@@ -43,7 +43,7 @@ export default function TopPicks({ stocks }: { stocks: StockAnalysis[] }) {
         .then(d => {
           const map: Record<string, RtPrice> = {};
           const quotes = d.quotes ?? (d.price ? [{ ticker: picks[0].ticker, ...d }] : []);
-          for (const q of quotes) if (q?.price > 0) map[q.ticker] = { price: q.price, changePct: q.changePct };
+          for (const q of quotes) if (q?.price > 0) map[q.ticker] = { price: q.price, changePct: q.changePct, isRealtime: q.isRealtime };
           setRtPrices(map);
         }).catch(() => {});
     }, 30000);
@@ -124,7 +124,9 @@ export default function TopPicks({ stocks }: { stocks: StockAnalysis[] }) {
                     <span className={`text-xs font-mono font-semibold ${rt.changePct >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                       {rt.changePct >= 0 ? '+' : ''}{rt.changePct?.toFixed(2)}%
                     </span>
-                    <span className="text-[9px] text-emerald-700 bg-emerald-950 border border-emerald-900 px-1 py-0.5 rounded animate-pulse">실시간</span>
+                    <span className={`text-[9px] px-1 py-0.5 rounded ${rt.isRealtime !== false ? 'text-emerald-700 bg-emerald-950 border border-emerald-900 animate-pulse' : 'text-zinc-600 bg-zinc-900 border border-zinc-800'}`}>
+                      {rt.isRealtime !== false ? '실시간' : '15분지연'}
+                    </span>
                   </>
                 ) : (
                   <span className="text-xs text-zinc-600">가격 로딩 중...</span>
