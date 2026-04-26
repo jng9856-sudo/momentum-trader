@@ -7,7 +7,7 @@ function sigScore(s: string) {
   return s === 'STRONG_BUY' ? 5 : s === 'BUY' ? 4 : 3;
 }
 
-interface RtPrice { price: number; changePct: number; }
+interface RtPrice { price: number; changePct: number; isRealtime?: boolean; }
 
 export default function TopPicks({ stocks }: { stocks: StockAnalysis[] }) {
   const router = useRouter();
