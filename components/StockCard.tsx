@@ -40,7 +40,7 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
   const [rtPrice, setRtPrice] = useState<{ price: number; changePct: number } | null>(null);
 
   useEffect(() => {
-    const key = process.env.NEXT_PUBLIC_FINNHUB_KEY_EXISTS;
+    const key = process.env.NEXT_PUBLIC_KIS_ENABLED;
     if (!key) return;
     fetch(`/api/realtime?tickers=${stock.ticker}`)
       .then(r => r.json())
