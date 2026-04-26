@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useEffect, useState } from 'react';
@@ -72,6 +71,11 @@ export default function StockDetailPage() {
   const router     = useRouter();
   const [stock,    setStock]    = useState<StockAnalysis | null>(null);
   const [notFound, setNotFound] = useState(false);
+  const [insider,  setInsider]  = useState<{
+    transactions: { filingDate: string; insiderName: string; title: string; transactionType: string; shares: number; price: number | null; totalValue: number | null; isBuy: boolean }[];
+    recentBuys: number; recentSells: number; netShares: number;
+    signal: 'BULLISH' | 'BEARISH' | 'NEUTRAL'; detail: string;
+  } | null>(null);
 
   useEffect(() => {
     try {
@@ -79,7 +83,13 @@ export default function StockDetailPage() {
       if (cache) {
         const { stocks } = JSON.parse(cache);
         const found = (stocks as StockAnalysis[]).find(s => s.ticker === ticker?.toUpperCase());
-        if (found) { setStock(found); return; }
+        if (found) {
+        setStock(found);
+        // Fetch insider trading data
+        fetch(`/api/insider?ticker=${found.ticker}`)
+          .then(r => r.json()).then(d => setInsider(d)).catch(() => {});
+        return;
+      }
       }
     } catch {}
     setNotFound(true);
@@ -224,6 +234,65 @@ export default function StockDetailPage() {
             );
           })}
         </div>
+
+        {/* Insider Trading Section */}
+        {insider && (
+          <div className="mb-8">
+            <div className="text-[10px] text-zinc-600 uppercase tracking-widest mb-3">
+              SEC Form 4 내부자 거래 (최근 90일)
+            </div>
+            <div className={`p-4 rounded-xl border mb-4 ${
+              insider.signal === 'BULLISH' ? 'border-emerald-800 bg-emerald-950/20' :
+              insider.signal === 'BEARISH' ? 'border-red-800 bg-red-950/20' : 'border-zinc-800 bg-zinc-900/40'
+            }`}>
+              <div className="flex items-center justify-between mb-2">
+                <span className={`text-sm font-semibold ${
+                  insider.signal === 'BULLISH' ? 'text-emerald-400' :
+                  insider.signal === 'BEARISH' ? 'text-red-400' : 'text-zinc-400'
+                }`}>
+                  {insider.signal === 'BULLISH' ? '🟢 내부자 매집 신호' :
+                   insider.signal === 'BEARISH' ? '🔴 내부자 분산 신호' : '⚪ 중립'}
+                </span>
+                <div className="flex gap-3 text-xs text-zinc-500">
+                  <span>매수 <span className="text-emerald-400 font-semibold">{insider.recentBuys}건</span></span>
+                  <span>매도 <span className="text-red-400 font-semibold">{insider.recentSells}건</span></span>
+                </div>
+              </div>
+              <p className="text-xs text-zinc-400" style={{ fontFamily: 'system-ui' }}>{insider.detail}</p>
+            </div>
+            {insider.transactions.length > 0 && (
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-zinc-800">
+                      {['날짜','내부자','직책','거래','수량','단가','총액'].map(h => (
+                        <th key={h} className="text-left text-zinc-600 pb-2 pr-3 font-normal">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {insider.transactions.map((t, i) => (
+                      <tr key={i} className="border-b border-zinc-900 hover:bg-zinc-900/40">
+                        <td className="py-2 pr-3 text-zinc-500 font-mono text-[10px]">{t.filingDate}</td>
+                        <td className="py-2 pr-3 text-zinc-300 text-[10px]">{t.insiderName}</td>
+                        <td className="py-2 pr-3 text-zinc-500 text-[10px]">{t.title}</td>
+                        <td className="py-2 pr-3">
+                          <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${t.isBuy ? 'bg-emerald-950 text-emerald-400' : 'bg-red-950 text-red-400'}`}>
+                            {t.transactionType}
+                          </span>
+                        </td>
+                        <td className="py-2 pr-3 text-zinc-300 font-mono text-[10px]">{t.shares.toLocaleString()}</td>
+                        <td className="py-2 pr-3 text-zinc-400 font-mono text-[10px]">{t.price ? `$${t.price}` : '-'}</td>
+                        <td className="py-2 pr-3 text-zinc-400 font-mono text-[10px]">{t.totalValue ? `$${t.totalValue.toLocaleString()}` : '-'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <p className="text-[10px] text-zinc-700 mt-2">출처: SEC EDGAR Form 4 공시 데이터</p>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Disclaimer */}
         <p className="text-[10px] text-zinc-700 text-center" style={{ fontFamily: 'system-ui, sans-serif' }}>
