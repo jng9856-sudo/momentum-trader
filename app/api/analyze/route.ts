@@ -282,6 +282,48 @@ function calcEntryZone(price: number, mas: Record<string, number>, atrAbs: numbe
   return { entry: `$${r(price * 0.99)}–$${r(price * 1.005)}`, stopLoss: `$${r(price - 2 * atrAbs)}` };
 }
 
+
+// ── Short Interest (Yahoo Finance quoteSummary) ───────────────────────────────
+async function fetchShortInterest(ticker: string): Promise<{
+  shortPct: number | null;      // % of float shorted
+  shortRatio: number | null;    // days to cover
+  squeezePotential: 'HIGH' | 'MEDIUM' | 'LOW';
+  shortDetail: string;
+} | null> {
+  try {
+    const res = await fetch(
+      `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${ticker}?modules=defaultKeyStatistics`,
+      { headers: { 'User-Agent': 'Mozilla/5.0' }, next: { revalidate: 86400 } }
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+    const stats = data?.quoteSummary?.result?.[0]?.defaultKeyStatistics;
+    if (!stats) return null;
+
+    const shortPct   = stats.shortPercentOfFloat?.raw ? Math.round(stats.shortPercentOfFloat.raw * 1000) / 10 : null;
+    const shortRatio = stats.shortRatio?.raw ? Math.round(stats.shortRatio.raw * 10) / 10 : null;
+
+    let squeezePotential: 'HIGH' | 'MEDIUM' | 'LOW';
+    let shortDetail: string;
+
+    if (shortPct !== null && shortPct > 25) {
+      squeezePotential = 'HIGH';
+      shortDetail = `공매도 ${shortPct}% — 숏스퀴즈 가능성 높음 (호재 시 급등 가능)`;
+    } else if (shortPct !== null && shortPct > 10) {
+      squeezePotential = 'MEDIUM';
+      shortDetail = `공매도 ${shortPct}% — 중간 수준 (상승 저항 존재)`;
+    } else if (shortPct !== null) {
+      squeezePotential = 'LOW';
+      shortDetail = `공매도 ${shortPct}% — 낮음 (공매도 압력 미미)`;
+    } else {
+      squeezePotential = 'LOW';
+      shortDetail = '공매도 데이터 없음';
+    }
+
+    return { shortPct, shortRatio, squeezePotential, shortDetail };
+  } catch { return null; }
+}
+
 // ── Yahoo Finance fetch ───────────────────────────────────────────────────────
 interface QuoteData {
   ticker: string; price: number; change1d: number; ytdReturn: number;
@@ -292,6 +334,7 @@ interface QuoteData {
   vcp: VCPResult;
   pivot: { isBroken: boolean; distFromPivot: number; withinChaseLimit: boolean };
   obv: { trend: 'UP' | 'DOWN' | 'FLAT'; divergence: boolean; detail: string };
+  shortInterest: { shortPct: number | null; shortRatio: number | null; squeezePotential: 'HIGH' | 'MEDIUM' | 'LOW'; shortDetail: string } | null;
 }
 
 async function fetchQuote(ticker: string): Promise<QuoteData | null> {
@@ -352,6 +395,9 @@ async function fetchQuote(ticker: string): Promise<QuoteData | null> {
     // OBV
     const obv = calcOBV(cs.slice(-60), vs.slice(-60));
 
+    // Short Interest
+    const shortInterest = await fetchShortInterest(ticker);
+
     // VCP detection
     const vcp   = detectVCP(cs, vs, high52w);
     const pivot = checkPivotBreakout(cs, vs, vcp.pivotPrice);
@@ -368,7 +414,7 @@ async function fetchQuote(ticker: string): Promise<QuoteData | null> {
       bbPosition: Math.round(position),
       atrPct: r((atrVal / price) * 100, 2), atrAbs: r(atrVal, 2),
       volumeRatio: r(volRatio, 2),
-      vcp, pivot, obv,
+      vcp, pivot, obv, shortInterest,
     };
   } catch { return null; }
 }
@@ -425,6 +471,18 @@ function analyzeStock(q: QuoteData, spyYtd: number, sectorAvgYtd: number) {
 
   // VCP bonus (최대 +2점)
   score += (q.vcp.score / 100) * 2;
+
+  // Short Interest adjustment
+  if (q.shortInterest) {
+    const si = q.shortInterest;
+    // High short interest = headwind for buyers (score penalty)
+    // But extreme short interest + VCP = squeeze setup (bonus)
+    if (si.shortPct !== null) {
+      if (si.shortPct > 25 && q.vcp.isVCP) score += 0.5; // squeeze setup
+      else if (si.shortPct > 20) score -= 0.5;            // heavy shorting
+      else if (si.shortPct > 10) score -= 0.2;            // moderate shorting
+    }
+  }
 
   // OBV bonus/penalty
   if (q.obv.trend === 'UP' && !q.obv.divergence) score += 0.5;
@@ -484,6 +542,10 @@ function analyzeStock(q: QuoteData, spyYtd: number, sectorAvgYtd: number) {
   if (q.pivot.isBroken && !q.pivot.withinChaseLimit) cautions.push(`피봇 돌파 후 ${q.pivot.distFromPivot}% 상승 — 추격 한도(3%) 초과`);
   if (q.volumeRatio < 0.6) cautions.push('거래량 부족 — 돌파 신뢰도 낮음');
   if (q.obv.divergence) cautions.push(q.obv.detail);
+  if (q.shortInterest?.shortPct && q.shortInterest.shortPct > 20)
+    cautions.push(q.shortInterest.shortDetail);
+  if (q.shortInterest?.squeezePotential === 'HIGH' && signal.includes('BUY'))
+    cautions.push('⚡ 숏스퀴즈 가능성 — 호재 발생 시 급등 가능');
   if (aboveCount <= 1 && signal === 'HOLD') cautions.push('MA 다수 아래 — 추세 약화');
 
   return {
@@ -514,6 +576,11 @@ function analyzeStock(q: QuoteData, spyYtd: number, sectorAvgYtd: number) {
     obv_trend: q.obv.trend,
     obv_divergence: q.obv.divergence,
     obv_detail: q.obv.detail,
+    // Short Interest
+    short_pct: q.shortInterest?.shortPct ?? null,
+    short_ratio: q.shortInterest?.shortRatio ?? null,
+    short_squeeze: q.shortInterest?.squeezePotential ?? 'LOW',
+    short_detail: q.shortInterest?.shortDetail ?? null,
   };
 }
 
