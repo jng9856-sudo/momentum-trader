@@ -2,6 +2,7 @@
 import { StockAnalysis } from '@/types/stock';
 import { useRouter } from 'next/navigation';
 import EarningsBadge from '@/components/EarningsBadge';
+import { useState, useEffect } from 'react';
 
 const SIG_KO: Record<string, string> = {
   STRONG_BUY: '즉시매수', BUY: '매수', HOLD: '관망', SELL: '매도', STRONG_SELL: '즉시매도',
@@ -36,6 +37,24 @@ interface EarningsInfo { earningsDate: string | null; daysUntil: number | null; 
 
 export default function StockCard({ stock, highlight = false, onRemove, earnings }: { stock: StockAnalysis; highlight?: boolean; onRemove?: (ticker: string) => void; earnings?: EarningsInfo }) {
   const router = useRouter();
+  const [rtPrice, setRtPrice] = useState<{ price: number; changePct: number } | null>(null);
+
+  useEffect(() => {
+    const key = process.env.NEXT_PUBLIC_FINNHUB_KEY_EXISTS;
+    if (!key) return;
+    fetch(`/api/realtime?tickers=${stock.ticker}`)
+      .then(r => r.json())
+      .then(d => { if (d.price) setRtPrice({ price: d.price, changePct: d.changePct }); })
+      .catch(() => {});
+    // Refresh every 30 seconds during market hours
+    const iv = setInterval(() => {
+      fetch(`/api/realtime?tickers=${stock.ticker}`)
+        .then(r => r.json())
+        .then(d => { if (d.price) setRtPrice({ price: d.price, changePct: d.changePct }); })
+        .catch(() => {});
+    }, 30000);
+    return () => clearInterval(iv);
+  }, [stock.ticker]);
   const score  = Math.min(10, Math.max(1, Math.round(Number(stock.momentum_score) * 2) / 2));
   const c      = sigColors(stock.signal);
 
@@ -48,7 +67,16 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
             <button onClick={() => router.push(`/stock/${stock.ticker}`)} className="text-xl font-semibold text-zinc-100 hover:text-emerald-300 transition-colors underline-offset-2 hover:underline cursor-pointer">{stock.ticker} ↗</button>
-            {onRemove && (
+            {rtPrice && (
+              <div className="flex items-center gap-1.5 ml-1">
+                <span className="text-base font-semibold text-zinc-100 font-mono">${rtPrice.price}</span>
+                <span className={`text-xs font-mono ${rtPrice.changePct >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                  {rtPrice.changePct >= 0 ? '+' : ''}{rtPrice.changePct?.toFixed(2)}%
+                </span>
+                <span className="text-[9px] text-emerald-600 bg-emerald-950 border border-emerald-800 px-1 py-0.5 rounded">실시간</span>
+              </div>
+            )}
+          {onRemove && (
               <button onClick={() => onRemove(stock.ticker)}
                 className="w-5 h-5 flex items-center justify-center rounded-full bg-zinc-800 hover:bg-red-900 text-zinc-500 hover:text-red-400 transition-colors text-xs leading-none"
                 title="목록에서 삭제">✕</button>
