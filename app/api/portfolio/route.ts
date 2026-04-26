@@ -195,6 +195,97 @@ function calcUpsidePotential(params: {
 }
 
 // ── Yahoo Finance fetch ───────────────────────────────────────────────────────
+
+// ── Trailing Stop Calculator ─────────────────────────────────────────────────
+function calcTrailingStop(
+  currentPrice: number,
+  avgPrice: number,
+  atr: number,
+  high52w: number,
+  pnlPct: number,
+): {
+  trail2xATR:    number;  // ATR 2x trailing
+  trail3xATR:    number;  // ATR 3x trailing (looser)
+  trailPct8:     number;  // -8% trailing (Minervini rule)
+  trailPct15:    number;  // -15% trailing (swing)
+  highWaterMark: number;  // 52주 고점 기반
+  recommended:   { price: number; label: string; reasoning: string };
+} {
+  const r = (n: number) => Math.round(n * 100) / 100;
+
+  const trail2xATR  = r(currentPrice - 2 * atr);
+  const trail3xATR  = r(currentPrice - 3 * atr);
+  const trailPct8   = r(currentPrice * 0.92);
+  const trailPct15  = r(currentPrice * 0.85);
+  const highWaterMark = r(high52w * 0.90); // 10% below 52w high
+
+  // Recommend based on profit level
+  let recommended: { price: number; label: string; reasoning: string };
+
+  if (pnlPct >= 30) {
+    // Large profit: use tight 8% trailing to protect gains
+    recommended = {
+      price: trailPct8,
+      label: '8% 트레일링 스탑',
+      reasoning: `수익 +${pnlPct.toFixed(1)}% — 수익 보호 우선. 현재가 -8% 하락 시 즉시 매도`,
+    };
+  } else if (pnlPct >= 15) {
+    // Medium profit: ATR 2x trailing
+    recommended = {
+      price: trail2xATR,
+      label: 'ATR 2x 트레일링',
+      reasoning: `수익 +${pnlPct.toFixed(1)}% — 변동성 기반 트레일링. 하락 시 자동 손절`,
+    };
+  } else if (pnlPct >= 0) {
+    // Small profit: ATR 3x (more room)
+    recommended = {
+      price: trail3xATR,
+      label: 'ATR 3x 트레일링',
+      reasoning: `수익 +${pnlPct.toFixed(1)}% — 추세 유지 공간 확보. 조정 허용 후 홀딩`,
+    };
+  } else {
+    // Loss: use break-even or ATR 2x (tighter)
+    const breakEven = r(avgPrice * 1.005); // 0.5% above avg (cover fees)
+    recommended = {
+      price: Math.max(trail2xATR, r(avgPrice * 0.93)), // worst case -7% from avg
+      label: '손절 우선',
+      reasoning: `손실 중 — 평균매수가 대비 손절 엄수. 추가 손실 방지`,
+    };
+    void breakEven;
+  }
+
+  return { trail2xATR, trail3xATR, trailPct8, trailPct15, highWaterMark, recommended };
+}
+
+// ── Fibonacci Extension Targets ───────────────────────────────────────────────
+function calcFibTargets(avgPrice: number, high52w: number, low52w: number, currentPrice: number) {
+  const r = (n: number) => Math.round(n * 100) / 100;
+  const range = high52w - low52w;
+
+  // Fibonacci extensions from avg price
+  const t1_618 = r(avgPrice + range * 0.618);  // 61.8% extension
+  const t2_100 = r(avgPrice + range * 1.0);    // 100% extension
+  const t3_162 = r(avgPrice + range * 1.618);  // 161.8% extension
+
+  // Simple % targets
+  const t10  = r(avgPrice * 1.10);
+  const t20  = r(avgPrice * 1.20);
+  const t30  = r(avgPrice * 1.30);
+
+  // Already passed targets
+  const pnlPct = ((currentPrice - avgPrice) / avgPrice) * 100;
+
+  return {
+    fib618: t1_618,
+    fib100: t2_100,
+    fib162: t3_162,
+    pct10: t10, pct20: t20, pct30: t30,
+    nextTarget: pnlPct < 10 ? t10 : pnlPct < 20 ? t20 : pnlPct < 30 ? t30 : t1_618,
+    nextTargetLabel: pnlPct < 10 ? '+10%' : pnlPct < 20 ? '+20%' : pnlPct < 30 ? '+30%' : 'Fib 61.8%',
+    remainingUpside: r(((t1_618 - currentPrice) / currentPrice) * 100),
+  };
+}
+
 async function fetchData(ticker: string) {
   const res = await fetch(
     `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=1y`,
@@ -335,6 +426,11 @@ export async function POST(req: NextRequest) {
 
     const sellUrgency = highSigs >= 2 || price < r(ma50) ? 'HIGH' : highSigs >= 1 || totalSigs >= 2 ? 'MEDIUM' : 'LOW';
 
+    // Trailing stops
+    const trailing = calcTrailingStop(price, avgPrice, atr, high52w, pnlPct);
+    // Fibonacci targets
+    const fibTargets = calcFibTargets(avgPrice, high52w, d.low52w ?? price * 0.7, price);
+
     return {
       ticker: h.ticker, avgPrice, shares, currentPrice: r(price),
       pnlPct, pnlAbs, action, sellUrgency,
@@ -343,6 +439,8 @@ export async function POST(req: NextRequest) {
       upside,
       indicators: { rsi, macd, adx: r(adx,1), volRatio, aboveCount, bbPos, distFromHigh: r(distFromHigh,1) },
       stopLoss: { tight: r(price - 1.5*atr), standard: stopATR, ma20: stopMA20, ma50: stopMA50, recommended: recommendedStop },
+      trailing,
+      fibTargets,
       targets: { t1: target1, t2: target2, t3: target3 },
       mas: { ma10: r(ma10), ma20: r(ma20), ma50: r(ma50), ma120: r(ma120) },
       divergences: { rsi: rsiDiv, volume: volDiv, macd: macdCon },
