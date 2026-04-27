@@ -37,6 +37,7 @@ interface EarningsInfo { earningsDate: string | null; daysUntil: number | null; 
 
 export default function StockCard({ stock, highlight = false, onRemove, earnings }: { stock: StockAnalysis; highlight?: boolean; onRemove?: (ticker: string) => void; earnings?: EarningsInfo }) {
   const router = useRouter();
+  const [open, setOpen] = useState(false);
   const [rtPrice, setRtPrice] = useState<{ price: number; changePct: number; isRealtime?: boolean } | null>(null);
 
   useEffect(() => {
@@ -357,6 +358,7 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
         {stock.key_resistance && <LvPill label="저항" val={stock.key_resistance} c="text-purple-300  border-purple-800  bg-purple-950/40" />}
         {stock.stop_loss     && <LvPill label="손절" val={stock.stop_loss}     c="text-red-300     border-red-800     bg-red-950/40" />}
       </div>
+      </div>}
     </div>
   );
 }
