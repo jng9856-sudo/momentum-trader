@@ -2,23 +2,23 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type { AnalysisResult, StockAnalysis } from '@/types/stock';
-import StockCard        from '@/components/StockCard';
-import TopPicks         from '@/components/TopPicks';
+import StockCard from '@/components/StockCard';
+import TopPicks from '@/components/TopPicks';
 import WatchlistManager from '@/components/WatchlistManager';
-import PortfolioTab     from '@/components/PortfolioTab';
-import MarketStatus    from '@/components/MarketStatus';
-import SectorHeatmap   from '@/components/SectorHeatmap';
-import BacktestPanel   from '@/components/BacktestPanel';
+import PortfolioTab from '@/components/PortfolioTab';
+import MarketStatus from '@/components/MarketStatus';
+import SectorHeatmap from '@/components/SectorHeatmap';
+import BacktestPanel from '@/components/BacktestPanel';
 
 const DEFAULT_TICKERS = ['AMD', 'MRVL', 'AVGO', 'MU', 'INTC', 'ARM', 'NVDA', 'TSM'];
-const CACHE_KEY        = 'mt_analysis_v4';
-const WATCHLIST_KEY    = 'mt_watchlist_v3';
-const MAX_TICKERS      = 1000;
-const BATCH_SIZE       = 50;
+const CACHE_KEY = 'mt_analysis_v4';
+const WATCHLIST_KEY = 'mt_watchlist_v3';
+const MAX_TICKERS = 1000;
+const BATCH_SIZE = 50;
 
 type FilterType = 'ALL' | 'STRONG_BUY' | 'BUY' | 'HOLD' | 'SELL' | 'STRONG_SELL';
-type SortType   = 'SCORE' | 'TICKER' | 'SIGNAL';
-type TabType    = 'scanner' | 'portfolio' | 'sectors' | 'backtest';
+type SortType = 'SCORE' | 'TICKER' | 'SIGNAL';
+type TabType = 'scanner' | 'portfolio' | 'sectors' | 'backtest';
 
 function todayKey() { return new Date().toISOString().slice(0, 10); }
 
@@ -29,11 +29,11 @@ function isTicker(val: string): boolean {
 
 async function parseExcelTickers(file: File): Promise<string[]> {
   const XLSX = await import('xlsx');
-  const buf  = await file.arrayBuffer();
-  const wb   = XLSX.read(buf, { type: 'array' });
+  const buf = await file.arrayBuffer();
+  const wb = XLSX.read(buf, { type: 'array' });
   const tickers: string[] = [];
   for (const sheetName of wb.SheetNames) {
-    const ws   = wb.Sheets[sheetName];
+    const ws = wb.Sheets[sheetName];
     const rows = XLSX.utils.sheet_to_json<string[]>(ws, { header: 1 }) as string[][];
     for (const row of rows) {
       for (const cell of row) {
@@ -52,22 +52,22 @@ function chunk<T>(arr: T[], size: number): T[][] {
 }
 
 export default function Home() {
-  const [activeTab,  setActiveTab]  = useState<TabType>('scanner');
-  const [watchlist,  setWatchlist]  = useState<string[]>([]);
-  const [allStocks,  setAllStocks]  = useState<StockAnalysis[]>([]);
-  const [marketCtx,  setMarketCtx]  = useState('');
+  const [activeTab, setActiveTab] = useState<TabType>('scanner');
+  const [watchlist, setWatchlist] = useState<string[]>([]);
+  const [allStocks, setAllStocks] = useState<StockAnalysis[]>([]);
+  const [marketCtx, setMarketCtx] = useState('');
   const [analyzedAt, setAnalyzedAt] = useState('');
-  const [loading,    setLoading]    = useState(false);
-  const [progress,   setProgress]   = useState({ done: 0, total: 0 });
-  const [status,     setStatus]     = useState('');
-  const [error,      setError]      = useState('');
-  const [filter,     setFilter]     = useState<FilterType>('ALL');
-  const [sort,       setSort]       = useState<SortType>('SCORE');
-  const [xlsxMsg,    setXlsxMsg]    = useState('');
-  const [xlsxOpen,   setXlsxOpen]   = useState(false);
-  const [search,     setSearch]     = useState('');
+  const [loading, setLoading] = useState(false);
+  const [progress, setProgress] = useState({ done: 0, total: 0 });
+  const [status, setStatus] = useState('');
+  const [error, setError] = useState('');
+  const [filter, setFilter] = useState<FilterType>('ALL');
+  const [sort, setSort] = useState<SortType>('SCORE');
+  const [xlsxMsg, setXlsxMsg] = useState('');
+  const [xlsxOpen, setXlsxOpen] = useState(false);
+  const [search, setSearch] = useState('');
   const [earningsMap, setEarningsMap] = useState<Record<string, { earningsDate: string | null; daysUntil: number | null; epsEstimate: number | null; revenueEstimate: string | null; lastEPS: number | null }>>({});
-  const fileRef  = useRef<HTMLInputElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef(false);
 
   useEffect(() => {
@@ -76,6 +76,7 @@ export default function Home() {
       if (d.tickers?.length > 0) setWatchlist(d.tickers);
       else { try { const wl = localStorage.getItem(WATCHLIST_KEY); if (wl) setWatchlist(JSON.parse(wl)); } catch {} }
     }).catch(() => { try { const wl = localStorage.getItem(WATCHLIST_KEY); if (wl) setWatchlist(JSON.parse(wl)); } catch {} });
+
     // Try loading today's analysis from DB (cron result)
     fetch(`/api/db?type=analysis&date=${todayKey()}`).then(r => r.json()).then(d => {
       if (d && !d.empty && d.stocks?.length > 0) {
@@ -92,6 +93,7 @@ export default function Home() {
     }).catch(() => {
       try { const cached = localStorage.getItem(CACHE_KEY); if (cached) { const p = JSON.parse(cached); if (p.date === todayKey()) { setAllStocks(p.stocks ?? []); setMarketCtx(p.market_context ?? ''); setAnalyzedAt(p.analyzed_at ?? ''); } } } catch {}
     });
+
     try {
       const ec = localStorage.getItem('mt_earnings_v1');
       if (ec) { const ep = JSON.parse(ec); if (ep.date === todayKey()) setEarningsMap(ep.data ?? {}); }
@@ -103,8 +105,9 @@ export default function Home() {
     saveWatchlistToDB(watchlist);
   }, [watchlist]);
 
-  function addTicker(t: string)    { if (watchlist.length < MAX_TICKERS) setWatchlist(w => [...w, t]); }
+  function addTicker(t: string) { if (watchlist.length < MAX_TICKERS) setWatchlist(w => [...w, t]); }
   function removeTicker(t: string) { setWatchlist(w => w.filter(x => x !== t)); }
+
   function removeFromResults(ticker: string) {
     setAllStocks(s => s.filter(x => x.ticker !== ticker));
     setWatchlist(w => w.filter(x => x !== ticker));
@@ -129,7 +132,7 @@ export default function Home() {
     try {
       const found = await parseExcelTickers(file);
       if (found.length === 0) { setXlsxMsg('티커를 찾지 못했습니다.'); return; }
-      const prev   = watchlist.length;
+      const prev = watchlist.length;
       const merged = [...new Set([...watchlist, ...found])].slice(0, MAX_TICKERS);
       setWatchlist(merged);
       setXlsxMsg(`✓ ${found.length}개 발견 → ${merged.length - prev}개 추가 (총 ${merged.length}개)`);
@@ -137,14 +140,28 @@ export default function Home() {
     e.target.value = '';
   }
 
+  // ── 🔧 수정된 runAnalysis: 새 티커만 분석 후 기존 목록에 append ──────────
   const runAnalysis = useCallback(async () => {
     if (watchlist.length === 0 || loading) return;
     abortRef.current = false;
-    setLoading(true); setError(''); setAllStocks([]); setMarketCtx(''); setAnalyzedAt(''); setSearch('');
-    const batches = chunk(watchlist, BATCH_SIZE);
-    setProgress({ done: 0, total: watchlist.length });
-    let accumulated: StockAnalysis[] = [];
-    let firstCtx = '';
+
+    // 이미 분석된 티커 제외 → 새로 추가된 티커만 추출
+    const analyzedSet = new Set(allStocks.map(s => s.ticker));
+    const tickersToAnalyze = watchlist.filter(t => !analyzedSet.has(t));
+
+    if (tickersToAnalyze.length === 0) {
+      setStatus('> 추가된 새 종목이 없습니다. 전체 재분석은 초기화(↺) 후 실행하세요.');
+      return;
+    }
+
+    setLoading(true); setError(''); setSearch('');
+    // ✅ setAllStocks([]) 제거 — 기존 데이터 유지
+    const batches = chunk(tickersToAnalyze, BATCH_SIZE);
+    setProgress({ done: 0, total: tickersToAnalyze.length });
+
+    let accumulated: StockAnalysis[] = [...allStocks]; // 기존 결과 보존
+    let firstCtx = marketCtx || '';                    // 기존 시장 컨텍스트 보존
+
     for (let i = 0; i < batches.length; i++) {
       if (abortRef.current) break;
       setStatus(`> 배치 ${i+1}/${batches.length} 처리 중... (${batches[i].join(', ')})`);
@@ -162,19 +179,22 @@ export default function Home() {
           setMarketCtx(firstCtx);
         }
       } catch { /* skip failed batch */ }
-      setProgress({ done: Math.min(watchlist.length, (i+1) * BATCH_SIZE), total: watchlist.length });
+      setProgress({ done: Math.min(tickersToAnalyze.length, (i+1) * BATCH_SIZE), total: tickersToAnalyze.length });
     }
+
     const ts = new Date().toISOString();
     setAnalyzedAt(ts);
     setStatus(`> 완료 — ${accumulated.length}개 종목 · 실적 발표일 조회 중...`);
+
     try { localStorage.setItem(CACHE_KEY, JSON.stringify({ date: todayKey(), stocks: accumulated, market_context: firstCtx, analyzed_at: ts })); } catch {}
+
     // Save to Supabase DB for cross-device sync
     await saveAnalysisToDB(accumulated, firstCtx, ts);
 
-    // Fetch earnings calendar in background
+    // Fetch earnings calendar in background (새 티커만)
     try {
-      const tBatches = chunk(watchlist, 20);
-      const eMap: Record<string, { earningsDate: string | null; daysUntil: number | null; epsEstimate: number | null; revenueEstimate: string | null; lastEPS: number | null }> = {};
+      const tBatches = chunk(tickersToAnalyze, 20);
+      const eMap: Record<string, { earningsDate: string | null; daysUntil: number | null; epsEstimate: number | null; revenueEstimate: string | null; lastEPS: number | null }> = { ...earningsMap };
       for (const tb of tBatches) {
         const er = await fetch('/api/earnings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tickers: tb }) });
         if (er.ok) {
@@ -188,7 +208,7 @@ export default function Home() {
 
     setStatus(`> 완료 — ${accumulated.length}개 종목 | ${new Date().toLocaleTimeString('ko-KR')}`);
     setLoading(false);
-  }, [watchlist, loading]);
+  }, [watchlist, loading, allStocks, marketCtx, earningsMap]); // ✅ deps에 allStocks, marketCtx, earningsMap 추가
 
   function stopAnalysis() { abortRef.current = true; setLoading(false); setStatus('> 분석 중단됨'); }
 
@@ -204,7 +224,6 @@ export default function Home() {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async function loadFromDB() {
     try {
-      // Load analysis cache from DB
       const res = await fetch(`/api/db?type=analysis&date=${todayKey()}`);
       if (res.ok) {
         const data = await res.json();
@@ -238,17 +257,28 @@ export default function Home() {
     .filter(s => filter === 'ALL' || s.signal === filter)
     .filter(s => search === '' || s.ticker.includes(search.toUpperCase()))
     .sort((a, b) => {
-      if (sort === 'SCORE')  return Number(b.momentum_score) - Number(a.momentum_score);
+      if (sort === 'SCORE') return Number(b.momentum_score) - Number(a.momentum_score);
       if (sort === 'TICKER') return a.ticker.localeCompare(b.ticker);
       const o = { STRONG_BUY: 0, BUY: 1, HOLD: 2, SELL: 3, STRONG_SELL: 4 } as Record<string, number>;
       return (o[a.signal] ?? 5) - (o[b.signal] ?? 5);
     });
 
-  const buyCnt      = allStocks.filter(s => s.signal === 'STRONG_BUY' || s.signal === 'BUY').length;
-  const holdCnt     = allStocks.filter(s => s.signal === 'HOLD').length;
-  const sellCnt     = allStocks.filter(s => s.signal === 'SELL' || s.signal === 'STRONG_SELL').length;
-  const pct         = progress.total > 0 ? Math.round((progress.done / progress.total) * 100) : 0;
-  const today       = new Date().toLocaleDateString('ko-KR', { year:'numeric', month:'long', day:'numeric', weekday:'short' });
+  const buyCnt = allStocks.filter(s => s.signal === 'STRONG_BUY' || s.signal === 'BUY').length;
+  const holdCnt = allStocks.filter(s => s.signal === 'HOLD').length;
+  const sellCnt = allStocks.filter(s => s.signal === 'SELL' || s.signal === 'STRONG_SELL').length;
+  const pct = progress.total > 0 ? Math.round((progress.done / progress.total) * 100) : 0;
+  const today = new Date().toLocaleDateString('ko-KR', { year:'numeric', month:'long', day:'numeric', weekday:'short' });
+
+  // 분석 버튼 라벨: 새 티커 수에 따라 동적으로 표시
+  const analyzedSet = new Set(allStocks.map(s => s.ticker));
+  const newTickerCount = watchlist.filter(t => !analyzedSet.has(t)).length;
+  const analyzeButtonLabel = loading
+    ? <span className="flex items-center gap-2"><span className="blink">▋</span>분석 중...</span>
+    : newTickerCount > 0
+      ? `+${newTickerCount}개 분석 추가 →`
+      : allStocks.length > 0
+        ? '✓ 분석 완료 (초기화 후 재분석)'
+        : '분석 실행 →';
 
   return (
     <div className="min-h-screen bg-bg-base">
@@ -275,11 +305,12 @@ export default function Home() {
               {activeTab === 'scanner' && (
                 <button onClick={runAnalysis} disabled={loading || watchlist.length === 0}
                   className={`px-6 py-2.5 text-sm font-semibold rounded-lg border transition-all
-                    ${loading ? 'bg-zinc-900 border-zinc-700 text-zinc-500 cursor-not-allowed'
-                              : 'bg-emerald-500 border-emerald-400 text-black hover:bg-emerald-400 active:scale-95'}`}>
-                  {loading
-                    ? <span className="flex items-center gap-2"><span className="blink">▋</span>분석 중...</span>
-                    : allStocks.length > 0 ? '재분석 실행' : '분석 실행 →'}
+                    ${loading
+                      ? 'bg-zinc-900 border-zinc-700 text-zinc-500 cursor-not-allowed'
+                      : newTickerCount > 0
+                        ? 'bg-emerald-500 border-emerald-400 text-black hover:bg-emerald-400 active:scale-95'
+                        : 'bg-zinc-800 border-zinc-700 text-zinc-400 cursor-not-allowed'}`}>
+                  {analyzeButtonLabel}
                 </button>
               )}
             </div>
@@ -288,10 +319,10 @@ export default function Home() {
           {/* Tab buttons */}
           <div className="flex flex-wrap gap-1">
             {([
-              ['scanner',   '모멘텀 스캐너'],
+              ['scanner', '모멘텀 스캐너'],
               ['portfolio', '내 포트폴리오'],
-              ['sectors',   '섹터 히트맵'],
-              ['backtest',  '백테스트'],
+              ['sectors', '섹터 히트맵'],
+              ['backtest', '백테스트'],
             ] as [TabType, string][]).map(([tab, label]) => (
               <button key={tab} onClick={() => setActiveTab(tab)}
                 className={`px-3 py-2 text-sm font-medium rounded-lg border transition-colors
@@ -374,9 +405,9 @@ export default function Home() {
                 )}
 
                 <div className="grid grid-cols-3 gap-3 mb-6">
-                  <StatCard label="매수" value={buyCnt}  color="text-emerald-400" border="border-emerald-900" />
-                  <StatCard label="관망" value={holdCnt} color="text-amber-400"   border="border-amber-900" />
-                  <StatCard label="매도" value={sellCnt} color="text-red-400"     border="border-red-900" />
+                  <StatCard label="매수" value={buyCnt} color="text-emerald-400" border="border-emerald-900" />
+                  <StatCard label="관망" value={holdCnt} color="text-amber-400" border="border-amber-900" />
+                  <StatCard label="매도" value={sellCnt} color="text-red-400" border="border-red-900" />
                 </div>
 
                 <TopPicks stocks={allStocks} />
@@ -397,11 +428,11 @@ export default function Home() {
                 <div className="flex flex-wrap gap-2 items-center justify-between mb-4">
                   <div className="flex flex-wrap gap-1">
                     {([
-                      ['ALL',         `전체(${allStocks.length})`],
-                      ['STRONG_BUY',  `즉시매수(${allStocks.filter(s => s.signal==='STRONG_BUY').length})`],
-                      ['BUY',         `매수(${allStocks.filter(s => s.signal==='BUY').length})`],
-                      ['HOLD',        `관망(${holdCnt})`],
-                      ['SELL',        `매도(${allStocks.filter(s => s.signal==='SELL').length})`],
+                      ['ALL', `전체(${allStocks.length})`],
+                      ['STRONG_BUY', `즉시매수(${allStocks.filter(s => s.signal==='STRONG_BUY').length})`],
+                      ['BUY', `매수(${allStocks.filter(s => s.signal==='BUY').length})`],
+                      ['HOLD', `관망(${holdCnt})`],
+                      ['SELL', `매도(${allStocks.filter(s => s.signal==='SELL').length})`],
                       ['STRONG_SELL', `즉시매도(${allStocks.filter(s => s.signal==='STRONG_SELL').length})`],
                     ] as [FilterType, string][]).map(([f, label]) => (
                       <button key={f} onClick={() => setFilter(f)}
