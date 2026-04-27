@@ -53,7 +53,7 @@ function chunk<T>(arr: T[], size: number): T[][] {
 
 export default function Home() {
   const [activeTab,  setActiveTab]  = useState<TabType>('scanner');
-  const [watchlist,  setWatchlist]  = useState<string[]>(DEFAULT_TICKERS);
+  const [watchlist,  setWatchlist]  = useState<string[]>([]);
   const [allStocks,  setAllStocks]  = useState<StockAnalysis[]>([]);
   const [marketCtx,  setMarketCtx]  = useState('');
   const [analyzedAt, setAnalyzedAt] = useState('');
@@ -195,7 +195,7 @@ export default function Home() {
     abortRef.current = true;
     setLoading(false); setAllStocks([]); setMarketCtx(''); setAnalyzedAt('');
     setStatus(''); setError(''); setSearch(''); setFilter('ALL'); setSort('SCORE');
-    setWatchlist(DEFAULT_TICKERS); setXlsxMsg(''); setEarningsMap({});
+    setWatchlist([]); setXlsxMsg(''); setEarningsMap({});
     try { localStorage.removeItem(CACHE_KEY); localStorage.removeItem(WATCHLIST_KEY); localStorage.removeItem('mt_earnings_v1'); } catch {}
   }
 
