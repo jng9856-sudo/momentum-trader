@@ -64,6 +64,7 @@ export default function Home() {
   const [filter,     setFilter]     = useState<FilterType>('ALL');
   const [sort,       setSort]       = useState<SortType>('SCORE');
   const [xlsxMsg,    setXlsxMsg]    = useState('');
+  const [xlsxOpen,   setXlsxOpen]   = useState(false);
   const [search,     setSearch]     = useState('');
   const [earningsMap, setEarningsMap] = useState<Record<string, { earningsDate: string | null; daysUntil: number | null; epsEstimate: number | null; revenueEstimate: string | null; lastEPS: number | null }>>({});
   const fileRef  = useRef<HTMLInputElement>(null);
