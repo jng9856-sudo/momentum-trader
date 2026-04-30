@@ -25,6 +25,14 @@ function rsClass(r: string) { return r === 'STRONG' ? 'text-emerald-400' : r ===
 function confDot(c: string) { return c === 'HIGH' ? 'bg-emerald-400' : c === 'MEDIUM' ? 'bg-amber-400' : 'bg-zinc-500'; }
 function barColor(score: number) { return score >= 7 ? '#10b981' : score >= 4 ? '#f59e0b' : '#ef4444'; }
 
+// 🆕 시장 국면 배지 색상
+function regimeBadgeStyle(note: string) {
+  if (note.includes('🔴')) return { bg: 'bg-red-950', text: 'text-red-300', border: 'border-red-700', block: 'border-red-800 bg-red-950/30 text-red-300' };
+  if (note.includes('🟠')) return { bg: 'bg-orange-950', text: 'text-orange-300', border: 'border-orange-700', block: 'border-orange-800 bg-orange-950/30 text-orange-300' };
+  if (note.includes('🟡')) return { bg: 'bg-amber-950', text: 'text-amber-300', border: 'border-amber-700', block: 'border-amber-800 bg-amber-950/30 text-amber-300' };
+  return { bg: 'bg-zinc-900', text: 'text-zinc-400', border: 'border-zinc-700', block: 'border-zinc-700 bg-zinc-900/30 text-zinc-400' };
+}
+
 interface EarningsInfo { earningsDate: string | null; daysUntil: number | null; epsEstimate: number | null; revenueEstimate: string | null; lastEPS: number | null; }
 
 export default function StockCard({ stock, highlight = false, onRemove, earnings }: {
@@ -47,10 +55,15 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
   const score = Math.min(10, Math.max(1, Math.round(Number(stock.momentum_score) * 2) / 2));
   const c = sigColors(stock.signal);
 
+  // 🆕 국면 경고 여부
+  const regimeNote: string | null = (stock as Record<string, unknown>).regime_note as string | null ?? null;
+  const hasRegimeWarning = !!regimeNote;
+  const regimeStyle = regimeNote ? regimeBadgeStyle(regimeNote) : null;
+
   return (
     <div className={`stock-card border border-zinc-800 border-l-4 ${c.border} rounded-xl bg-bg-card ${highlight ? 'ring-1 ring-emerald-500/20' : ''}`}>
 
-      {/* ── 항상 보이는 헤더 (클릭으로 펼치기) ── */}
+      {/* ── 항상 보이는 헤더 ── */}
       <div className="flex items-center justify-between px-4 py-3 cursor-pointer select-none" onClick={() => setOpen(o => !o)}>
         <div className="flex items-center gap-2 flex-wrap min-w-0">
           {/* Ticker */}
@@ -88,6 +101,12 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
           {stock.breakout_52w && <span className="text-[9px] bg-emerald-900 text-emerald-200 border border-emerald-700 px-1.5 py-0.5 rounded">🚀 신고가</span>}
           {stock.weekly_is_entry && <span className="text-[9px] bg-amber-900 text-amber-200 border border-amber-700 px-1.5 py-0.5 rounded">🎯 최고타점</span>}
           {stock.pead_signal && <span className="text-[9px] bg-sky-900 text-sky-200 border border-sky-700 px-1.5 py-0.5 rounded">📈 PEAD</span>}
+          {/* 🆕 시장 국면 경고 배지 (헤더) */}
+          {hasRegimeWarning && regimeStyle && (
+            <span className={`text-[9px] px-1.5 py-0.5 rounded border ${regimeStyle.bg} ${regimeStyle.text} ${regimeStyle.border}`}>
+              {regimeNote!.split('—')[0].trim()}
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-2 shrink-0 ml-2">
           <span className={`text-xs font-semibold px-2.5 py-1 rounded-md border ${c.badge}`}>
@@ -109,6 +128,10 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
           <span className={stock.ma50_status === 'ABOVE' ? 'text-emerald-400' : 'text-red-400'}>{MA_KO[stock.ma50_status]}</span>
           {stock.entry_zone && <span>진입 <span className="text-emerald-400 font-mono">{stock.entry_zone}</span></span>}
           {stock.stop_loss  && <span>손절 <span className="text-red-400 font-mono">{stock.stop_loss}</span></span>}
+          {/* 🆕 접힌 상태에서도 국면 경고 한 줄 표시 */}
+          {hasRegimeWarning && regimeStyle && (
+            <span className={regimeStyle.text}>{regimeNote}</span>
+          )}
         </div>
       )}
 
@@ -118,6 +141,16 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
 
           {/* Earnings */}
           {earnings && <div className="mb-3"><EarningsBadge info={earnings} /></div>}
+
+          {/* 🆕 시장 국면 경고 블록 — 최상단 표시 */}
+          {hasRegimeWarning && regimeStyle && (
+            <div className={`mb-4 p-3 rounded-lg border ${regimeStyle.block}`}>
+              <div className="flex items-center gap-2 mb-0.5">
+                <span className="text-[10px] uppercase tracking-widest opacity-70">시장 국면 필터</span>
+              </div>
+              <p className="text-xs font-semibold" style={{ fontFamily: 'system-ui' }}>{regimeNote}</p>
+            </div>
+          )}
 
           {/* 모멘텀 바 */}
           <div className="mb-3">
