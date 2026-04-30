@@ -109,6 +109,10 @@ export interface StockAnalysis {
   pullback_rsi_cooled?:     boolean;
   pullback_high?:           number;
   pullback_detail?:         string;
+
+  // ── 섹터 정보 ──────────────────────────────────────────────────────────────
+  sector?:                  string | null;
+  industry?:                string | null;
 }
 
 export interface AnalysisResult {
