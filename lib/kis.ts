@@ -5,30 +5,80 @@ const KIS_APP_KEY    = process.env.KIS_APP_KEY!;
 const KIS_APP_SECRET = process.env.KIS_APP_SECRET!;
 const BASE_URL       = 'https://openapi.koreainvestment.com:9443';
 
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+
 // ── Access Token 발급 (24시간 유효) ──────────────────────────────────────────
+// Vercel 서버리스는 인스턴스가 매 요청마다 초기화되므로
+// 메모리 캐시만으로는 토큰이 계속 재발급됨 → Supabase에 영속 저장
+
 let cachedToken: { token: string; expiresAt: number } | null = null;
 
 async function getAccessToken(): Promise<string | null> {
   if (!KIS_APP_KEY || !KIS_APP_SECRET) return null;
-  if (cachedToken && Date.now() < cachedToken.expiresAt) return cachedToken.token;
 
+  // 1. 메모리 캐시 먼저 확인 (같은 인스턴스 내 재요청 최적화)
+  if (cachedToken && Date.now() < cachedToken.expiresAt) {
+    return cachedToken.token;
+  }
+
+  // 2. Supabase에서 저장된 토큰 확인 (인스턴스 간 공유)
+  try {
+    const dbRes = await fetch(
+      `${SUPABASE_URL}/rest/v1/kis_token?id=eq.singleton&select=token,expires_at`,
+      {
+        headers: {
+          'apikey':        SUPABASE_KEY,
+          'Authorization': `Bearer ${SUPABASE_KEY}`,
+        },
+      }
+    );
+    if (dbRes.ok) {
+      const rows = await dbRes.json();
+      if (rows?.[0] && rows[0].expires_at > Date.now()) {
+        // DB 토큰 유효 → 메모리에도 세팅 후 반환
+        cachedToken = { token: rows[0].token, expiresAt: rows[0].expires_at };
+        return cachedToken.token;
+      }
+    }
+  } catch { /* DB 조회 실패 시 새로 발급으로 fallback */ }
+
+  // 3. 만료됐거나 없으면 KIS에서 새로 발급
   try {
     const res = await fetch(`${BASE_URL}/oauth2/tokenP`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        grant_type:   'client_credentials',
-        appkey:       KIS_APP_KEY,
-        appsecret:    KIS_APP_SECRET,
+        grant_type: 'client_credentials',
+        appkey:     KIS_APP_KEY,
+        appsecret:  KIS_APP_SECRET,
       }),
     });
     if (!res.ok) return null;
+
     const data = await res.json();
-    cachedToken = {
-      token:     data.access_token,
-      expiresAt: Date.now() + 23 * 60 * 60 * 1000, // 23시간
-    };
-    return cachedToken.token;
+    const expiresAt = Date.now() + 23 * 60 * 60 * 1000; // 23시간
+
+    // 메모리 캐시 업데이트
+    cachedToken = { token: data.access_token, expiresAt };
+
+    // Supabase에 upsert 저장 (다음 인스턴스에서 재사용)
+    await fetch(`${SUPABASE_URL}/rest/v1/kis_token`, {
+      method: 'POST',
+      headers: {
+        'apikey':        SUPABASE_KEY,
+        'Authorization': `Bearer ${SUPABASE_KEY}`,
+        'Content-Type':  'application/json',
+        'Prefer':        'resolution=merge-duplicates',
+      },
+      body: JSON.stringify({
+        id:         'singleton',
+        token:      data.access_token,
+        expires_at: expiresAt,
+      }),
+    });
+
+    return data.access_token;
   } catch { return null; }
 }
 
@@ -154,4 +204,3 @@ export function toKISCode(yahooTicker: string): string {
 export function isKRStock(ticker: string): boolean {
   return ticker.endsWith('.KS') || ticker.endsWith('.KQ') || /^\d{6}$/.test(ticker);
 }
-
