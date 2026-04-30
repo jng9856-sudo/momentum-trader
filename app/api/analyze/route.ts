@@ -320,17 +320,36 @@ async function fetchShortInterest(ticker: string) {
   } catch { return null; }
 }
 
+// ── 섹터/업종 조회 ─────────────────────────────────────────────────────────────
+async function fetchSector(ticker: string): Promise<{ sector: string | null; industry: string | null }> {
+  try {
+    const res = await fetch(
+      `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${ticker}?modules=assetProfile`,
+      { headers: { 'User-Agent': 'Mozilla/5.0' }, next: { revalidate: 86400 } }
+    );
+    if (!res.ok) return { sector: null, industry: null };
+    const profile = (await res.json())?.quoteSummary?.result?.[0]?.assetProfile;
+    return {
+      sector:   profile?.sector   ?? null,
+      industry: profile?.industry ?? null,
+    };
+  } catch { return { sector: null, industry: null }; }
+}
+
 interface QuoteData {
   ticker: string; price: number; change1d: number; ytdReturn: number;
   ma10: number; ma20: number; ma30: number; ma50: number; ma120: number; ma200: number;
   high52w: number; low52w: number; distFromHigh: number; momentum3m: number;
   rsi: number; macdHistogram: number; bbPosition: number; atrPct: number; atrAbs: number; volumeRatio: number;
+  closes: number[]; volumes: number[];
   vcp: VCPResult; pivot: { isBroken: boolean; distFromPivot: number; withinChaseLimit: boolean };
   obv: { trend: 'UP'|'DOWN'|'FLAT'; divergence: boolean; detail: string };
   shortInterest: { shortPct: number|null; shortRatio: number|null; squeezePotential: 'HIGH'|'MEDIUM'|'LOW'; shortDetail: string } | null;
   weekly: WeeklyData | null;
   breakout52w: { isBreakout: boolean; breakoutDay: number; prev52wHigh: number; breakoutPct: number; volConfirmed: boolean; detail: string };
   earningSurprise: { hasSurprise: boolean; surprisePct: number|null; peadSignal: boolean; detail: string } | null;
+  sector: string | null;   // 🆕
+  industry: string | null; // 🆕
 }
 
 async function fetchQuote(ticker: string): Promise<QuoteData | null> {
@@ -364,10 +383,10 @@ async function fetchQuote(ticker: string): Promise<QuoteData | null> {
     const { histogram }=calcMACD(cs), { position }=calcBB(cs);
     const atrVal=calcATR(hs.slice(-20),ls.slice(-20),cs.slice(-20)), volRatio=calcVolumeRatio(vs);
     const obv=calcOBV(cs.slice(-60), vs.slice(-60));
-    const [shortInterest, weekly, earningSurprise] = await Promise.all([fetchShortInterest(ticker), fetchWeeklyData(ticker), fetchEarningsSurprise(ticker)]);
+    const [shortInterest, weekly, earningSurprise, sectorData] = await Promise.all([fetchShortInterest(ticker), fetchWeeklyData(ticker), fetchEarningsSurprise(ticker), fetchSector(ticker)]);
     const breakout52w=detect52wBreakout(cs,vs), vcp=detectVCP(cs,vs,high52w), pivot=checkPivotBreakout(cs,vs,vcp.pivotPrice);
     const r = (n: number, d=2) => Math.round(n * 10**d) / 10**d;
-    return { ticker, price:r(price), change1d:r(change1d,1), ytdReturn:r(ytdReturn,1), momentum3m:r(momentum3m,1), ma10:r(ma10), ma20:r(ma20), ma30:r(ma30), ma50:r(ma50), ma120:r(ma120), ma200:r(ma200), high52w:r(high52w), low52w:r(low52w), distFromHigh:r(distFromHigh,1), rsi:r(rsi,1), macdHistogram:r(histogram,4), bbPosition:Math.round(position), atrPct:r((atrVal/price)*100,2), atrAbs:r(atrVal,2), volumeRatio:r(volRatio,2), vcp, pivot, obv, shortInterest, weekly, breakout52w, earningSurprise };
+    return { ticker, price:r(price), change1d:r(change1d,1), ytdReturn:r(ytdReturn,1), momentum3m:r(momentum3m,1), ma10:r(ma10), ma20:r(ma20), ma30:r(ma30), ma50:r(ma50), ma120:r(ma120), ma200:r(ma200), high52w:r(high52w), low52w:r(low52w), distFromHigh:r(distFromHigh,1), rsi:r(rsi,1), macdHistogram:r(histogram,4), bbPosition:Math.round(position), atrPct:r((atrVal/price)*100,2), atrAbs:r(atrVal,2), volumeRatio:r(volRatio,2), closes:cs.slice(-30), volumes:vs.slice(-15), vcp, pivot, obv, shortInterest, weekly, breakout52w, earningSurprise, sector: sectorData.sector, industry: sectorData.industry };
   } catch { return null; }
 }
 
@@ -467,8 +486,10 @@ function analyzeStock(q: QuoteData, spyYtd: number, sectorAvgYtd: number, regime
     short_pct:q.shortInterest?.shortPct??null, short_ratio:q.shortInterest?.shortRatio??null,
     short_squeeze:q.shortInterest?.squeezePotential??'LOW', short_detail:q.shortInterest?.shortDetail??null,
     regime_note:regimeNote,
-    // 🆕 R/R 비율 필드
     rr_ratio:rrRatio, rr_grade:rrGrade, rr_risk:riskAmt, rr_reward:rewardAmt, rr_label:rrLabel,
+    // 섹터 정보
+    sector:   q.sector   ?? null,
+    industry: q.industry ?? null,
   };
 }
 
