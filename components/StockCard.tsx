@@ -70,7 +70,7 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
 
   const score = Math.min(10, Math.max(1, Math.round(Number(stock.momentum_score) * 2) / 2));
   const c = sigColors(stock.signal);
- const s = stock as unknown as Record<string, unknown>;
+  const s = stock as Record<string, unknown>;
 
   const regimeNote = s.regime_note as string | null ?? null;
   const regimeStyle = regimeNote ? regimeBadgeStyle(regimeNote) : null;
@@ -84,6 +84,18 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
   const rrBarWidth = rrRatio ? Math.min(100, (rrRatio / 5) * 100) : 0;
 
   // 🆕 눌림목 데이터
+  // 🆕 매크로 이벤트 경고 (localStorage에서 읽기)
+  const [macroWarning, setMacroWarning] = useState<{ title: string; daysUntil: number; date: string } | null>(null);
+  useEffect(() => {
+    try {
+      const cached = localStorage.getItem('mt_macro_v1');
+      if (cached) {
+        const macro = JSON.parse(cached);
+        if (macro.nextUrgent) setMacroWarning({ title: macro.nextUrgent.title, daysUntil: macro.nextUrgent.daysUntil, date: macro.nextUrgent.date });
+      }
+    } catch {}
+  }, []);
+
   const pbIs      = s.pullback_is      as boolean ?? false;
   const pbGrade   = s.pullback_grade   as string | null ?? null;
   const pbPct     = s.pullback_pct     as number ?? 0;
@@ -135,6 +147,12 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
           {regimeNote && regimeStyle && (
             <span className={`text-[9px] px-1.5 py-0.5 rounded border ${regimeStyle.bg} ${regimeStyle.text} ${regimeStyle.border}`}>{regimeNote.split('—')[0].trim()}</span>
           )}
+          {/* 🆕 매크로 이벤트 임박 배지 — 매수 신호 종목만 */}
+          {macroWarning && stock.signal.includes('BUY') && (
+            <span className="text-[9px] bg-red-950 text-red-300 border border-red-700 px-1.5 py-0.5 rounded">
+              ⚡ {macroWarning.title} D-{macroWarning.daysUntil}
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-2 shrink-0 ml-2">
           <span className={`text-xs font-semibold px-2.5 py-1 rounded-md border ${c.badge}`}>{SIG_KO[stock.signal] ?? stock.signal}</span>
@@ -157,6 +175,10 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
           {stock.entry_zone && <span>진입 <span className="text-emerald-400 font-mono">{stock.entry_zone}</span></span>}
           {stock.stop_loss  && <span>손절 <span className="text-red-400 font-mono">{stock.stop_loss}</span></span>}
           {regimeNote && regimeStyle && <span className={regimeStyle.text}>{regimeNote}</span>}
+          {/* 🆕 접힌 상태 매크로 경고 */}
+          {macroWarning && stock.signal.includes('BUY') && (
+            <span className="text-red-400">⚡ {macroWarning.title} D-{macroWarning.daysUntil} — 진입 주의</span>
+          )}
         </div>
       )}
 
@@ -171,6 +193,22 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
             <div className={`mb-4 p-3 rounded-lg border ${regimeStyle.block}`}>
               <span className="text-[10px] uppercase tracking-widest opacity-70">시장 국면 필터</span>
               <p className="text-xs font-semibold mt-0.5" style={{ fontFamily: 'system-ui' }}>{regimeNote}</p>
+            </div>
+          )}
+
+          {/* 🆕 매크로 이벤트 경고 블록 */}
+          {macroWarning && stock.signal.includes('BUY') && (
+            <div className="mb-4 p-3 rounded-lg border border-red-800 bg-red-950/20">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-[10px] text-zinc-500 uppercase tracking-widest">매크로 이벤트 경고</span>
+                <span className="text-[9px] bg-red-900 text-red-300 border border-red-700 px-1.5 py-0.5 rounded">D-{macroWarning.daysUntil}</span>
+              </div>
+              <p className="text-xs text-red-300 font-semibold" style={{ fontFamily: 'system-ui' }}>
+                ⚡ {macroWarning.title} ({macroWarning.date}) — 이벤트 전 신규 진입 자제 권고
+              </p>
+              <p className="text-[10px] text-zinc-500 mt-1" style={{ fontFamily: 'system-ui' }}>
+                FOMC/CPI/NFP 등 주요 지표 발표 전후 변동성이 크게 확대될 수 있습니다. 기존 포지션 손절 라인 재확인 권장.
+              </p>
             </div>
           )}
 
