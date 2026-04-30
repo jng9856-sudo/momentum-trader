@@ -99,6 +99,165 @@ function calcRRRatio(
   };
 }
 
+// ── 🆕 Pocket Pivot 감지 ──────────────────────────────────────────────────────
+// Minervini 정의: MA 위에서 거래량이 직전 10일 중 가장 높은 하락일 거래량보다 많은 날
+// → 기관이 조용히 매집하는 "선취매 타점"
+interface PocketPivotResult {
+  isPocketPivot:    boolean;
+  daysAgo:          number;   // 0 = 오늘, 1 = 어제
+  volume:           number;   // 해당일 거래량
+  maxDownVol:       number;   // 직전 10일 최대 하락일 거래량
+  volRatio:         number;   // volume / maxDownVol
+  aboveMA:          string | null;  // 돌파한 MA 이름
+  detail:           string;
+}
+
+function detectPocketPivot(
+  closes:  number[],
+  volumes: number[],
+  mas:     Record<string, number>
+): PocketPivotResult {
+  const empty: PocketPivotResult = {
+    isPocketPivot: false, daysAgo: -1, volume: 0,
+    maxDownVol: 0, volRatio: 0, aboveMA: null, detail: '피벗 없음',
+  };
+  if (closes.length < 15 || volumes.length < 15) return empty;
+
+  // 직전 10일 중 하락일(종가 < 전일 종가)의 최대 거래량
+  const lookback = closes.slice(-12, -1);  // 11일치 (비교용)
+  const volSlice  = volumes.slice(-12, -1);
+  const downVols: number[] = [];
+  for (let i = 1; i < lookback.length; i++) {
+    if (lookback[i] < lookback[i - 1]) downVols.push(volSlice[i]);
+  }
+  if (downVols.length === 0) return { ...empty, detail: '하락일 없음 (상승 추세)' };
+  const maxDownVol = Math.max(...downVols);
+
+  // 오늘과 어제 각각 체크 (daysAgo = 0, 1)
+  for (const daysAgo of [0, 1]) {
+    const idx     = closes.length - 1 - daysAgo;
+    const price   = closes[idx];
+    const prevPrice = closes[idx - 1];
+    const vol     = volumes[idx];
+
+    // 조건 1: 상승일 (종가 > 전일 종가)
+    if (price <= prevPrice) continue;
+
+    // 조건 2: 거래량이 최대 하락일 거래량 초과
+    if (vol <= maxDownVol) continue;
+
+    // 조건 3: 주요 MA 위에 있는지 확인
+    const maPriority = [
+      { name: 'MA10',  val: mas.ma10  },
+      { name: 'MA20',  val: mas.ma20  },
+      { name: 'MA50',  val: mas.ma50  },
+    ];
+    const aboveMA = maPriority.find(m => !isNaN(m.val) && price > m.val)?.name ?? null;
+    if (!aboveMA) continue;
+
+    const volRatio = Math.round((vol / maxDownVol) * 100) / 100;
+    return {
+      isPocketPivot: true,
+      daysAgo,
+      volume:     vol,
+      maxDownVol,
+      volRatio,
+      aboveMA,
+      detail: `${daysAgo === 0 ? '오늘' : '어제'} 포켓 피벗 — ${aboveMA} 위 거래량 ${volRatio}x (하락일 최대 대비)`,
+    };
+  }
+  return { ...empty, detail: '포켓 피벗 조건 미충족' };
+}
+
+// ── 🆕 RS Line 다이버전스 ─────────────────────────────────────────────────────
+// SPY 대비 상대강도 선(RS Line) 분석
+// 핵심: SPY가 신저점인데 RS Line이 신저점 아니면 → 최우량 VCP 후보
+interface RSLineResult {
+  rsLine:           number;    // 현재 RS Line 값 (종목가 / SPY가)
+  rsLineTrend:      'UP' | 'DOWN' | 'FLAT';
+  divergence:       'BULLISH' | 'BEARISH' | 'NONE';
+  // BULLISH: SPY 신저 but RS Line 유지/상승 → 최고 시그널
+  // BEARISH: SPY 신고 but RS Line 하락 → 경고
+  spyNewLow:        boolean;   // SPY가 최근 20일 신저점
+  rsLineNewHigh:    boolean;   // RS Line이 최근 20일 신고점
+  rs3mChange:       number;    // 3개월 RS Line 변화율 (%)
+  detail:           string;
+}
+
+function calcRSLine(
+  closes:    number[],   // 종목 종가
+  spyCloses: number[]    // SPY 종가 (동기화된)
+): RSLineResult {
+  const empty: RSLineResult = {
+    rsLine: 0, rsLineTrend: 'FLAT', divergence: 'NONE',
+    spyNewLow: false, rsLineNewHigh: false, rs3mChange: 0, detail: '데이터 부족',
+  };
+
+  // 길이 동기화: 짧은 쪽에 맞춤
+  const len = Math.min(closes.length, spyCloses.length);
+  if (len < 30) return empty;
+
+  const stockSlice = closes.slice(-len);
+  const spySlice   = spyCloses.slice(-len);
+
+  // RS Line 계산 (종목가 / SPY가 × 100)
+  const rsLineArr = stockSlice.map((c, i) => (c / spySlice[i]) * 100);
+  const currentRS = rsLineArr[rsLineArr.length - 1];
+
+  // RS Line 추세 (최근 10일 vs 이전 10일)
+  const recentRS = rsLineArr.slice(-10);
+  const prevRS   = rsLineArr.slice(-20, -10);
+  const recentAvg = recentRS.reduce((a, b) => a + b, 0) / recentRS.length;
+  const prevAvg   = prevRS.reduce((a, b)   => a + b, 0) / prevRS.length;
+  const rsChange  = ((recentAvg - prevAvg) / prevAvg) * 100;
+  const rsLineTrend: 'UP' | 'DOWN' | 'FLAT' =
+    rsChange > 1 ? 'UP' : rsChange < -1 ? 'DOWN' : 'FLAT';
+
+  // 3개월 RS Line 변화율
+  const rs3mAgo    = rsLineArr[Math.max(0, rsLineArr.length - 63)];
+  const rs3mChange = Math.round(((currentRS - rs3mAgo) / rs3mAgo) * 1000) / 10;
+
+  // SPY 최근 20일 신저점 여부
+  const spyRecent20  = spySlice.slice(-20);
+  const spyMin20     = Math.min(...spyRecent20.slice(0, -1)); // 오늘 제외
+  const spyNewLow    = spySlice[spySlice.length - 1] <= spyMin20 * 1.01; // 1% 이내
+
+  // RS Line 최근 20일 신고점 여부
+  const rsRecent20   = rsLineArr.slice(-20);
+  const rsMax20      = Math.max(...rsRecent20.slice(0, -1)); // 오늘 제외
+  const rsLineNewHigh = rsLineArr[rsLineArr.length - 1] >= rsMax20 * 0.98; // 2% 이내
+
+  // 다이버전스 판정
+  let divergence: 'BULLISH' | 'BEARISH' | 'NONE' = 'NONE';
+  let detail = '';
+
+  if (spyNewLow && rsLineNewHigh) {
+    // 🏆 최고 시그널: SPY 신저 but RS Line 강세 유지
+    divergence = 'BULLISH';
+    detail = '🏆 RS 강세 다이버전스 — SPY 신저점인데 RS Line 강세 유지 (최우량 VCP 후보)';
+  } else if (!spyNewLow && rsLineTrend === 'DOWN' && rsChange < -3) {
+    // 경고: 시장은 괜찮은데 RS Line 하락
+    divergence = 'BEARISH';
+    detail = `⚠ RS 약세 다이버전스 — 시장 대비 상대강도 약화 (${rs3mChange > 0 ? '+' : ''}${rs3mChange}% 3개월)`;
+  } else if (rsLineTrend === 'UP') {
+    detail = `RS Line 상승 추세 — 시장 대비 강세 (3개월 ${rs3mChange > 0 ? '+' : ''}${rs3mChange}%)`;
+  } else if (rsLineTrend === 'DOWN') {
+    detail = `RS Line 하락 추세 — 시장 대비 약세 (3개월 ${rs3mChange > 0 ? '+' : ''}${rs3mChange}%)`;
+  } else {
+    detail = `RS Line 횡보 — 시장과 유사한 움직임 (3개월 ${rs3mChange > 0 ? '+' : ''}${rs3mChange}%)`;
+  }
+
+  return {
+    rsLine:        Math.round(currentRS * 100) / 100,
+    rsLineTrend,
+    divergence,
+    spyNewLow,
+    rsLineNewHigh,
+    rs3mChange,
+    detail,
+  };
+}
+
 // ── Market Regime Filter ──────────────────────────────────────────────────────
 export type MarketRegime = 'BULL' | 'NEUTRAL' | 'CAUTION' | 'BEAR';
 
@@ -342,14 +501,15 @@ interface QuoteData {
   high52w: number; low52w: number; distFromHigh: number; momentum3m: number;
   rsi: number; macdHistogram: number; bbPosition: number; atrPct: number; atrAbs: number; volumeRatio: number;
   closes: number[]; volumes: number[];
+  spyCloses: number[];  // RS Line 계산용
   vcp: VCPResult; pivot: { isBroken: boolean; distFromPivot: number; withinChaseLimit: boolean };
   obv: { trend: 'UP'|'DOWN'|'FLAT'; divergence: boolean; detail: string };
   shortInterest: { shortPct: number|null; shortRatio: number|null; squeezePotential: 'HIGH'|'MEDIUM'|'LOW'; shortDetail: string } | null;
   weekly: WeeklyData | null;
   breakout52w: { isBreakout: boolean; breakoutDay: number; prev52wHigh: number; breakoutPct: number; volConfirmed: boolean; detail: string };
   earningSurprise: { hasSurprise: boolean; surprisePct: number|null; peadSignal: boolean; detail: string } | null;
-  sector: string | null;   // 🆕
-  industry: string | null; // 🆕
+  sector: string | null;
+  industry: string | null;
 }
 
 async function fetchQuote(ticker: string): Promise<QuoteData | null> {
@@ -386,7 +546,7 @@ async function fetchQuote(ticker: string): Promise<QuoteData | null> {
     const [shortInterest, weekly, earningSurprise, sectorData] = await Promise.all([fetchShortInterest(ticker), fetchWeeklyData(ticker), fetchEarningsSurprise(ticker), fetchSector(ticker)]);
     const breakout52w=detect52wBreakout(cs,vs), vcp=detectVCP(cs,vs,high52w), pivot=checkPivotBreakout(cs,vs,vcp.pivotPrice);
     const r = (n: number, d=2) => Math.round(n * 10**d) / 10**d;
-    return { ticker, price:r(price), change1d:r(change1d,1), ytdReturn:r(ytdReturn,1), momentum3m:r(momentum3m,1), ma10:r(ma10), ma20:r(ma20), ma30:r(ma30), ma50:r(ma50), ma120:r(ma120), ma200:r(ma200), high52w:r(high52w), low52w:r(low52w), distFromHigh:r(distFromHigh,1), rsi:r(rsi,1), macdHistogram:r(histogram,4), bbPosition:Math.round(position), atrPct:r((atrVal/price)*100,2), atrAbs:r(atrVal,2), volumeRatio:r(volRatio,2), closes:cs.slice(-30), volumes:vs.slice(-15), vcp, pivot, obv, shortInterest, weekly, breakout52w, earningSurprise, sector: sectorData.sector, industry: sectorData.industry };
+    return { ticker, price:r(price), change1d:r(change1d,1), ytdReturn:r(ytdReturn,1), momentum3m:r(momentum3m,1), ma10:r(ma10), ma20:r(ma20), ma30:r(ma30), ma50:r(ma50), ma120:r(ma120), ma200:r(ma200), high52w:r(high52w), low52w:r(low52w), distFromHigh:r(distFromHigh,1), rsi:r(rsi,1), macdHistogram:r(histogram,4), bbPosition:Math.round(position), atrPct:r((atrVal/price)*100,2), atrAbs:r(atrVal,2), volumeRatio:r(volRatio,2), closes:cs.slice(-70), volumes:vs.slice(-15), spyCloses:[], vcp, pivot, obv, shortInterest, weekly, breakout52w, earningSurprise, sector: sectorData.sector, industry: sectorData.industry };
   } catch { return null; }
 }
 
@@ -397,6 +557,11 @@ function analyzeStock(q: QuoteData, spyYtd: number, sectorAvgYtd: number, regime
   const mas={ma10:q.ma10,ma20:q.ma20,ma30:q.ma30,ma50:q.ma50,ma120:q.ma120};
   const { aboveCount, stackedBull, stackedBear, nearestSupport, nearest }=calcMAAlignment(q.price, mas);
   const ma50Status=q.price>q.ma50*1.01?'ABOVE':q.price<q.ma50*0.99?'BELOW':'AT';
+
+  // 🆕 Pocket Pivot & RS Line 계산
+  const pocketPivot = detectPocketPivot(q.closes, q.volumes, mas);
+  const rsLine      = calcRSLine(q.closes, q.spyCloses);
+
   let pattern='NONE';
   if (q.vcp.isVCP && q.pivot.isBroken) pattern='BREAKOUT';
   else if (q.vcp.isVCP && !q.pivot.isBroken) pattern='CUP';
@@ -423,6 +588,16 @@ function analyzeStock(q: QuoteData, spyYtd: number, sectorAvgYtd: number, regime
   if (q.earningSurprise?.hasSurprise&&(q.earningSurprise.surprisePct??0)>15) score+=0.3;
   if (q.pivot.isBroken&&q.pivot.withinChaseLimit) score+=0.5;
   if (q.vcp.lowestVolWeekInBase) score+=0.3;
+  // 🆕 Pocket Pivot 점수
+  if (pocketPivot.isPocketPivot) {
+    if (pocketPivot.daysAgo === 0) score += 1.5;  // 오늘 포켓 피벗
+    else score += 0.8;                              // 어제 포켓 피벗
+  }
+  // 🆕 RS Line 점수
+  if (rsLine.divergence === 'BULLISH') score += 1.5; // 최우량 — SPY 신저 but RS 강세
+  else if (rsLine.rsLineTrend === 'UP') score += 0.5;
+  else if (rsLine.divergence === 'BEARISH') score -= 0.8;
+  else if (rsLine.rsLineTrend === 'DOWN') score -= 0.3;
   score=Math.max(1,Math.min(10,Math.round(score*2)/2));
 
   const macdBull=q.macdHistogram>0, macdBear=q.macdHistogram<0, rsiOk=q.rsi>=45&&q.rsi<=75, volStrong=q.volumeRatio>1.5;
@@ -430,6 +605,10 @@ function analyzeStock(q: QuoteData, spyYtd: number, sectorAvgYtd: number, regime
   if (q.breakout52w.isBreakout&&q.breakout52w.breakoutDay===0&&q.breakout52w.volConfirmed&&aboveCount>=3&&rsIndex!=='WEAK') signal='STRONG_BUY';
   else if (q.vcp.isVCP&&q.pivot.isBroken&&q.pivot.withinChaseLimit&&volStrong&&aboveCount>=3) signal='STRONG_BUY';
   else if (score>=8.5&&aboveCount>=4&&stackedBull&&macdBull&&rsiOk&&volStrong) signal='STRONG_BUY';
+  // 🆕 Pocket Pivot + RS 강세 다이버전스 = STRONG_BUY 승격
+  else if (pocketPivot.isPocketPivot && pocketPivot.daysAgo===0 && rsLine.divergence==='BULLISH' && aboveCount>=3) signal='STRONG_BUY';
+  // 🆕 Pocket Pivot 단독 = BUY 승격
+  else if (pocketPivot.isPocketPivot && aboveCount>=3 && macdBull) signal='BUY';
   else if (score>=7&&aboveCount>=3&&rsIndex!=='WEAK') signal='BUY';
   else if (score<=2||(aboveCount===0&&macdBear&&rsIndex==='WEAK')) signal='STRONG_SELL';
   else if (score<=4||(aboveCount<=1&&rsIndex==='WEAK')) signal='SELL';
@@ -441,10 +620,7 @@ function analyzeStock(q: QuoteData, spyYtd: number, sectorAvgYtd: number, regime
   const { entry, stopLoss }=calcEntryZone(q.price, mas, q.atrAbs, signal, q.distFromHigh, q.vcp, q.pivot);
   const support=nearestSupport?`$${Math.round(nearestSupport*100)/100} (${nearest})`:`$${q.ma50}`;
   const resistance=`$${q.high52w}`;
-
-  // ── 🆕 R/R 비율 계산 ────────────────────────────────────────────────────────
   const { rrRatio, rrGrade, riskAmt, rewardAmt, rrLabel } = calcRRRatio(entry, stopLoss, resistance, q.price);
-  // ────────────────────────────────────────────────────────────────────────────
 
   const maStatus=`MA ${aboveCount}/5개 위${stackedBull?' (정배열)':stackedBear?' (역배열)':''}`;
   const signalWord={STRONG_BUY:'즉시매수',BUY:'매수',HOLD:'관망',SELL:'매도',STRONG_SELL:'즉시매도'}[signal]??signal;
@@ -452,12 +628,14 @@ function analyzeStock(q: QuoteData, spyYtd: number, sectorAvgYtd: number, regime
 
   const cautions: string[]=[];
   if (regimeNote) cautions.push(regimeNote);
-  if (rrGrade==='POOR'&&signal.includes('BUY')) cautions.push(`R/R ${rrLabel} — 리스크 대비 수익 불리, 진입 재검토`); // 🆕 R/R 경고
+  if (rrGrade==='POOR'&&signal.includes('BUY')) cautions.push(`R/R ${rrLabel} — 리스크 대비 수익 불리, 진입 재검토`);
   if (q.rsi>78) cautions.push(`RSI ${q.rsi} 과열`);
   if (q.bbPosition>90) cautions.push('BB 상단 근접');
   if (q.distFromHigh>-3&&signal.includes('BUY')&&!q.pivot.isBroken) cautions.push('52주 고점 근접 — 돌파 확인 후 진입');
   if (q.pivot.isBroken&&!q.pivot.withinChaseLimit) cautions.push(`피봇 돌파 후 ${q.pivot.distFromPivot}% — 추격 한도 초과`);
   if (q.volumeRatio<0.6) cautions.push('거래량 부족');
+  // 🆕 RS Line 경고
+  if (rsLine.divergence==='BEARISH') cautions.push(rsLine.detail);
   if (q.obv.divergence) cautions.push(q.obv.detail);
   if (q.weekly?.trend==='DOWNTREND') cautions.push('주봉 하락추세');
   if (q.shortInterest?.shortPct&&q.shortInterest.shortPct>20) cautions.push(q.shortInterest.shortDetail);
@@ -490,6 +668,20 @@ function analyzeStock(q: QuoteData, spyYtd: number, sectorAvgYtd: number, regime
     // 섹터 정보
     sector:   q.sector   ?? null,
     industry: q.industry ?? null,
+    // 🆕 Pocket Pivot
+    pocket_pivot:          pocketPivot.isPocketPivot,
+    pocket_pivot_days_ago: pocketPivot.daysAgo,
+    pocket_pivot_vol_ratio: pocketPivot.volRatio,
+    pocket_pivot_above_ma:  pocketPivot.aboveMA,
+    pocket_pivot_detail:    pocketPivot.detail,
+    // 🆕 RS Line
+    rs_line:               rsLine.rsLine,
+    rs_line_trend:         rsLine.rsLineTrend,
+    rs_line_divergence:    rsLine.divergence,
+    rs_line_new_high:      rsLine.rsLineNewHigh,
+    rs_line_spy_new_low:   rsLine.spyNewLow,
+    rs_line_3m_change:     rsLine.rs3mChange,
+    rs_line_detail:        rsLine.detail,
   };
 }
 
@@ -506,7 +698,12 @@ export async function POST(req: NextRequest) {
 
   const spyYtd=spyQuote?.ytdReturn??0;
   const sectorAvgYtd=validStocks.reduce((a,s)=>a+s.ytdReturn,0)/validStocks.length;
-  const stocks=validStocks.map(q=>analyzeStock(q,spyYtd,sectorAvgYtd,regime));
+  // SPY 종가 데이터를 각 종목에 주입 (RS Line 계산용)
+  const spyClosesForRS = spyQuote?.closes ?? [];
+  const stocks=validStocks.map(q => {
+    q.spyCloses = spyClosesForRS;
+    return analyzeStock(q, spyYtd, sectorAvgYtd, regime);
+  });
 
   const ytdValues=validStocks.map(s=>s.ytdReturn).sort((a,b)=>a-b), totalCount=ytdValues.length;
   for (let i=0;i<stocks.length;i++) {
