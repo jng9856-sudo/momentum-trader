@@ -108,6 +108,10 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
   const pbDetail        = stock.pullback_detail         ?? '';
   const pbc = pullbackColors(pbGrade);
 
+  // 섹터 정보
+  const sector   = stock.sector   ?? null;
+  const industry = stock.industry ?? null;
+
   return (
     <div className={`stock-card border border-zinc-800 border-l-4 ${c.border} rounded-xl bg-bg-card ${highlight ? 'ring-1 ring-emerald-500/20' : ''}`}>
 
@@ -164,6 +168,8 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
       {/* ── 접힌 상태 ── */}
       {!open && (
         <div className="px-4 pb-3 border-t border-zinc-900 pt-2 flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-zinc-500">
+          {/* 섹터 — 맨 앞에 표시 */}
+          {sector && <span className="text-zinc-400 font-medium">{sector}</span>}
           <span>지수RS <span className={rsClass(stock.rs_vs_index)}>{RS_KO[stock.rs_vs_index]}</span></span>
           <span>섹터RS <span className={rsClass(stock.rs_vs_sector)}>{RS_KO[stock.rs_vs_sector]}</span></span>
           <span>RSI <span className={stock.rsi > 78 ? 'text-red-400' : stock.rsi >= 45 && stock.rsi <= 72 ? 'text-emerald-400' : 'text-amber-400'}>{stock.rsi}</span></span>
@@ -175,7 +181,6 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
           {stock.entry_zone && <span>진입 <span className="text-emerald-400 font-mono">{stock.entry_zone}</span></span>}
           {stock.stop_loss  && <span>손절 <span className="text-red-400 font-mono">{stock.stop_loss}</span></span>}
           {regimeNote && regimeStyle && <span className={regimeStyle.text}>{regimeNote}</span>}
-          {/* 🆕 접힌 상태 매크로 경고 */}
           {macroWarning && stock.signal.includes('BUY') && (
             <span className="text-red-400">⚡ {macroWarning.title} D-{macroWarning.daysUntil} — 진입 주의</span>
           )}
@@ -316,6 +321,16 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
             <Metric label="이동평균"><span className={`text-sm font-medium ${stock.ma50_status === 'ABOVE' ? 'text-emerald-400' : stock.ma50_status === 'BELOW' ? 'text-red-400' : 'text-zinc-400'}`}>{MA_KO[stock.ma50_status]}</span></Metric>
             <Metric label="패턴"><span className="text-sm font-medium text-zinc-300">{PT_KO[stock.pattern]}</span></Metric>
           </div>
+
+          {/* 섹터/업종 정보 */}
+          {(sector || industry) && (
+            <div className="flex items-center gap-2 mb-4 px-3 py-2 rounded-lg border border-zinc-800 bg-zinc-900/30">
+              <span className="text-[10px] text-zinc-600 uppercase tracking-widest shrink-0">섹터</span>
+              {sector && <span className="text-xs text-zinc-300 font-medium">{sector}</span>}
+              {sector && industry && <span className="text-zinc-700">·</span>}
+              {industry && <span className="text-[11px] text-zinc-500">{industry}</span>}
+            </div>
+          )}
 
           {/* 확장 지표 */}
           <div className="grid grid-cols-5 gap-2 mb-4 p-3 bg-zinc-900/50 rounded-lg">
