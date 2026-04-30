@@ -129,6 +129,24 @@ export interface StockAnalysis {
   rs_line_spy_new_low?:     boolean;
   rs_line_3m_change?:       number;
   rs_line_detail?:          string;
+
+  // ── 6번: 트레일링 스탑 ────────────────────────────────────────────────────
+  trail_initial_stop?:      number;
+  trail_stop_10?:           number;
+  trail_stop_20?:           number;
+  trail_stop_30?:           number;
+  trail_multiplier?:        number;
+  trail_break_even?:        number;
+  trail_detail?:            string;
+
+  // ── 7번: 분할 매수/매도 구간 ──────────────────────────────────────────────
+  split_entry1?:  { price: string; ratio: number; condition: string } | null;
+  split_entry2?:  { price: string; ratio: number; condition: string } | null;
+  split_entry3?:  { price: string; ratio: number; condition: string } | null;
+  split_exit1?:   { price: string; ratio: number; gain: string } | null;
+  split_exit2?:   { price: string; ratio: number; gain: string } | null;
+  split_exit3?:   { price: string; ratio: number; gain: string } | null;
+  split_avg_entry?: number | null;
 }
 
 export interface AnalysisResult {
