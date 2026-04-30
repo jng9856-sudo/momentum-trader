@@ -70,7 +70,7 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
 
   const score = Math.min(10, Math.max(1, Math.round(Number(stock.momentum_score) * 2) / 2));
   const c = sigColors(stock.signal);
-  const s = stock as Record<string, unknown>;
+  const s = stock as unknown as Record<string, unknown>;
 
   const regimeNote = s.regime_note as string | null ?? null;
   const regimeStyle = regimeNote ? regimeBadgeStyle(regimeNote) : null;
