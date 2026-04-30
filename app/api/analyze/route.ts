@@ -43,10 +43,180 @@ function calcVolumeRatio(vs: number[], period = 20): number {
   return avg > 0 ? Math.round((vs[vs.length-1] / avg) * 100) / 100 : 1;
 }
 
+// ── 🆕 Market Regime Filter ───────────────────────────────────────────────────
+// SPY 200일선 위치 + VIX 레벨로 시장 국면 4단계 판정
+// 국면에 따라 개별 종목 신호 강등
+export type MarketRegime = 'BULL' | 'NEUTRAL' | 'CAUTION' | 'BEAR';
+
+interface MarketRegimeData {
+  regime:       MarketRegime;
+  spyPrice:     number;
+  spyMa200:     number;
+  spyAboveMa200: boolean;
+  spyMa200Dist: number;   // SPY의 200일선 대비 거리 (%)
+  vix:          number;
+  vixLevel:     'LOW' | 'MID' | 'HIGH' | 'EXTREME';
+  qqqAboveMa200: boolean;
+  label:        string;
+  emoji:        string;
+  signalAdjust: string;   // 신호 조정 설명
+}
+
+async function fetchMarketRegime(): Promise<MarketRegimeData | null> {
+  try {
+    // SPY, QQQ, VIX 병렬 조회
+    const [spyRes, qqqRes, vixRes] = await Promise.all([
+      fetch('https://query1.finance.yahoo.com/v8/finance/chart/SPY?interval=1d&range=1y',
+        { headers: { 'User-Agent': 'Mozilla/5.0' }, next: { revalidate: 3600 } }),
+      fetch('https://query1.finance.yahoo.com/v8/finance/chart/QQQ?interval=1d&range=1y',
+        { headers: { 'User-Agent': 'Mozilla/5.0' }, next: { revalidate: 3600 } }),
+      fetch('https://query1.finance.yahoo.com/v8/finance/chart/%5EVIX?interval=1d&range=5d',
+        { headers: { 'User-Agent': 'Mozilla/5.0' }, next: { revalidate: 3600 } }),
+    ]);
+
+    // SPY 200일선
+    let spyPrice = 0, spyMa200 = 0, spyAboveMa200 = false, spyMa200Dist = 0;
+    if (spyRes.ok) {
+      const sd = await spyRes.json();
+      const sc: number[] = (sd?.chart?.result?.[0]?.indicators?.quote?.[0]?.close ?? [])
+        .filter((v: number) => v != null && !isNaN(v));
+      if (sc.length >= 200) {
+        spyPrice     = sc[sc.length - 1];
+        spyMa200     = calcMA(sc, 200);
+        spyAboveMa200 = spyPrice > spyMa200;
+        spyMa200Dist  = Math.round(((spyPrice - spyMa200) / spyMa200) * 1000) / 10;
+      }
+    }
+
+    // QQQ 200일선
+    let qqqAboveMa200 = false;
+    if (qqqRes.ok) {
+      const qd = await qqqRes.json();
+      const qc: number[] = (qd?.chart?.result?.[0]?.indicators?.quote?.[0]?.close ?? [])
+        .filter((v: number) => v != null && !isNaN(v));
+      if (qc.length >= 200) {
+        const qqqPrice  = qc[qc.length - 1];
+        const qqqMa200  = calcMA(qc, 200);
+        qqqAboveMa200   = qqqPrice > qqqMa200;
+      }
+    }
+
+    // VIX 현재가
+    let vix = 20; // 기본값
+    if (vixRes.ok) {
+      const vd = await vixRes.json();
+      const vc: number[] = (vd?.chart?.result?.[0]?.indicators?.quote?.[0]?.close ?? [])
+        .filter((v: number) => v != null && !isNaN(v));
+      if (vc.length > 0) vix = Math.round(vc[vc.length - 1] * 10) / 10;
+    }
+
+    // VIX 레벨 분류
+    const vixLevel: 'LOW' | 'MID' | 'HIGH' | 'EXTREME' =
+      vix < 15 ? 'LOW' :
+      vix < 20 ? 'LOW' :
+      vix < 25 ? 'MID' :
+      vix < 35 ? 'HIGH' : 'EXTREME';
+
+    // ── 국면 판정 (4단계) ────────────────────────────────────────────────────
+    let regime: MarketRegime;
+    let label: string;
+    let emoji: string;
+    let signalAdjust: string;
+
+    if (spyAboveMa200 && qqqAboveMa200 && vix < 20) {
+      // 🟢 강세장: SPY+QQQ 200일선 위 + VIX 낮음
+      regime      = 'BULL';
+      label       = '강세장';
+      emoji       = '🟢';
+      signalAdjust = '신호 그대로 적용';
+    } else if (spyAboveMa200 && vix < 25) {
+      // 🟡 중립: SPY 200일선 위지만 VIX 약간 상승 or QQQ 아래
+      regime      = 'NEUTRAL';
+      label       = '중립';
+      emoji       = '🟡';
+      signalAdjust = 'STRONG_BUY → BUY 강등';
+    } else if (!spyAboveMa200 && vix < 35) {
+      // 🟠 약세주의: SPY 200일선 아래
+      regime      = 'CAUTION';
+      label       = '약세주의';
+      emoji       = '🟠';
+      signalAdjust = 'BUY 이하 → HOLD 강등 / STRONG_BUY → BUY 강등';
+    } else {
+      // 🔴 약세장: SPY 200일선 아래 + VIX 35 이상
+      regime      = 'BEAR';
+      label       = '약세장';
+      emoji       = '🔴';
+      signalAdjust = '모든 매수 신호 → HOLD 강등';
+    }
+
+    return {
+      regime, spyPrice, spyMa200: Math.round(spyMa200 * 100) / 100,
+      spyAboveMa200, spyMa200Dist, vix, vixLevel,
+      qqqAboveMa200, label, emoji, signalAdjust,
+    };
+  } catch { return null; }
+}
+
+// ── 🆕 신호 강등 함수 ─────────────────────────────────────────────────────────
+function applyRegimeFilter(
+  signal: string,
+  score: number,
+  regime: MarketRegime
+): { adjustedSignal: string; adjustedScore: number; regimeNote: string | null } {
+  if (regime === 'BULL') {
+    // 강세장: 변경 없음
+    return { adjustedSignal: signal, adjustedScore: score, regimeNote: null };
+  }
+
+  if (regime === 'NEUTRAL') {
+    // 중립: STRONG_BUY → BUY, 점수 -0.5
+    if (signal === 'STRONG_BUY') {
+      return {
+        adjustedSignal: 'BUY',
+        adjustedScore: Math.max(1, score - 0.5),
+        regimeNote: '🟡 중립 시장 — STRONG_BUY → BUY 하향',
+      };
+    }
+    return { adjustedSignal: signal, adjustedScore: score, regimeNote: null };
+  }
+
+  if (regime === 'CAUTION') {
+    // 약세주의: STRONG_BUY → BUY, BUY → HOLD
+    if (signal === 'STRONG_BUY') {
+      return {
+        adjustedSignal: 'BUY',
+        adjustedScore: Math.max(1, score - 1),
+        regimeNote: '🟠 약세주의 — STRONG_BUY → BUY 하향 (SPY 200일선 하회)',
+      };
+    }
+    if (signal === 'BUY') {
+      return {
+        adjustedSignal: 'HOLD',
+        adjustedScore: Math.max(1, score - 1),
+        regimeNote: '🟠 약세주의 — BUY → HOLD 하향 (SPY 200일선 하회)',
+      };
+    }
+    return { adjustedSignal: signal, adjustedScore: score, regimeNote: null };
+  }
+
+  if (regime === 'BEAR') {
+    // 약세장: 모든 매수 신호 → HOLD
+    if (signal === 'STRONG_BUY' || signal === 'BUY') {
+      return {
+        adjustedSignal: 'HOLD',
+        adjustedScore: Math.max(1, score - 2),
+        regimeNote: '🔴 약세장 — 매수 신호 무효화 (SPY 200일선 하회 + VIX 35+)',
+      };
+    }
+    return { adjustedSignal: signal, adjustedScore: score, regimeNote: null };
+  }
+
+  return { adjustedSignal: signal, adjustedScore: score, regimeNote: null };
+}
+
 // ── VCP Detection ─────────────────────────────────────────────────────────────
-// Splits price history into weekly chunks, finds successive pullback contractions
 interface VCPResult {
-  score: number;          // 0–100
+  score: number;
   isVCP: boolean;
   contractionCount: number;
   lastPullbackPct: number;
@@ -56,40 +226,29 @@ interface VCPResult {
   detail: string;
 }
 
-function detectVCP(
-  closes: number[],
-  volumes: number[],
-  high52w: number
-): VCPResult {
+function detectVCP(closes: number[], volumes: number[], high52w: number): VCPResult {
   const WEEK = 5;
-  // Need at least 15 weeks of data
   if (closes.length < WEEK * 15) {
     return { score: 0, isVCP: false, contractionCount: 0, lastPullbackPct: 0, baseWeeks: 0, lowestVolWeekInBase: false, pivotPrice: null, detail: '데이터 부족' };
   }
-
-  // Build weekly OHLCV
   const weeks: { high: number; low: number; close: number; avgVol: number }[] = [];
   for (let i = closes.length - WEEK * 20; i < closes.length; i += WEEK) {
     const slice = closes.slice(i, i + WEEK);
     const vSlice = volumes.slice(i, i + WEEK).filter(v => v > 0);
     if (slice.length < 3) continue;
     weeks.push({
-      high:   Math.max(...slice),
-      low:    Math.min(...slice),
-      close:  slice[slice.length - 1],
+      high: Math.max(...slice), low: Math.min(...slice),
+      close: slice[slice.length - 1],
       avgVol: vSlice.length > 0 ? vSlice.reduce((a, b) => a + b, 0) / vSlice.length : 0,
     });
   }
   if (weeks.length < 6) return { score: 0, isVCP: false, contractionCount: 0, lastPullbackPct: 0, baseWeeks: 0, lowestVolWeekInBase: false, pivotPrice: null, detail: '데이터 부족' };
 
-  // Find the most recent consolidation base
-  // Base = period where price stays within 20% of a high
   const recentWeeks = weeks.slice(-20);
   const baseHigh = Math.max(...recentWeeks.map(w => w.high));
   const baseLow  = Math.min(...recentWeeks.map(w => w.low));
-  const baseDepth = ((baseHigh - baseLow) / baseHigh) * 100;
+  void baseLow;
 
-  // Find base start (where price peaked before consolidation)
   let baseStartIdx = recentWeeks.length - 1;
   for (let i = recentWeeks.length - 2; i >= 0; i--) {
     if (recentWeeks[i].high >= baseHigh * 0.98) { baseStartIdx = i; break; }
@@ -97,17 +256,13 @@ function detectVCP(
   const baseWeeks = recentWeeks.length - baseStartIdx;
   const baseSlice = recentWeeks.slice(baseStartIdx);
 
-  // Find pullback swings within base
   const pullbacks: number[] = [];
   for (let i = 1; i < baseSlice.length; i++) {
     const localHigh = baseSlice[i-1].high;
     const localLow  = baseSlice[i].low;
-    if (localLow < localHigh) {
-      pullbacks.push(((localHigh - localLow) / localHigh) * 100);
-    }
+    if (localLow < localHigh) pullbacks.push(((localHigh - localLow) / localHigh) * 100);
   }
 
-  // VCP: pullbacks should be contracting (each smaller than previous)
   let contractionCount = 0;
   for (let i = 1; i < pullbacks.length; i++) {
     if (pullbacks[i] < pullbacks[i-1] * 0.85) contractionCount++;
@@ -115,48 +270,30 @@ function detectVCP(
 
   const lastPullback = pullbacks[pullbacks.length - 1] ?? 0;
 
-  // Check for lowest volume week in base (institutions not selling)
   const baseVols = baseSlice.map(w => w.avgVol).filter(v => v > 0);
   const overallAvgVol = recentWeeks.map(w => w.avgVol).filter(v => v > 0)
     .reduce((a, b) => a + b, 0) / recentWeeks.length;
   const minBaseVol = Math.min(...baseVols);
   const lowestVolWeekInBase = minBaseVol < overallAvgVol * 0.7;
-
-  // Pivot = top of latest base (breakout point)
   const pivotPrice = baseHigh;
 
-  // ── VCP Score (0–100) ──────────────────────────────────────────────────
   let vcpScore = 0;
-
-  // Condition 1: 52w 고점 5% 이내 (0~25점)
   const price = closes[closes.length - 1];
   const distFrom52wHigh = ((price - high52w) / high52w) * 100;
-  if (distFrom52wHigh > -2)  vcpScore += 25;
-  else if (distFrom52wHigh > -5)  vcpScore += 20;
+  if (distFrom52wHigh > -2) vcpScore += 25;
+  else if (distFrom52wHigh > -5) vcpScore += 20;
   else if (distFrom52wHigh > -10) vcpScore += 10;
   else if (distFrom52wHigh > -15) vcpScore += 5;
-
-  // Condition 2: 베이스 기간 3주 이상 (0~20점)
-  if (baseWeeks >= 8)      vcpScore += 20;
+  if (baseWeeks >= 8) vcpScore += 20;
   else if (baseWeeks >= 5) vcpScore += 15;
   else if (baseWeeks >= 3) vcpScore += 10;
-
-  // Condition 3: 베이스 내 저거래량 주 존재 (0~20점)
   if (lowestVolWeekInBase) vcpScore += 20;
-
-  // Condition 4: 돌파 당일 거래량 (passed separately via volumeRatio)
-  // handled in main score
-
-  // Condition 5: 수렴 횟수 (0~20점)
   vcpScore += Math.min(20, contractionCount * 7);
-
-  // Condition 6: 마지막 풀백 3% 이하 (0~15점) — tight consolidation
-  if (lastPullback <= 2)      vcpScore += 15;
+  if (lastPullback <= 2) vcpScore += 15;
   else if (lastPullback <= 4) vcpScore += 10;
   else if (lastPullback <= 6) vcpScore += 5;
 
   const isVCP = vcpScore >= 50 && contractionCount >= 2 && baseWeeks >= 3;
-
   const detail = isVCP
     ? `VCP 확인: ${contractionCount}회 수렴 · 베이스 ${baseWeeks}주 · 마지막 조정 ${lastPullback.toFixed(1)}%${lowestVolWeekInBase ? ' · 저거래량 확인' : ''}`
     : `VCP 미충족: 수렴${contractionCount}회 · 베이스${baseWeeks}주 · 조정${lastPullback.toFixed(1)}%`;
@@ -164,7 +301,6 @@ function detectVCP(
   return { score: vcpScore, isVCP, contractionCount, lastPullbackPct: Math.round(lastPullback * 10) / 10, baseWeeks, lowestVolWeekInBase, pivotPrice: Math.round(pivotPrice * 100) / 100, detail };
 }
 
-// ── Pivot breakout check ──────────────────────────────────────────────────────
 function checkPivotBreakout(closes: number[], volumes: number[], pivotPrice: number | null): {
   isBroken: boolean; distFromPivot: number; withinChaseLimit: boolean;
 } {
@@ -172,55 +308,38 @@ function checkPivotBreakout(closes: number[], volumes: number[], pivotPrice: num
   const price = closes[closes.length - 1];
   const distFromPivot = ((price - pivotPrice) / pivotPrice) * 100;
   const isBroken = price > pivotPrice;
-  const withinChaseLimit = distFromPivot <= 3; // within 3% of pivot (chase limit)
+  const withinChaseLimit = distFromPivot <= 3;
   void volumes;
   return { isBroken, distFromPivot: Math.round(distFromPivot * 10) / 10, withinChaseLimit };
 }
 
-
-// ── OBV (On-Balance Volume) ───────────────────────────────────────────────────
 function calcOBV(closes: number[], volumes: number[]): {
-  trend: 'UP' | 'DOWN' | 'FLAT';
-  divergence: boolean;
-  detail: string;
+  trend: 'UP' | 'DOWN' | 'FLAT'; divergence: boolean; detail: string;
 } {
   if (closes.length < 20) return { trend: 'FLAT', divergence: false, detail: '데이터 부족' };
-
-  // Calculate OBV series
   const obvSeries: number[] = [0];
   for (let i = 1; i < closes.length; i++) {
     if (closes[i] > closes[i-1])      obvSeries.push(obvSeries[i-1] + volumes[i]);
     else if (closes[i] < closes[i-1]) obvSeries.push(obvSeries[i-1] - volumes[i]);
     else                               obvSeries.push(obvSeries[i-1]);
   }
-
-  // OBV trend: compare recent 10 vs previous 10
-  const recent = obvSeries.slice(-10);
-  const prev   = obvSeries.slice(-20, -10);
+  const recent = obvSeries.slice(-10), prev = obvSeries.slice(-20, -10);
   const recentAvg = recent.reduce((a, b) => a + b, 0) / recent.length;
-  const prevAvg   = prev.reduce((a, b)   => a + b, 0) / prev.length;
+  const prevAvg   = prev.reduce((a, b) => a + b, 0) / prev.length;
   const obvChange = ((recentAvg - prevAvg) / Math.abs(prevAvg || 1)) * 100;
-
   const trend: 'UP' | 'DOWN' | 'FLAT' = obvChange > 2 ? 'UP' : obvChange < -2 ? 'DOWN' : 'FLAT';
-
-  // Divergence: price up but OBV down (bearish) or price down but OBV up (bullish)
-  const priceRecent = closes.slice(-10);
-  const pricePrev   = closes.slice(-20, -10);
+  const priceRecent = closes.slice(-10), pricePrev = closes.slice(-20, -10);
   const priceChange = ((priceRecent[priceRecent.length-1] - pricePrev[0]) / pricePrev[0]) * 100;
-
   const divergence = (priceChange > 3 && obvChange < -1) || (priceChange < -3 && obvChange > 1);
-
   let detail: string;
   if (divergence && priceChange > 0) detail = 'OBV 베어리시 다이버전스 — 주가 상승 but 거래량 이탈 (분산 신호)';
   else if (divergence && priceChange < 0) detail = 'OBV 불리시 다이버전스 — 주가 하락 but 거래량 유입 (매집 신호)';
   else if (trend === 'UP') detail = 'OBV 상승 추세 — 기관 매집 진행 중';
   else if (trend === 'DOWN') detail = 'OBV 하락 추세 — 기관 분산 진행 중';
   else detail = 'OBV 횡보 — 방향성 중립';
-
   return { trend, divergence, detail };
 }
 
-// ── MA alignment ──────────────────────────────────────────────────────────────
 function calcMAAlignment(price: number, mas: Record<string, number>) {
   const periods = [10, 20, 30, 50, 120] as const;
   let aboveCount = 0, minDist = Infinity, nearestSupport: number | null = null, nearest: string | null = null;
@@ -235,28 +354,15 @@ function calcMAAlignment(price: number, mas: Record<string, number>) {
   return { aboveCount, stackedBull, stackedBear, nearestSupport, nearest };
 }
 
-// ── Precise entry zone ────────────────────────────────────────────────────────
 function calcEntryZone(price: number, mas: Record<string, number>, atrAbs: number, signal: string, distFromHigh: number, vcp: VCPResult, pivot: { isBroken: boolean; distFromPivot: number; withinChaseLimit: boolean }) {
   const r = (n: number) => Math.round(n * 100) / 100;
   if (!signal.includes('BUY')) return { entry: null, stopLoss: `$${r(price - 2 * atrAbs)}` };
-
-  // Priority 1: VCP pivot breakout within 3%
   if (vcp.isVCP && vcp.pivotPrice && pivot.isBroken && pivot.withinChaseLimit) {
-    return {
-      entry: `$${r(vcp.pivotPrice)}–$${r(vcp.pivotPrice * 1.03)} (VCP 피봇 돌파)`,
-      stopLoss: `$${r(vcp.pivotPrice * 0.97)}`,
-    };
+    return { entry: `$${r(vcp.pivotPrice)}–$${r(vcp.pivotPrice * 1.03)} (VCP 피봇 돌파)`, stopLoss: `$${r(vcp.pivotPrice * 0.97)}` };
   }
-
-  // Priority 2: VCP pivot not yet broken — wait zone
   if (vcp.isVCP && vcp.pivotPrice && !pivot.isBroken) {
-    return {
-      entry: `$${r(vcp.pivotPrice)}–$${r(vcp.pivotPrice * 1.03)} (피봇 돌파 대기)`,
-      stopLoss: `$${r(vcp.pivotPrice * 0.97)}`,
-    };
+    return { entry: `$${r(vcp.pivotPrice)}–$${r(vcp.pivotPrice * 1.03)} (피봇 돌파 대기)`, stopLoss: `$${r(vcp.pivotPrice * 0.97)}` };
   }
-
-  // Priority 3: Near MA support (within 1 ATR)
   const periods = [10, 20, 30, 50, 120] as const;
   for (const p of periods) {
     const ma = mas[`ma${p}`];
@@ -265,38 +371,24 @@ function calcEntryZone(price: number, mas: Record<string, number>, atrAbs: numbe
       return { entry: `$${r(ma * 1.001)}–$${r(ma + atrAbs * 0.5)} (MA${p} 지지)`, stopLoss: `$${r(ma - atrAbs * 0.5)}` };
     }
   }
-
-  // Priority 4: Near 52w high breakout
   if (distFromHigh > -3) {
     return { entry: `$${r(price * 0.998)}–$${r(price * 1.01)} (신고가 돌파)`, stopLoss: `$${r(price - 2 * atrAbs)}` };
   }
-
-  // Fallback: pullback to nearest MA
   const nearestMA = periods.map(p => ({ p, ma: mas[`ma${p}`] }))
     .filter(x => !isNaN(x.ma) && price > x.ma)
     .sort((a, b) => (price - a.ma) - (price - b.ma))[0];
   if (nearestMA) {
     return { entry: `$${r(nearestMA.ma * 1.002)}–$${r((price + nearestMA.ma) / 2)} (눌림목)`, stopLoss: `$${r(nearestMA.ma - atrAbs * 0.5)}` };
   }
-
   return { entry: `$${r(price * 0.99)}–$${r(price * 1.005)}`, stopLoss: `$${r(price - 2 * atrAbs)}` };
 }
 
-
-
-// ── Multi-Timeframe: Weekly Analysis ─────────────────────────────────────────
 interface WeeklyData {
-  trend:        'UPTREND' | 'DOWNTREND' | 'SIDEWAYS';
-  ma10w:        number;
-  ma20w:        number;
-  ma40w:        number;   // ~200일선 (주봉 40주)
-  rsi:          number;
-  macdHist:     number;
-  aboveAllMAs:  boolean;
-  pullbackPct:  number;   // 주봉 고점 대비 현재 얼마나 눌렸나
-  isEntry:      boolean;  // 주봉 강세 + 일봉 눌림목 = 최고 타점
-  alignScore:   number;   // 0-10 주봉-일봉 정렬 점수
-  detail:       string;
+  trend: 'UPTREND' | 'DOWNTREND' | 'SIDEWAYS';
+  ma10w: number; ma20w: number; ma40w: number;
+  rsi: number; macdHist: number;
+  aboveAllMAs: boolean; pullbackPct: number;
+  isEntry: boolean; alignScore: number; detail: string;
 }
 
 async function fetchWeeklyData(ticker: string): Promise<WeeklyData | null> {
@@ -306,125 +398,64 @@ async function fetchWeeklyData(ticker: string): Promise<WeeklyData | null> {
       { headers: { 'User-Agent': 'Mozilla/5.0' }, next: { revalidate: 0 } }
     );
     if (!res.ok) return null;
-    const data   = await res.json();
+    const data = await res.json();
     const result = data?.chart?.result?.[0];
     if (!result) return null;
-
-    const closes: number[] = (result.indicators?.quote?.[0]?.close ?? [])
-      .filter((c: number) => c != null && !isNaN(c));
+    const closes: number[] = (result.indicators?.quote?.[0]?.close ?? []).filter((c: number) => c != null && !isNaN(c));
     if (closes.length < 20) return null;
-
-    const price  = closes[closes.length - 1];
-    const ma10w  = calcMA(closes, 10);
-    const ma20w  = calcMA(closes, 20);
-    const ma40w  = calcMA(closes, Math.min(40, closes.length));
-    const rsi    = calcRSI(closes.slice(-20));
+    const price = closes[closes.length - 1];
+    const ma10w = calcMA(closes, 10), ma20w = calcMA(closes, 20), ma40w = calcMA(closes, Math.min(40, closes.length));
+    const rsi = calcRSI(closes.slice(-20));
     const { histogram: macdHist } = calcMACD(closes);
-
     const aboveAllMAs = price > ma10w && price > ma20w && price > ma40w;
-
-    // Weekly trend
     const week8ago = closes[Math.max(0, closes.length - 8)];
     const trendPct = ((price - week8ago) / week8ago) * 100;
-    const trend: 'UPTREND' | 'DOWNTREND' | 'SIDEWAYS' =
-      trendPct > 5 ? 'UPTREND' : trendPct < -5 ? 'DOWNTREND' : 'SIDEWAYS';
-
-    // Pullback from recent 13-week high
-    const high13w   = Math.max(...closes.slice(-13));
+    const trend: 'UPTREND' | 'DOWNTREND' | 'SIDEWAYS' = trendPct > 5 ? 'UPTREND' : trendPct < -5 ? 'DOWNTREND' : 'SIDEWAYS';
+    const high13w = Math.max(...closes.slice(-13));
     const pullbackPct = ((price - high13w) / high13w) * 100;
-
-    // Best entry: weekly uptrend + daily pullback (-3% ~ -8% from 13w high)
     const isEntry = trend === 'UPTREND' && aboveAllMAs && pullbackPct >= -8 && pullbackPct <= -2;
-
-    // Alignment score (0-10)
     let alignScore = 5;
-    if (trend === 'UPTREND')    alignScore += 2; else if (trend === 'DOWNTREND') alignScore -= 2;
-    if (aboveAllMAs)            alignScore += 1.5;
+    if (trend === 'UPTREND') alignScore += 2; else if (trend === 'DOWNTREND') alignScore -= 2;
+    if (aboveAllMAs) alignScore += 1.5;
     if (rsi >= 40 && rsi <= 70) alignScore += 0.5;
-    if (macdHist > 0)           alignScore += 0.5;
-    if (isEntry)                alignScore += 0.5; // bonus for pullback entry
+    if (macdHist > 0) alignScore += 0.5;
+    if (isEntry) alignScore += 0.5;
     alignScore = Math.max(1, Math.min(10, Math.round(alignScore * 2) / 2));
-
     const detail = isEntry
       ? `🎯 최고 타점: 주봉 상승추세 + ${Math.abs(Math.round(pullbackPct*10)/10)}% 눌림목 — 진입 구간`
-      : trend === 'UPTREND'
-        ? `주봉 상승추세 (8주 +${Math.round(trendPct*10)/10}%) · MA 정렬 ${aboveAllMAs ? '완성' : '미완성'}`
-        : trend === 'DOWNTREND'
-          ? `주봉 하락추세 — 일봉 매수 신호 신뢰도 낮음`
-          : `주봉 횡보 — 돌파 방향 확인 필요`;
-
+      : trend === 'UPTREND' ? `주봉 상승추세 (8주 +${Math.round(trendPct*10)/10}%) · MA 정렬 ${aboveAllMAs ? '완성' : '미완성'}`
+      : trend === 'DOWNTREND' ? `주봉 하락추세 — 일봉 매수 신호 신뢰도 낮음`
+      : `주봉 횡보 — 돌파 방향 확인 필요`;
     const r = (n: number) => Math.round(n * 100) / 100;
-    return {
-      trend, ma10w: r(ma10w), ma20w: r(ma20w), ma40w: r(ma40w),
-      rsi: Math.round(rsi * 10) / 10,
-      macdHist: Math.round(macdHist * 1000) / 1000,
-      aboveAllMAs, pullbackPct: Math.round(pullbackPct * 10) / 10,
-      isEntry, alignScore, detail,
-    };
+    return { trend, ma10w: r(ma10w), ma20w: r(ma20w), ma40w: r(ma40w), rsi: Math.round(rsi * 10) / 10, macdHist: Math.round(macdHist * 1000) / 1000, aboveAllMAs, pullbackPct: Math.round(pullbackPct * 10) / 10, isEntry, alignScore, detail };
   } catch { return null; }
 }
 
-
-// ── 52주 신고가 돌파 당일 감지 ───────────────────────────────────────────────
 function detect52wBreakout(closes: number[], volumes: number[]): {
-  isBreakout:    boolean;
-  breakoutDay:   number;   // 0 = 오늘, 1 = 어제
-  prev52wHigh:   number;
-  breakoutPct:   number;   // 전 고점 대비 돌파폭
-  volConfirmed:  boolean;  // 거래량 확인
-  detail:        string;
+  isBreakout: boolean; breakoutDay: number; prev52wHigh: number; breakoutPct: number; volConfirmed: boolean; detail: string;
 } {
   if (closes.length < 252) return { isBreakout: false, breakoutDay: -1, prev52wHigh: 0, breakoutPct: 0, volConfirmed: false, detail: '데이터 부족' };
-
-  const today     = closes[closes.length - 1];
-  const yesterday = closes[closes.length - 2];
-
-  // 전 52주 고점 (오늘 제외한 252일)
-  const prev52w    = closes.slice(-252, -1);
+  const today = closes[closes.length - 1], yesterday = closes[closes.length - 2];
+  const prev52w = closes.slice(-252, -1);
   const prev52wHigh = Math.max(...prev52w);
-
-  // 평균 거래량
-  const avgVol  = volumes.slice(-21, -1).reduce((a, b) => a + b, 0) / 20;
+  const avgVol = volumes.slice(-21, -1).reduce((a, b) => a + b, 0) / 20;
   const todayVol = volumes[volumes.length - 1];
   const volConfirmed = todayVol > avgVol * 1.4;
-
-  // 오늘 돌파
   if (today > prev52wHigh && yesterday <= prev52wHigh) {
     const breakoutPct = ((today - prev52wHigh) / prev52wHigh) * 100;
-    return {
-      isBreakout: true, breakoutDay: 0,
-      prev52wHigh: Math.round(prev52wHigh * 100) / 100,
-      breakoutPct: Math.round(breakoutPct * 10) / 10,
-      volConfirmed,
-      detail: `🚀 52주 신고가 돌파! $${Math.round(prev52wHigh * 100)/100} 돌파 (+${Math.round(breakoutPct*10)/10}%)${volConfirmed ? ' · 거래량 확인' : ' · 거래량 부족'}`,
-    };
+    return { isBreakout: true, breakoutDay: 0, prev52wHigh: Math.round(prev52wHigh * 100) / 100, breakoutPct: Math.round(breakoutPct * 10) / 10, volConfirmed, detail: `🚀 52주 신고가 돌파! $${Math.round(prev52wHigh * 100)/100} 돌파 (+${Math.round(breakoutPct*10)/10}%)${volConfirmed ? ' · 거래량 확인' : ' · 거래량 부족'}` };
   }
-
-  // 어제 돌파 (오늘 추격 기회)
-  const prev52w2    = closes.slice(-253, -2);
+  const prev52w2 = closes.slice(-253, -2);
   const prev52wHigh2 = Math.max(...prev52w2);
   if (yesterday > prev52wHigh2 && closes[closes.length - 3] <= prev52wHigh2) {
     const breakoutPct = ((yesterday - prev52wHigh2) / prev52wHigh2) * 100;
-    return {
-      isBreakout: true, breakoutDay: 1,
-      prev52wHigh: Math.round(prev52wHigh2 * 100) / 100,
-      breakoutPct: Math.round(breakoutPct * 10) / 10,
-      volConfirmed,
-      detail: `어제 52주 신고가 돌파 — 3% 이내 추격 진입 가능`,
-    };
+    return { isBreakout: true, breakoutDay: 1, prev52wHigh: Math.round(prev52wHigh2 * 100) / 100, breakoutPct: Math.round(breakoutPct * 10) / 10, volConfirmed, detail: `어제 52주 신고가 돌파 — 3% 이내 추격 진입 가능` };
   }
-
   return { isBreakout: false, breakoutDay: -1, prev52wHigh: prev52wHigh, breakoutPct: 0, volConfirmed: false, detail: '' };
 }
 
-// ── 어닝 서프라이즈 / PEAD 감지 ──────────────────────────────────────────────
 async function fetchEarningsSurprise(ticker: string): Promise<{
-  hasSurprise:   boolean;
-  surprisePct:   number | null;
-  reportDate:    string | null;
-  daysAgo:       number | null;
-  peadSignal:    boolean;   // 발표 후 60일 이내 + 서프라이즈
-  detail:        string;
+  hasSurprise: boolean; surprisePct: number | null; reportDate: string | null; daysAgo: number | null; peadSignal: boolean; detail: string;
 } | null> {
   try {
     const res = await fetch(
@@ -432,41 +463,22 @@ async function fetchEarningsSurprise(ticker: string): Promise<{
       { headers: { 'User-Agent': 'Mozilla/5.0' }, next: { revalidate: 86400 } }
     );
     if (!res.ok) return null;
-    const data  = await res.json();
+    const data = await res.json();
     const trend = data?.quoteSummary?.result?.[0]?.earningsTrend?.trend;
     if (!trend) return null;
-
-    // 가장 최근 분기 실적
     const lastQ = trend.find((t: { period: string }) => t.period === '-1q');
     if (!lastQ) return null;
-
-    const actual   = lastQ.actualEarnings?.raw;
-    const estimate = lastQ.earningsEstimate?.avg?.raw;
+    const actual = lastQ.actualEarnings?.raw, estimate = lastQ.earningsEstimate?.avg?.raw;
     if (actual == null || estimate == null || estimate === 0) return null;
-
     const surprisePct = ((actual - estimate) / Math.abs(estimate)) * 100;
-    const hasSurprise = surprisePct > 5; // 5% 이상 어닝 서프라이즈
-
-    // 발표일 (Yahoo earnings date는 정확하지 않아 근사치 사용)
-    // PEAD: 발표 후 60일 이내 + 서프라이즈 → 계속 상승 경향
-    const peadSignal = hasSurprise; // 최근 분기 서프라이즈이면 PEAD 유효
-
-    return {
-      hasSurprise, surprisePct: Math.round(surprisePct * 10) / 10,
-      reportDate: null, daysAgo: null, peadSignal,
-      detail: hasSurprise
-        ? `어닝 서프라이즈 +${Math.round(surprisePct*10)/10}% — PEAD 상승 모멘텀 유효`
-        : `어닝 인라인/미스 (${Math.round(surprisePct*10)/10}%)`,
-    };
+    const hasSurprise = surprisePct > 5;
+    const peadSignal = hasSurprise;
+    return { hasSurprise, surprisePct: Math.round(surprisePct * 10) / 10, reportDate: null, daysAgo: null, peadSignal, detail: hasSurprise ? `어닝 서프라이즈 +${Math.round(surprisePct*10)/10}% — PEAD 상승 모멘텀 유효` : `어닝 인라인/미스 (${Math.round(surprisePct*10)/10}%)` };
   } catch { return null; }
 }
 
-// ── Short Interest (Yahoo Finance quoteSummary) ───────────────────────────────
 async function fetchShortInterest(ticker: string): Promise<{
-  shortPct: number | null;      // % of float shorted
-  shortRatio: number | null;    // days to cover
-  squeezePotential: 'HIGH' | 'MEDIUM' | 'LOW';
-  shortDetail: string;
+  shortPct: number | null; shortRatio: number | null; squeezePotential: 'HIGH' | 'MEDIUM' | 'LOW'; shortDetail: string;
 } | null> {
   try {
     const res = await fetch(
@@ -477,32 +489,18 @@ async function fetchShortInterest(ticker: string): Promise<{
     const data = await res.json();
     const stats = data?.quoteSummary?.result?.[0]?.defaultKeyStatistics;
     if (!stats) return null;
-
-    const shortPct   = stats.shortPercentOfFloat?.raw ? Math.round(stats.shortPercentOfFloat.raw * 1000) / 10 : null;
+    const shortPct = stats.shortPercentOfFloat?.raw ? Math.round(stats.shortPercentOfFloat.raw * 1000) / 10 : null;
     const shortRatio = stats.shortRatio?.raw ? Math.round(stats.shortRatio.raw * 10) / 10 : null;
-
     let squeezePotential: 'HIGH' | 'MEDIUM' | 'LOW';
     let shortDetail: string;
-
-    if (shortPct !== null && shortPct > 25) {
-      squeezePotential = 'HIGH';
-      shortDetail = `공매도 ${shortPct}% — 숏스퀴즈 가능성 높음 (호재 시 급등 가능)`;
-    } else if (shortPct !== null && shortPct > 10) {
-      squeezePotential = 'MEDIUM';
-      shortDetail = `공매도 ${shortPct}% — 중간 수준 (상승 저항 존재)`;
-    } else if (shortPct !== null) {
-      squeezePotential = 'LOW';
-      shortDetail = `공매도 ${shortPct}% — 낮음 (공매도 압력 미미)`;
-    } else {
-      squeezePotential = 'LOW';
-      shortDetail = '공매도 데이터 없음';
-    }
-
+    if (shortPct !== null && shortPct > 25) { squeezePotential = 'HIGH'; shortDetail = `공매도 ${shortPct}% — 숏스퀴즈 가능성 높음`; }
+    else if (shortPct !== null && shortPct > 10) { squeezePotential = 'MEDIUM'; shortDetail = `공매도 ${shortPct}% — 중간 수준`; }
+    else if (shortPct !== null) { squeezePotential = 'LOW'; shortDetail = `공매도 ${shortPct}% — 낮음`; }
+    else { squeezePotential = 'LOW'; shortDetail = '공매도 데이터 없음'; }
     return { shortPct, shortRatio, squeezePotential, shortDetail };
   } catch { return null; }
 }
 
-// ── Yahoo Finance fetch ───────────────────────────────────────────────────────
 interface QuoteData {
   ticker: string; price: number; change1d: number; ytdReturn: number;
   ma10: number; ma20: number; ma30: number; ma50: number; ma120: number; ma200: number;
@@ -520,7 +518,6 @@ interface QuoteData {
 
 async function fetchQuote(ticker: string): Promise<QuoteData | null> {
   try {
-    // KIS 실시간 현재가 (한국투자증권 OpenAPI - 지연 없음)
     let realtimePrice: number | null = null;
     if (process.env.KIS_APP_KEY) {
       try {
@@ -534,205 +531,117 @@ async function fetchQuote(ticker: string): Promise<QuoteData | null> {
         }
       } catch { /* fallback to Yahoo */ }
     }
-
-    // Yahoo Finance for historical OHLCV (free, needed for indicators)
     const res = await fetch(
       `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=2y`,
       { headers: { 'User-Agent': 'Mozilla/5.0' }, next: { revalidate: 0 } }
     );
     if (!res.ok) return null;
-    const data   = await res.json();
+    const data = await res.json();
     const result = data?.chart?.result?.[0];
     if (!result) return null;
-
-    const q          = result.indicators?.quote?.[0] ?? {};
+    const q = result.indicators?.quote?.[0] ?? {};
     const timestamps = result.timestamp ?? [];
-    const closes:  number[] = q.close  ?? [];
-    const highs:   number[] = q.high   ?? [];
-    const lows:    number[] = q.low    ?? [];
-    const volumes: number[] = q.volume ?? [];
-
-    const valid = closes.map((c: number, i: number) => ({
-      c, h: highs[i] ?? c, l: lows[i] ?? c, v: volumes[i] ?? 0, t: timestamps[i] ?? 0,
-    })).filter(x => x.c != null && !isNaN(x.c));
-
+    const closes: number[] = q.close ?? [], highs: number[] = q.high ?? [], lows: number[] = q.low ?? [], volumes: number[] = q.volume ?? [];
+    const valid = closes.map((c: number, i: number) => ({ c, h: highs[i] ?? c, l: lows[i] ?? c, v: volumes[i] ?? 0, t: timestamps[i] ?? 0 })).filter(x => x.c != null && !isNaN(x.c));
     if (valid.length < 60) return null;
-
-    const cs = valid.map(x => x.c);
-    const hs = valid.map(x => x.h);
-    const ls = valid.map(x => x.l);
-    const vs = valid.map(x => x.v);
-
-    // Use Finnhub real-time price if available, else Yahoo last close
+    const cs = valid.map(x => x.c), hs = valid.map(x => x.h), ls = valid.map(x => x.l), vs = valid.map(x => x.v);
     const yahooPrice = cs[cs.length - 1];
-    const price      = realtimePrice ?? yahooPrice;
-    const change1d   = ((price - cs[cs.length - 2]) / cs[cs.length - 2]) * 100;
-
-    // YTD
+    const price = realtimePrice ?? yahooPrice;
+    const change1d = ((price - cs[cs.length - 2]) / cs[cs.length - 2]) * 100;
     const yearStart = new Date(new Date().getFullYear(), 0, 1).getTime() / 1000;
-    const ytdIdx    = valid.findIndex(x => x.t >= yearStart);
-    const ytdBase   = cs[ytdIdx >= 0 ? ytdIdx : 0];
+    const ytdIdx = valid.findIndex(x => x.t >= yearStart);
+    const ytdBase = cs[ytdIdx >= 0 ? ytdIdx : 0];
     const ytdReturn = ((price - ytdBase) / ytdBase) * 100;
-
-    // 3M
     const momentum3m = ((price - cs[Math.max(0, cs.length - 63)]) / cs[Math.max(0, cs.length - 63)]) * 100;
-
-    // MAs
     const ma10 = calcMA(cs, 10), ma20 = calcMA(cs, 20), ma30 = calcMA(cs, 30);
     const ma50 = calcMA(cs, 50), ma120 = calcMA(cs, 120), ma200 = calcMA(cs, 200);
-
-    const high52w = Math.max(...cs.slice(-252));
-    const low52w  = Math.min(...cs.slice(-252));
+    const high52w = Math.max(...cs.slice(-252)), low52w = Math.min(...cs.slice(-252));
     const distFromHigh = ((price - high52w) / high52w) * 100;
-
-    const rsi            = calcRSI(cs.slice(-30));
-    const { histogram }  = calcMACD(cs);
-    const { position }   = calcBB(cs);
-    const atrVal         = calcATR(hs.slice(-20), ls.slice(-20), cs.slice(-20));
-    const volRatio       = calcVolumeRatio(vs);
-
-    // OBV
+    const rsi = calcRSI(cs.slice(-30));
+    const { histogram } = calcMACD(cs);
+    const { position } = calcBB(cs);
+    const atrVal = calcATR(hs.slice(-20), ls.slice(-20), cs.slice(-20));
+    const volRatio = calcVolumeRatio(vs);
     const obv = calcOBV(cs.slice(-60), vs.slice(-60));
-
-    // Short Interest + Weekly + 52w Breakout + Earnings (parallel)
     const [shortInterest, weekly, earningSurprise] = await Promise.all([
-      fetchShortInterest(ticker),
-      fetchWeeklyData(ticker),
-      fetchEarningsSurprise(ticker),
+      fetchShortInterest(ticker), fetchWeeklyData(ticker), fetchEarningsSurprise(ticker),
     ]);
     const breakout52w = detect52wBreakout(cs, vs);
-
-    // VCP detection
-    const vcp   = detectVCP(cs, vs, high52w);
+    const vcp = detectVCP(cs, vs, high52w);
     const pivot = checkPivotBreakout(cs, vs, vcp.pivotPrice);
-
     const r = (n: number, d = 2) => Math.round(n * 10**d) / 10**d;
     return {
-      ticker, price: r(price), change1d: r(change1d, 1),
-      ytdReturn: r(ytdReturn, 1), momentum3m: r(momentum3m, 1),
-      ma10: r(ma10), ma20: r(ma20), ma30: r(ma30),
-      ma50: r(ma50), ma120: r(ma120), ma200: r(ma200),
-      high52w: r(high52w), low52w: r(low52w),
-      distFromHigh: r(distFromHigh, 1),
-      rsi: r(rsi, 1), macdHistogram: r(histogram, 4),
-      bbPosition: Math.round(position),
-      atrPct: r((atrVal / price) * 100, 2), atrAbs: r(atrVal, 2),
-      volumeRatio: r(volRatio, 2),
+      ticker, price: r(price), change1d: r(change1d, 1), ytdReturn: r(ytdReturn, 1), momentum3m: r(momentum3m, 1),
+      ma10: r(ma10), ma20: r(ma20), ma30: r(ma30), ma50: r(ma50), ma120: r(ma120), ma200: r(ma200),
+      high52w: r(high52w), low52w: r(low52w), distFromHigh: r(distFromHigh, 1),
+      rsi: r(rsi, 1), macdHistogram: r(histogram, 4), bbPosition: Math.round(position),
+      atrPct: r((atrVal / price) * 100, 2), atrAbs: r(atrVal, 2), volumeRatio: r(volRatio, 2),
       vcp, pivot, obv, shortInterest, weekly, breakout52w, earningSurprise,
     };
   } catch { return null; }
 }
 
-// ── 5-level analysis ──────────────────────────────────────────────────────────
-function analyzeStock(q: QuoteData, spyYtd: number, sectorAvgYtd: number) {
+function analyzeStock(q: QuoteData, spyYtd: number, sectorAvgYtd: number, regime: MarketRegime) {
   const excessIdx    = q.ytdReturn - spyYtd;
   const excessSector = q.ytdReturn - sectorAvgYtd;
-
   const rsIndex  = excessIdx    >  5 ? 'STRONG' : excessIdx    < -5 ? 'WEAK' : 'NEUTRAL';
   const rsSector = excessSector >  3 ? 'STRONG' : excessSector < -3 ? 'WEAK' : 'NEUTRAL';
-
   const mas = { ma10: q.ma10, ma20: q.ma20, ma30: q.ma30, ma50: q.ma50, ma120: q.ma120 };
   const { aboveCount, stackedBull, stackedBear, nearestSupport, nearest } = calcMAAlignment(q.price, mas);
   const ma50Status = q.price > q.ma50 * 1.01 ? 'ABOVE' : q.price < q.ma50 * 0.99 ? 'BELOW' : 'AT';
 
-  // Pattern
   let pattern: string;
-  if      (q.vcp.isVCP && q.pivot.isBroken)                              pattern = 'BREAKOUT';
-  else if (q.vcp.isVCP && !q.pivot.isBroken)                             pattern = 'CUP';
+  if (q.vcp.isVCP && q.pivot.isBroken) pattern = 'BREAKOUT';
+  else if (q.vcp.isVCP && !q.pivot.isBroken) pattern = 'CUP';
   else if (q.distFromHigh >= -20 && aboveCount >= 2 && q.momentum3m > 0) pattern = 'W_BASE';
-  else if (aboveCount <= 1 && q.momentum3m < -10)                        pattern = 'DOWNTREND';
-  else                                                                     pattern = 'NONE';
+  else if (aboveCount <= 1 && q.momentum3m < -10) pattern = 'DOWNTREND';
+  else pattern = 'NONE';
 
-  // ── Score ─────────────────────────────────────────────────────────────────
   let score = 5;
-
-  // MA alignment (strongest factor)
   score += (aboveCount - 2.5) * 0.5;
-  if (stackedBull) score += 0.5;
-  if (stackedBear) score -= 0.5;
-
-  // RS
+  if (stackedBull) score += 0.5; if (stackedBear) score -= 0.5;
   if (rsIndex  === 'STRONG') score += 1.0; else if (rsIndex  === 'WEAK') score -= 1.0;
   if (rsSector === 'STRONG') score += 1.0; else if (rsSector === 'WEAK') score -= 1.0;
-
-  // RSI
-  if (q.rsi >= 45 && q.rsi <= 70) score += 0.5;
-  else if (q.rsi > 80) score -= 0.5;
-  else if (q.rsi < 30) score -= 0.5;
-
-  // MACD
+  if (q.rsi >= 45 && q.rsi <= 70) score += 0.5; else if (q.rsi > 80) score -= 0.5; else if (q.rsi < 30) score -= 0.5;
   if (q.macdHistogram > 0) score += 0.5; else score -= 0.5;
-
-  // Volume
   if (q.volumeRatio > 1.5) score += 0.5; else if (q.volumeRatio < 0.7) score -= 0.3;
-
-  // BB
-  if (q.bbPosition >= 40 && q.bbPosition <= 80) score += 0.3;
-  else if (q.bbPosition > 95) score -= 0.5;
-
-  // 52w high proximity
+  if (q.bbPosition >= 40 && q.bbPosition <= 80) score += 0.3; else if (q.bbPosition > 95) score -= 0.5;
   if (q.distFromHigh > -8) score += 0.5;
-
-  // VCP bonus (최대 +2점)
   score += (q.vcp.score / 100) * 2;
-
-  // Weekly timeframe alignment bonus
   if (q.weekly) {
-    score += (q.weekly.alignScore - 5) * 0.3; // -1.5 ~ +1.5
-    if (q.weekly.isEntry) score += 1.0;        // best entry signal bonus
-    if (q.weekly.trend === 'DOWNTREND') score -= 1.0; // weekly downtrend = red flag
+    score += (q.weekly.alignScore - 5) * 0.3;
+    if (q.weekly.isEntry) score += 1.0;
+    if (q.weekly.trend === 'DOWNTREND') score -= 1.0;
   }
-
-  // Short Interest adjustment
   if (q.shortInterest) {
     const si = q.shortInterest;
-    // High short interest = headwind for buyers (score penalty)
-    // But extreme short interest + VCP = squeeze setup (bonus)
     if (si.shortPct !== null) {
-      if (si.shortPct > 25 && q.vcp.isVCP) score += 0.5; // squeeze setup
-      else if (si.shortPct > 20) score -= 0.5;            // heavy shorting
-      else if (si.shortPct > 10) score -= 0.2;            // moderate shorting
+      if (si.shortPct > 25 && q.vcp.isVCP) score += 0.5;
+      else if (si.shortPct > 20) score -= 0.5;
+      else if (si.shortPct > 10) score -= 0.2;
     }
   }
-
-  // OBV bonus/penalty
   if (q.obv.trend === 'UP' && !q.obv.divergence) score += 0.5;
   else if (q.obv.trend === 'DOWN') score -= 0.3;
-  if (q.obv.divergence && q.obv.trend === 'DOWN') score -= 0.5; // bearish divergence
-
-  // 52주 신고가 돌파 당일 보너스 (최고 타점 중 하나)
+  if (q.obv.divergence && q.obv.trend === 'DOWN') score -= 0.5;
   if (q.breakout52w.isBreakout) {
-    if (q.breakout52w.breakoutDay === 0 && q.breakout52w.volConfirmed) score += 1.5; // 오늘 돌파 + 거래량
-    else if (q.breakout52w.breakoutDay === 0) score += 1.0;  // 오늘 돌파 (거래량 미확인)
-    else if (q.breakout52w.breakoutDay === 1) score += 0.5;  // 어제 돌파 (추격 기회)
+    if (q.breakout52w.breakoutDay === 0 && q.breakout52w.volConfirmed) score += 1.5;
+    else if (q.breakout52w.breakoutDay === 0) score += 1.0;
+    else if (q.breakout52w.breakoutDay === 1) score += 0.5;
   }
-
-  // PEAD (어닝 드리프트) 보너스
   if (q.earningSurprise?.peadSignal) score += 0.5;
-  if (q.earningSurprise?.hasSurprise && (q.earningSurprise.surprisePct ?? 0) > 15) score += 0.3; // 큰 서프라이즈
-
-  // Pivot breakout within 3% bonus
+  if (q.earningSurprise?.hasSurprise && (q.earningSurprise.surprisePct ?? 0) > 15) score += 0.3;
   if (q.pivot.isBroken && q.pivot.withinChaseLimit) score += 0.5;
-
-  // Lowest vol week in base bonus (기관 매도 없음)
   if (q.vcp.lowestVolWeekInBase) score += 0.3;
-
   score = Math.max(1, Math.min(10, Math.round(score * 2) / 2));
 
-  // ── Signal ────────────────────────────────────────────────────────────────
-  let signal: string;
-  const macdBull  = q.macdHistogram > 0;
-  const macdBear  = q.macdHistogram < 0;
-  const rsiOk     = q.rsi >= 45 && q.rsi <= 75;
-  const volStrong = q.volumeRatio > 1.5;
+  const macdBull = q.macdHistogram > 0, macdBear = q.macdHistogram < 0;
+  const rsiOk = q.rsi >= 45 && q.rsi <= 75, volStrong = q.volumeRatio > 1.5;
 
-  // 52주 신고가 돌파 당일 + 거래량 = 즉시매수 (VCP와 동급 타점)
-  if (q.breakout52w.isBreakout && q.breakout52w.breakoutDay === 0 &&
-      q.breakout52w.volConfirmed && aboveCount >= 3 && rsIndex !== 'WEAK') {
+  let signal: string;
+  if (q.breakout52w.isBreakout && q.breakout52w.breakoutDay === 0 && q.breakout52w.volConfirmed && aboveCount >= 3 && rsIndex !== 'WEAK') {
     signal = 'STRONG_BUY';
-  } else
-  // VCP 피봇 돌파 + 거래량 폭발 = 최고 타점
-  if (q.vcp.isVCP && q.pivot.isBroken && q.pivot.withinChaseLimit && volStrong && aboveCount >= 3) {
+  } else if (q.vcp.isVCP && q.pivot.isBroken && q.pivot.withinChaseLimit && volStrong && aboveCount >= 3) {
     signal = 'STRONG_BUY';
   } else if (score >= 8.5 && aboveCount >= 4 && stackedBull && macdBull && rsiOk && volStrong) {
     signal = 'STRONG_BUY';
@@ -746,36 +655,33 @@ function analyzeStock(q: QuoteData, spyYtd: number, sectorAvgYtd: number) {
     signal = 'HOLD';
   }
 
-  const confidence = score >= 9 || score <= 2 ? 'HIGH' : score >= 7 || score <= 4 ? 'MEDIUM' : 'LOW';
+  // ── 🆕 시장 국면 필터 적용 ──────────────────────────────────────────────────
+  const { adjustedSignal, adjustedScore, regimeNote } = applyRegimeFilter(signal, score, regime);
+  signal = adjustedSignal;
+  score  = adjustedScore;
+  // ────────────────────────────────────────────────────────────────────────────
 
-  // Entry / stop
+  const confidence = score >= 9 || score <= 2 ? 'HIGH' : score >= 7 || score <= 4 ? 'MEDIUM' : 'LOW';
   const { entry, stopLoss } = calcEntryZone(q.price, mas, q.atrAbs, signal, q.distFromHigh, q.vcp, q.pivot);
   const support    = nearestSupport ? `$${Math.round(nearestSupport * 100) / 100} (${nearest})` : `$${q.ma50}`;
   const resistance = `$${q.high52w}`;
-
-  // Summary
   const maStatus   = `MA ${aboveCount}/5개 위${stackedBull ? ' (정배열)' : stackedBear ? ' (역배열)' : ''}`;
   const vcpStatus  = q.vcp.isVCP ? ` · VCP ${q.vcp.score}점` : '';
   const pivotStatus = q.pivot.isBroken && q.pivot.withinChaseLimit ? ` · 피봇 돌파 +${q.pivot.distFromPivot}%` : '';
   const signalWord = { STRONG_BUY:'즉시매수', BUY:'매수', HOLD:'관망', SELL:'매도', STRONG_SELL:'즉시매도' }[signal] ?? signal;
-
-  const summary = `[${signalWord}] YTD ${q.ytdReturn > 0 ? '+' : ''}${q.ytdReturn}% (S&P500 대비 ${excessIdx > 0 ? '+' : ''}${Math.round(excessIdx*10)/10}%). `
-    + `${maStatus}${vcpStatus}${pivotStatus}. RSI ${q.rsi} · MACD ${macdBull?'상승':'하락'} · 거래량 ${q.volumeRatio}x.`;
+  const summary = `[${signalWord}] YTD ${q.ytdReturn > 0 ? '+' : ''}${q.ytdReturn}% (S&P500 대비 ${excessIdx > 0 ? '+' : ''}${Math.round(excessIdx*10)/10}%). ${maStatus}${vcpStatus}${pivotStatus}. RSI ${q.rsi} · MACD ${macdBull?'상승':'하락'} · 거래량 ${q.volumeRatio}x.`;
 
   const cautions: string[] = [];
+  if (regimeNote) cautions.push(regimeNote); // 🆕 국면 경고 최우선
   if (q.rsi > 78) cautions.push(`RSI ${q.rsi} 과열`);
   if (q.bbPosition > 90) cautions.push('BB 상단 근접');
   if (q.distFromHigh > -3 && signal.includes('BUY') && !q.pivot.isBroken) cautions.push('52주 고점 근접 — 돌파 확인 후 진입');
   if (q.pivot.isBroken && !q.pivot.withinChaseLimit) cautions.push(`피봇 돌파 후 ${q.pivot.distFromPivot}% 상승 — 추격 한도(3%) 초과`);
   if (q.volumeRatio < 0.6) cautions.push('거래량 부족 — 돌파 신뢰도 낮음');
   if (q.obv.divergence) cautions.push(q.obv.detail);
-  if (q.weekly?.isEntry) {/* No caution — it's a positive signal */}
-  if (q.weekly?.trend === 'DOWNTREND')
-    cautions.push('주봉 하락추세 — 일봉 매수 신호 신뢰도 저하');
-  if (q.shortInterest?.shortPct && q.shortInterest.shortPct > 20)
-    cautions.push(q.shortInterest.shortDetail);
-  if (q.shortInterest?.squeezePotential === 'HIGH' && signal.includes('BUY'))
-    cautions.push('⚡ 숏스퀴즈 가능성 — 호재 발생 시 급등 가능');
+  if (q.weekly?.trend === 'DOWNTREND') cautions.push('주봉 하락추세 — 일봉 매수 신호 신뢰도 저하');
+  if (q.shortInterest?.shortPct && q.shortInterest.shortPct > 20) cautions.push(q.shortInterest.shortDetail);
+  if (q.shortInterest?.squeezePotential === 'HIGH' && signal.includes('BUY')) cautions.push('⚡ 숏스퀴즈 가능성 — 호재 발생 시 급등 가능');
   if (aboveCount <= 1 && signal === 'HOLD') cautions.push('MA 다수 아래 — 추세 약화');
 
   return {
@@ -784,50 +690,26 @@ function analyzeStock(q: QuoteData, spyYtd: number, sectorAvgYtd: number) {
     rs_vs_index: rsIndex, rs_vs_sector: rsSector,
     ma50_status: ma50Status, pattern,
     volume_confirmation: volStrong,
-    entry_zone: entry, key_support: support,
-    key_resistance: resistance, stop_loss: stopLoss,
+    entry_zone: entry, key_support: support, key_resistance: resistance, stop_loss: stopLoss,
     summary, caution: cautions.length > 0 ? cautions.join(' / ') : null,
-    rsi: q.rsi, macd_histogram: q.macdHistogram,
-    bb_position: q.bbPosition, atr_pct: q.atrPct, volume_ratio: q.volumeRatio,
+    rsi: q.rsi, macd_histogram: q.macdHistogram, bb_position: q.bbPosition, atr_pct: q.atrPct, volume_ratio: q.volumeRatio,
     ma10: q.ma10, ma20: q.ma20, ma30: q.ma30, ma50: q.ma50, ma120: q.ma120,
     above_ma_count: aboveCount, stacked_bull: stackedBull, stacked_bear: stackedBear,
-    // VCP / Pivot data
-    vcp_score: q.vcp.score, vcp_is_vcp: q.vcp.isVCP,
-    vcp_contraction_count: q.vcp.contractionCount,
-    vcp_last_pullback: q.vcp.lastPullbackPct,
-    vcp_base_weeks: q.vcp.baseWeeks,
-    vcp_lowest_vol: q.vcp.lowestVolWeekInBase,
-    vcp_pivot: q.vcp.pivotPrice,
-    vcp_detail: q.vcp.detail,
-    pivot_broken: q.pivot.isBroken,
-    pivot_dist: q.pivot.distFromPivot,
-    pivot_within_chase: q.pivot.withinChaseLimit,
-    // 52w Breakout
-    breakout_52w:        q.breakout52w.isBreakout,
-    breakout_52w_day:    q.breakout52w.breakoutDay,
-    breakout_52w_vol:    q.breakout52w.volConfirmed,
-    breakout_52w_detail: q.breakout52w.detail,
-    // PEAD
-    pead_signal:         q.earningSurprise?.peadSignal ?? false,
-    pead_surprise_pct:   q.earningSurprise?.surprisePct ?? null,
-    pead_detail:         q.earningSurprise?.detail ?? null,
-    // OBV
-    obv_trend: q.obv.trend,
-    obv_divergence: q.obv.divergence,
-    obv_detail: q.obv.detail,
-    // Weekly timeframe
-    weekly_trend:       q.weekly?.trend ?? null,
-    weekly_align_score: q.weekly?.alignScore ?? null,
-    weekly_is_entry:    q.weekly?.isEntry ?? false,
-    weekly_pullback:    q.weekly?.pullbackPct ?? null,
-    weekly_above_mas:   q.weekly?.aboveAllMAs ?? false,
-    weekly_detail:      q.weekly?.detail ?? null,
-    weekly_rsi:         q.weekly?.rsi ?? null,
-    // Short Interest
-    short_pct: q.shortInterest?.shortPct ?? null,
-    short_ratio: q.shortInterest?.shortRatio ?? null,
-    short_squeeze: q.shortInterest?.squeezePotential ?? 'LOW',
-    short_detail: q.shortInterest?.shortDetail ?? null,
+    vcp_score: q.vcp.score, vcp_is_vcp: q.vcp.isVCP, vcp_contraction_count: q.vcp.contractionCount,
+    vcp_last_pullback: q.vcp.lastPullbackPct, vcp_base_weeks: q.vcp.baseWeeks,
+    vcp_lowest_vol: q.vcp.lowestVolWeekInBase, vcp_pivot: q.vcp.pivotPrice, vcp_detail: q.vcp.detail,
+    pivot_broken: q.pivot.isBroken, pivot_dist: q.pivot.distFromPivot, pivot_within_chase: q.pivot.withinChaseLimit,
+    breakout_52w: q.breakout52w.isBreakout, breakout_52w_day: q.breakout52w.breakoutDay,
+    breakout_52w_vol: q.breakout52w.volConfirmed, breakout_52w_detail: q.breakout52w.detail,
+    pead_signal: q.earningSurprise?.peadSignal ?? false, pead_surprise_pct: q.earningSurprise?.surprisePct ?? null, pead_detail: q.earningSurprise?.detail ?? null,
+    obv_trend: q.obv.trend, obv_divergence: q.obv.divergence, obv_detail: q.obv.detail,
+    weekly_trend: q.weekly?.trend ?? null, weekly_align_score: q.weekly?.alignScore ?? null,
+    weekly_is_entry: q.weekly?.isEntry ?? false, weekly_pullback: q.weekly?.pullbackPct ?? null,
+    weekly_above_mas: q.weekly?.aboveAllMAs ?? false, weekly_detail: q.weekly?.detail ?? null, weekly_rsi: q.weekly?.rsi ?? null,
+    short_pct: q.shortInterest?.shortPct ?? null, short_ratio: q.shortInterest?.shortRatio ?? null,
+    short_squeeze: q.shortInterest?.squeezePotential ?? 'LOW', short_detail: q.shortInterest?.shortDetail ?? null,
+    // 🆕 시장 국면 필드
+    regime_note: regimeNote,
   };
 }
 
@@ -839,39 +721,42 @@ export async function POST(req: NextRequest) {
     if (!Array.isArray(tickers) || tickers.length === 0) throw new Error('invalid');
   } catch { return NextResponse.json({ error: 'Invalid request body' }, { status: 400 }); }
 
-  const [spyQuote, ...stockQuotes] = await Promise.all([fetchQuote('SPY'), ...tickers.map(fetchQuote)]);
+  // 🆕 시장 국면 + SPY + 개별 종목 병렬 조회
+  const [marketRegimeData, spyQuote, ...stockQuotes] = await Promise.all([
+    fetchMarketRegime(),
+    fetchQuote('SPY'),
+    ...tickers.map(fetchQuote),
+  ]);
+
+  const regime: MarketRegime = marketRegimeData?.regime ?? 'BULL';
+
   const validStocks = stockQuotes.filter((q): q is QuoteData => q !== null);
   if (validStocks.length === 0) return NextResponse.json({ error: '주가 데이터를 가져올 수 없습니다.' }, { status: 500 });
 
   const spyYtd       = spyQuote?.ytdReturn ?? 0;
   const sectorAvgYtd = validStocks.reduce((a, s) => a + s.ytdReturn, 0) / validStocks.length;
-  const stocks       = validStocks.map(q => analyzeStock(q, spyYtd, sectorAvgYtd));
 
-  // ── RS 랭킹 시스템 (IBD RS Rating 방식) ────────────────────────────────────
-  // 전체 종목을 YTD 수익률로 랭킹 매겨서 상위 % 계산
-  const ytdValues  = validStocks.map(s => s.ytdReturn).sort((a, b) => a - b);
+  // 🆕 analyzeStock에 regime 전달
+  const stocks = validStocks.map(q => analyzeStock(q, spyYtd, sectorAvgYtd, regime));
+
+  // RS 랭킹
+  const ytdValues = validStocks.map(s => s.ytdReturn).sort((a, b) => a - b);
   const totalCount = ytdValues.length;
-
   for (let i = 0; i < stocks.length; i++) {
-    const ytd    = validStocks[i]?.ytdReturn ?? 0;
-    const rank   = ytdValues.filter(v => v <= ytd).length;
-    const rsRank = Math.round((rank / totalCount) * 100); // 0~100, 높을수록 강함
+    const ytd = validStocks[i]?.ytdReturn ?? 0;
+    const rank = ytdValues.filter(v => v <= ytd).length;
+    const rsRank = Math.round((rank / totalCount) * 100);
     (stocks[i] as Record<string, unknown>).rs_rank = rsRank;
-
-    // 상위 10% 미만이면 신뢰도 낮춤
     if (rsRank < 10 && stocks[i].signal.includes('BUY')) {
       (stocks[i] as Record<string, unknown>).rs_rank_warning = true;
       if (stocks[i].confidence === 'HIGH') (stocks[i] as Record<string, unknown>).confidence = 'MEDIUM';
     }
-    // 상위 10% 이상이면 신뢰도 높임
     if (rsRank >= 90 && stocks[i].signal.includes('BUY') && stocks[i].confidence === 'MEDIUM') {
       (stocks[i] as Record<string, unknown>).confidence = 'HIGH';
     }
   }
 
-  // ── 섹터 RS 연동 (섹터 히트맵 데이터와 연결) ────────────────────────────────
-  // 섹터 ETF YTD 가져와서 개별 종목 신뢰도 조정
-  // SOXX = 반도체, XLK = 기술, XLF = 금융 등
+  // 섹터 RS
   try {
     const sectorRes = await fetch(
       'https://query1.finance.yahoo.com/v8/finance/chart/SOXX?interval=1d&range=1y',
@@ -882,11 +767,10 @@ export async function POST(req: NextRequest) {
       const sc: number[] = (sd?.chart?.result?.[0]?.indicators?.quote?.[0]?.close ?? []).filter((v: number) => v != null && !isNaN(v));
       const st: number[] = sd?.chart?.result?.[0]?.timestamp ?? [];
       if (sc.length > 0) {
-        const ys    = new Date(new Date().getFullYear(), 0, 1).getTime() / 1000;
-        const yi    = st.findIndex((t: number) => t >= ys);
-        const base  = sc[yi >= 0 ? yi : 0];
+        const ys = new Date(new Date().getFullYear(), 0, 1).getTime() / 1000;
+        const yi = st.findIndex((t: number) => t >= ys);
+        const base = sc[yi >= 0 ? yi : 0];
         const soxxYtd = ((sc[sc.length-1] - base) / base) * 100;
-        // 섹터(SOXX) 하락 중이면 반도체 종목 신뢰도 낮춤
         for (const s of stocks) {
           const isSemi = ['AMD','NVDA','MRVL','MU','INTC','ARM','TSM','AVGO','QCOM','AMAT','LRCX','KLAC','SOXX'].includes(s.ticker);
           if (isSemi) {
@@ -899,17 +783,29 @@ export async function POST(req: NextRequest) {
         }
       }
     }
-  } catch { /* skip sector check */ }
+  } catch { /* skip */ }
 
   const strongBuys = stocks.filter(s => s.signal === 'STRONG_BUY').map(s => s.ticker);
   const buys       = stocks.filter(s => s.signal === 'BUY').map(s => s.ticker);
   const vcpPicks   = stocks.filter(s => s.vcp_is_vcp).sort((a, b) => b.vcp_score - a.vcp_score).slice(0, 3).map(s => s.ticker);
 
+  // 🆕 시장 국면 정보를 market_context 맨 앞에 표시
+  const regimeStr = marketRegimeData
+    ? `${marketRegimeData.emoji} 시장 국면: ${marketRegimeData.label} (SPY ${marketRegimeData.spyAboveMa200 ? '200일선 위' : '200일선 아래'} ${marketRegimeData.spyMa200Dist > 0 ? '+' : ''}${marketRegimeData.spyMa200Dist}% / VIX ${marketRegimeData.vix}). `
+    : '';
+
   const market_context =
+    regimeStr +
     `섹터 YTD 평균 ${sectorAvgYtd > 0 ? '+' : ''}${Math.round(sectorAvgYtd*10)/10}% vs S&P500 ${spyYtd > 0 ? '+' : ''}${Math.round(spyYtd*10)/10}%. ` +
     (strongBuys.length > 0 ? `즉시매수: ${strongBuys.slice(0,5).join(', ')}. ` : '') +
     (buys.length > 0 ? `매수: ${buys.slice(0,5).join(', ')}. ` : '') +
     (vcpPicks.length > 0 ? `VCP 패턴 감지: ${vcpPicks.join(', ')}.` : '');
 
-  return NextResponse.json({ stocks, market_context, analyzed_at: new Date().toISOString() });
+  return NextResponse.json({
+    stocks,
+    market_context,
+    analyzed_at: new Date().toISOString(),
+    // 🆕 국면 데이터 별도 필드로도 제공 (프론트에서 배지 표시용)
+    market_regime: marketRegimeData ?? null,
+  });
 }
