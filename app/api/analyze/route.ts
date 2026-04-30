@@ -99,7 +99,105 @@ function calcRRRatio(
   };
 }
 
-// ── 🆕 Pocket Pivot 감지 ──────────────────────────────────────────────────────
+// ── 🆕 트레일링 스탑 계산 ─────────────────────────────────────────────────────
+// ATR × 배수 기반 트레일링 스탑
+// 주가가 오를수록 손절선도 자동으로 올라가는 동적 손절 전략
+interface TrailingStopResult {
+  initialStop:    number;   // 진입 시 초기 손절가 (ATR × 2)
+  trailStop10:    number;   // 주가 +10% 시 트레일링 스탑
+  trailStop20:    number;   // 주가 +20% 시 트레일링 스탑
+  trailStop30:    number;   // 주가 +30% 시 트레일링 스탗
+  atrMultiplier:  number;   // 사용된 ATR 배수
+  atrAbs:         number;   // ATR 절대값
+  breakEvenStop:  number;   // 본전 손절가 (진입가 + 수수료 커버)
+  detail:         string;
+}
+
+function calcTrailingStop(price: number, atrAbs: number, entryZone: string | null): TrailingStopResult {
+  const r = (n: number) => Math.round(n * 100) / 100;
+
+  // 진입가 파싱
+  const entryMatch = entryZone?.match(/\$(\d+\.?\d*)/);
+  const entryPrice = entryMatch ? parseFloat(entryMatch[1]) : price;
+
+  // ATR 배수: 변동성에 따라 자동 조정
+  // ATR% 기준: 2% 이하 = 안정적 → 2.5배, 4% 이상 = 변동 큼 → 1.5배
+  const atrPct = (atrAbs / price) * 100;
+  const multiplier = atrPct <= 2 ? 2.5 : atrPct <= 4 ? 2.0 : 1.5;
+
+  // 초기 손절가
+  const initialStop = r(entryPrice - atrAbs * multiplier);
+
+  // 주가 상승 시나리오별 트레일링 스탑
+  // = 해당 시점 주가 - ATR × 배수
+  const trailStop10 = r(entryPrice * 1.10 - atrAbs * multiplier);
+  const trailStop20 = r(entryPrice * 1.20 - atrAbs * multiplier);
+  const trailStop30 = r(entryPrice * 1.30 - atrAbs * multiplier);
+
+  // 본전 손절: 진입가 + 0.5% (수수료)
+  const breakEvenStop = r(entryPrice * 1.005);
+
+  const detail = `ATR ${r(atrAbs)} × ${multiplier}배 기준 | 초기 손절 $${initialStop} | +10% 시 $${trailStop10} | +20% 시 $${trailStop20}`;
+
+  return { initialStop, trailStop10, trailStop20, trailStop30, atrMultiplier: multiplier, atrAbs: r(atrAbs), breakEvenStop, detail };
+}
+
+// ── 🆕 분할 매수/매도 구간 계산 ──────────────────────────────────────────────
+// 단일 진입 대신 3단계 분할 매수, 3단계 분할 매도
+interface SplitZoneResult {
+  // 분할 매수
+  entry1: { price: string; ratio: number; condition: string };  // 50%
+  entry2: { price: string; ratio: number; condition: string };  // 30%
+  entry3: { price: string; ratio: number; condition: string };  // 20%
+  // 분할 매도 (익절)
+  exit1:  { price: string; ratio: number; gain: string };       // +8~10%
+  exit2:  { price: string; ratio: number; gain: string };       // +15~20%
+  exit3:  { price: string; ratio: number; gain: string };       // 트레일링
+  // 평균 진입가 추정
+  avgEntry: number;
+}
+
+function calcSplitZones(
+  price: number,
+  mas:   Record<string, number>,
+  atrAbs: number,
+  vcp:   { isVCP: boolean; pivotPrice: number | null },
+  pullback: { isPullback: boolean; supportPrice: number | null; nearestSupport: string | null }
+): SplitZoneResult {
+  const r = (n: number) => `$${Math.round(n * 100) / 100}`;
+  const rn = (n: number) => Math.round(n * 100) / 100;
+
+  // 1차 매수: 현재 가장 가까운 눌림목/지지선
+  const support1 = pullback.supportPrice ?? (!isNaN(mas.ma20) ? mas.ma20 : price * 0.97);
+  const entry1Price = rn(support1 * 1.002); // 지지 확인 후 0.2% 위
+
+  // 2차 매수: 더 깊은 지지선 (MA50 or MA30)
+  const support2 = !isNaN(mas.ma50) ? mas.ma50 : (!isNaN(mas.ma30) ? mas.ma30 : price * 0.94);
+  const entry2Price = rn(support2 * 1.002);
+
+  // 3차 매수: VCP 피벗 돌파 or 추세 재개 확인 후
+  const entry3Price = vcp.isVCP && vcp.pivotPrice
+    ? rn(vcp.pivotPrice * 1.005)   // 피벗 돌파 0.5% 위
+    : rn(price * 1.01);             // 현재가 1% 위 돌파
+
+  // 평균 진입가 (비중 가중 평균)
+  const avgEntry = rn((entry1Price * 0.5 + entry2Price * 0.3 + entry3Price * 0.2));
+
+  // 익절 구간 (평균 진입가 기준)
+  const exit1Price = rn(avgEntry * 1.08);   // +8% (1차 30% 정리)
+  const exit2Price = rn(avgEntry * 1.18);   // +18% (2차 30% 정리)
+  const exit3Price = rn(avgEntry * 1.30);   // +30% 이상 (트레일링)
+
+  return {
+    entry1: { price: r(entry1Price), ratio: 50, condition: `${pullback.nearestSupport ?? 'MA20'} 지지 확인` },
+    entry2: { price: r(entry2Price), ratio: 30, condition: `MA50($${Math.round(support2 * 100) / 100}) 지지 확인` },
+    entry3: { price: r(entry3Price), ratio: 20, condition: vcp.isVCP ? 'VCP 피벗 돌파 + 거래량' : '추세 재개 확인' },
+    exit1:  { price: r(exit1Price), ratio: 30, gain: '+8%' },
+    exit2:  { price: r(exit2Price), ratio: 30, gain: '+18%' },
+    exit3:  { price: r(exit3Price), ratio: 40, gain: '+30%↑ 트레일링' },
+    avgEntry,
+  };
+}
 // Minervini 정의: MA 위에서 거래량이 직전 10일 중 가장 높은 하락일 거래량보다 많은 날
 // → 기관이 조용히 매집하는 "선취매 타점"
 interface PocketPivotResult {
@@ -622,6 +720,17 @@ function analyzeStock(q: QuoteData, spyYtd: number, sectorAvgYtd: number, regime
   const resistance=`$${q.high52w}`;
   const { rrRatio, rrGrade, riskAmt, rewardAmt, rrLabel } = calcRRRatio(entry, stopLoss, resistance, q.price);
 
+  // 🆕 트레일링 스탑 + 분할 매수 구간 (매수 신호일 때만)
+  const trailingStop = calcTrailingStop(q.price, q.atrAbs, entry);
+  const pullbackForSplit = {
+    isPullback:    (q as unknown as Record<string, unknown>).pullback_is as boolean ?? false,
+    supportPrice:  null as number | null,
+    nearestSupport: null as string | null,
+  };
+  const splitZones = signal.includes('BUY')
+    ? calcSplitZones(q.price, mas, q.atrAbs, q.vcp, pullbackForSplit)
+    : null;
+
   const maStatus=`MA ${aboveCount}/5개 위${stackedBull?' (정배열)':stackedBear?' (역배열)':''}`;
   const signalWord={STRONG_BUY:'즉시매수',BUY:'매수',HOLD:'관망',SELL:'매도',STRONG_SELL:'즉시매도'}[signal]??signal;
   const summary=`[${signalWord}] YTD ${q.ytdReturn>0?'+':''}${q.ytdReturn}% (S&P500 대비 ${excessIdx>0?'+':''}${Math.round(excessIdx*10)/10}%). ${maStatus}. RSI ${q.rsi} · MACD ${macdBull?'상승':'하락'} · 거래량 ${q.volumeRatio}x.`;
@@ -682,6 +791,22 @@ function analyzeStock(q: QuoteData, spyYtd: number, sectorAvgYtd: number, regime
     rs_line_spy_new_low:   rsLine.spyNewLow,
     rs_line_3m_change:     rsLine.rs3mChange,
     rs_line_detail:        rsLine.detail,
+    // 🆕 트레일링 스탑
+    trail_initial_stop:  trailingStop.initialStop,
+    trail_stop_10:       trailingStop.trailStop10,
+    trail_stop_20:       trailingStop.trailStop20,
+    trail_stop_30:       trailingStop.trailStop30,
+    trail_multiplier:    trailingStop.atrMultiplier,
+    trail_break_even:    trailingStop.breakEvenStop,
+    trail_detail:        trailingStop.detail,
+    // 🆕 분할 매수/매도 구간
+    split_entry1:        splitZones?.entry1 ?? null,
+    split_entry2:        splitZones?.entry2 ?? null,
+    split_entry3:        splitZones?.entry3 ?? null,
+    split_exit1:         splitZones?.exit1  ?? null,
+    split_exit2:         splitZones?.exit2  ?? null,
+    split_exit3:         splitZones?.exit3  ?? null,
+    split_avg_entry:     splitZones?.avgEntry ?? null,
   };
 }
 
