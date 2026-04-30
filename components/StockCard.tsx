@@ -112,6 +112,20 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
   const sector   = stock.sector   ?? null;
   const industry = stock.industry ?? null;
 
+  // Pocket Pivot
+  const ppIs      = stock.pocket_pivot          ?? false;
+  const ppDaysAgo = stock.pocket_pivot_days_ago ?? -1;
+  const ppVolRatio = stock.pocket_pivot_vol_ratio ?? 0;
+  const ppAboveMA = stock.pocket_pivot_above_ma  ?? null;
+  const ppDetail  = stock.pocket_pivot_detail    ?? '';
+
+  // RS Line
+  const rsLineTrend = stock.rs_line_trend      ?? 'FLAT';
+  const rsLineDivergence = stock.rs_line_divergence ?? 'NONE';
+  const rsLine3m  = stock.rs_line_3m_change    ?? 0;
+  const rsLineDetail = stock.rs_line_detail    ?? '';
+  const rsLineNewHigh = stock.rs_line_new_high ?? false;
+
   return (
     <div className={`stock-card border border-zinc-800 border-l-4 ${c.border} rounded-xl bg-bg-card ${highlight ? 'ring-1 ring-emerald-500/20' : ''}`}>
 
@@ -139,6 +153,18 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
           {stock.breakout_52w && <span className="text-[9px] bg-emerald-900 text-emerald-200 border border-emerald-700 px-1.5 py-0.5 rounded">🚀 신고가</span>}
           {stock.weekly_is_entry && <span className="text-[9px] bg-amber-900 text-amber-200 border border-amber-700 px-1.5 py-0.5 rounded">🎯 최고타점</span>}
           {stock.pead_signal && <span className="text-[9px] bg-sky-900 text-sky-200 border border-sky-700 px-1.5 py-0.5 rounded">📈 PEAD</span>}
+          {/* Pocket Pivot 배지 */}
+          {ppIs && (
+            <span className="text-[9px] bg-violet-950 text-violet-200 border border-violet-700 px-1.5 py-0.5 rounded">
+              ⚡ 포켓피벗{ppDaysAgo === 0 ? ' 오늘' : ' 어제'}
+            </span>
+          )}
+          {/* RS Line 다이버전스 배지 */}
+          {rsLineDivergence === 'BULLISH' && (
+            <span className="text-[9px] bg-emerald-950 text-emerald-200 border border-emerald-600 px-1.5 py-0.5 rounded">
+              🏆 RS 강세
+            </span>
+          )}
           {/* 🆕 눌림목 배지 */}
           {pbIs && pbGrade && (
             <span className={`text-[9px] px-1.5 py-0.5 rounded border ${pbc.badge}`}>
@@ -427,6 +453,68 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
                 </span>
               </div>
               <p className="text-[10px] text-zinc-500" style={{ fontFamily: 'system-ui' }}>{stock.short_detail ?? ''}</p>
+            </div>
+          )}
+
+          {/* ── Pocket Pivot ── */}
+          {ppIs && (
+            <div className="mb-3 p-3 rounded-lg border border-violet-800 bg-violet-950/20">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] text-zinc-500 uppercase tracking-widest">포켓 피벗</span>
+                  <span className="text-[9px] bg-violet-900 text-violet-200 border border-violet-700 px-1.5 py-0.5 rounded">
+                    {ppDaysAgo === 0 ? '오늘 감지' : '어제 감지'}
+                  </span>
+                  {ppAboveMA && <span className="text-[9px] text-violet-400">{ppAboveMA} 위</span>}
+                </div>
+                <span className="text-xs font-bold font-mono text-violet-300">거래량 {ppVolRatio}x</span>
+              </div>
+              <p className="text-[10px] text-zinc-500" style={{ fontFamily: 'system-ui' }}>{ppDetail}</p>
+              <p className="text-[10px] text-zinc-600 mt-1" style={{ fontFamily: 'system-ui' }}>
+                Minervini 기법 — 하락일 최대 거래량 초과 + MA 위 = 기관 선취매 신호
+              </p>
+            </div>
+          )}
+
+          {/* ── RS Line ── */}
+          {stock.rs_line !== undefined && (
+            <div className={`mb-3 p-3 rounded-lg border ${
+              rsLineDivergence === 'BULLISH' ? 'border-emerald-600 bg-emerald-950/20' :
+              rsLineDivergence === 'BEARISH' ? 'border-red-800 bg-red-950/20' :
+              rsLineTrend === 'UP' ? 'border-emerald-900 bg-emerald-950/10' :
+              'border-zinc-800 bg-zinc-900/20'
+            }`}>
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] text-zinc-500 uppercase tracking-widest">RS Line (상대강도선)</span>
+                  {rsLineDivergence === 'BULLISH' && (
+                    <span className="text-[9px] bg-emerald-900 text-emerald-200 border border-emerald-600 px-1.5 py-0.5 rounded font-semibold">
+                      🏆 강세 다이버전스
+                    </span>
+                  )}
+                  {rsLineDivergence === 'BEARISH' && (
+                    <span className="text-[9px] bg-red-900 text-red-300 border border-red-700 px-1.5 py-0.5 rounded">
+                      ⚠ 약세 다이버전스
+                    </span>
+                  )}
+                </div>
+                <span className={`text-xs font-semibold font-mono ${
+                  rsLineTrend === 'UP' ? 'text-emerald-400' :
+                  rsLineTrend === 'DOWN' ? 'text-red-400' : 'text-zinc-400'
+                }`}>
+                  3개월 {rsLine3m > 0 ? '+' : ''}{rsLine3m}%
+                  {rsLineTrend === 'UP' ? ' ▲' : rsLineTrend === 'DOWN' ? ' ▼' : ' —'}
+                </span>
+              </div>
+              <div className="flex gap-4 text-[10px] mb-2">
+                <span className={rsLineNewHigh ? 'text-emerald-400' : 'text-zinc-500'}>
+                  RS Line {rsLineNewHigh ? '✓ 신고점' : '— 신고점 아님'}
+                </span>
+                <span className={stock.rs_line_spy_new_low ? 'text-amber-400' : 'text-zinc-500'}>
+                  SPY {stock.rs_line_spy_new_low ? '⚠ 신저점' : '— 정상'}
+                </span>
+              </div>
+              <p className="text-[10px] text-zinc-500" style={{ fontFamily: 'system-ui' }}>{rsLineDetail}</p>
             </div>
           )}
 
