@@ -70,21 +70,20 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
 
   const score = Math.min(10, Math.max(1, Math.round(Number(stock.momentum_score) * 2) / 2));
   const c = sigColors(stock.signal);
-  const s = stock as unknown as Record<string, unknown>;
-
-  const regimeNote = s.regime_note as string | null ?? null;
+  // 시장 국면
+  const regimeNote  = stock.regime_note  ?? null;
   const regimeStyle = regimeNote ? regimeBadgeStyle(regimeNote) : null;
 
-  const rrRatio  = s.rr_ratio  as number | null ?? null;
-  const rrGrade  = s.rr_grade  as string | null ?? null;
-  const rrRisk   = s.rr_risk   as number | null ?? null;
-  const rrReward = s.rr_reward as number | null ?? null;
-  const rrLabel  = s.rr_label  as string ?? '계산 불가';
-  const rrc = rrColors(rrGrade);
+  // R/R 비율
+  const rrRatio  = stock.rr_ratio  ?? null;
+  const rrGrade  = stock.rr_grade  ?? null;
+  const rrRisk   = stock.rr_risk   ?? null;
+  const rrReward = stock.rr_reward ?? null;
+  const rrLabel  = stock.rr_label  ?? '계산 불가';
+  const rrc = rrColors(rrGrade ?? null);
   const rrBarWidth = rrRatio ? Math.min(100, (rrRatio / 5) * 100) : 0;
 
-  // 🆕 눌림목 데이터
-  // 🆕 매크로 이벤트 경고 (localStorage에서 읽기)
+  // 매크로 이벤트 경고
   const [macroWarning, setMacroWarning] = useState<{ title: string; daysUntil: number; date: string } | null>(null);
   useEffect(() => {
     try {
@@ -96,16 +95,17 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
     } catch {}
   }, []);
 
-  const pbIs      = s.pullback_is      as boolean ?? false;
-  const pbGrade   = s.pullback_grade   as string | null ?? null;
-  const pbPct     = s.pullback_pct     as number ?? 0;
-  const pbSupport = s.pullback_support as string | null ?? null;
-  const pbSupportPrice = s.pullback_support_price as number | null ?? null;
-  const pbDistToSupport = s.pullback_dist_to_support as number ?? 0;
-  const pbVolTrend = s.pullback_vol_trend as string ?? 'FLAT';
-  const pbRsiCooled = s.pullback_rsi_cooled as boolean ?? false;
-  const pbHigh    = s.pullback_high    as number ?? 0;
-  const pbDetail  = s.pullback_detail  as string ?? '';
+  // 눌림목
+  const pbIs            = stock.pullback_is             ?? false;
+  const pbGrade         = stock.pullback_grade          ?? null;
+  const pbPct           = stock.pullback_pct            ?? 0;
+  const pbSupport       = stock.pullback_support        ?? null;
+  const pbSupportPrice  = stock.pullback_support_price  ?? null;
+  const pbDistToSupport = stock.pullback_dist_to_support ?? 0;
+  const pbVolTrend      = stock.pullback_vol_trend      ?? 'FLAT';
+  const pbRsiCooled     = stock.pullback_rsi_cooled     ?? false;
+  const pbHigh          = stock.pullback_high           ?? 0;
+  const pbDetail        = stock.pullback_detail         ?? '';
   const pbc = pullbackColors(pbGrade);
 
   return (
