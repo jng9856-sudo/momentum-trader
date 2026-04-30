@@ -94,149 +94,197 @@ function DivergenceRow({ divs }: { divs: HoldingResult['divergences'] }) {
 }
 
 interface EarningsInfo { earningsDate: string|null; daysUntil: number|null; epsEstimate: number|null; revenueEstimate: string|null; lastEPS: number|null; }
+
 function HoldingCard({ result: r, onRemove, earnings }: { result: HoldingResult; onRemove?: () => void; earnings?: EarningsInfo }) {
   const router = useRouter();
+  // ── 🆕 접기/펼치기 상태 ──────────────────────────────────────────────────────
+  const [open, setOpen] = useState(false);
+
   const pnlPos = r.pnlPct >= 0;
   const borderColor = r.action === '즉시매도' ? 'border-l-red-400' :
     r.action === '매도' ? 'border-l-red-700' :
     r.action === '부분익절' ? 'border-l-orange-500' :
     r.action === '홀딩' ? 'border-l-emerald-600' : 'border-l-zinc-600';
 
+  // 상승여력 색상 (헤더 한 줄 요약용)
+  const upsideColor = r.upside.score >= 70 ? 'text-emerald-400' : r.upside.score >= 50 ? 'text-amber-400' : r.upside.score >= 30 ? 'text-orange-400' : 'text-red-400';
+
   return (
-    <div className={`border border-zinc-800 border-l-4 ${borderColor} rounded-xl p-5 bg-bg-card`}>
-      {/* Header */}
-      <div className="flex items-start justify-between mb-4">
-        <div>
-          <div className="flex items-center gap-3 mb-1">
-            <button onClick={() => router.push(`/stock/${r.ticker}`)} className="text-xl font-semibold text-zinc-100 hover:text-emerald-300 transition-colors underline-offset-2 hover:underline cursor-pointer">{r.ticker} ↗</button>
-            <span className={`text-xs font-semibold px-3 py-1 rounded-md border ${ACTION_STYLE[r.action] ?? 'bg-zinc-900 text-zinc-400 border-zinc-700'}`}>{r.action}</span>
-            {onRemove && (
-              <button onClick={onRemove}
-                className="w-5 h-5 flex items-center justify-center rounded-full bg-zinc-800 hover:bg-red-900 text-zinc-500 hover:text-red-400 transition-colors text-xs">✕</button>
-            )}
-          </div>
-          <div className="text-xs text-zinc-600">평균매수 ${r.avgPrice} {r.shares > 0 && `· ${r.shares}주`}</div>
+    <div className={`border border-zinc-800 border-l-4 ${borderColor} rounded-xl bg-bg-card`}>
+
+      {/* ── 항상 보이는 헤더 (클릭으로 펼치기) ── */}
+      <div className="flex items-center justify-between px-5 py-4 cursor-pointer select-none"
+        onClick={() => setOpen(o => !o)}>
+        {/* 왼쪽: 티커 + 액션 배지 */}
+        <div className="flex items-center gap-2 flex-wrap min-w-0">
+          <button onClick={e => { e.stopPropagation(); router.push(`/stock/${r.ticker}`); }}
+            className="text-base font-bold text-zinc-100 hover:text-emerald-300 transition-colors shrink-0">
+            {r.ticker} ↗
+          </button>
+          <span className={`text-xs font-semibold px-2.5 py-1 rounded-md border ${ACTION_STYLE[r.action] ?? 'bg-zinc-900 text-zinc-400 border-zinc-700'}`}>
+            {r.action}
+          </span>
+          {onRemove && (
+            <button onClick={e => { e.stopPropagation(); onRemove(); }}
+              className="w-5 h-5 flex items-center justify-center rounded-full bg-zinc-800 hover:bg-red-900 text-zinc-500 hover:text-red-400 transition-colors text-xs shrink-0">✕</button>
+          )}
         </div>
-        <div className="text-right">
-          <div className="text-xl font-semibold text-zinc-100 font-mono">${r.currentPrice}</div>
-          <div className={`text-sm font-semibold ${pnlPos ? 'text-emerald-400' : 'text-red-400'}`}>
-            {pnlPos ? '+' : ''}{r.pnlPct}%
-            {r.shares > 0 && <span className="text-xs ml-1">({pnlPos ? '+' : ''}${r.pnlAbs.toLocaleString()})</span>}
+
+        {/* 오른쪽: 현재가 + 손익 + 상승여력 + 화살표 */}
+        <div className="flex items-center gap-4 shrink-0 ml-2">
+          <div className="text-right">
+            <div className="text-base font-semibold text-zinc-100 font-mono">${r.currentPrice}</div>
+            <div className={`text-xs font-semibold ${pnlPos ? 'text-emerald-400' : 'text-red-400'}`}>
+              {pnlPos ? '+' : ''}{r.pnlPct}%
+              {r.shares > 0 && <span className="text-[10px] ml-1">({pnlPos ? '+' : ''}${r.pnlAbs.toLocaleString()})</span>}
+            </div>
           </div>
+          <div className="text-center hidden sm:block">
+            <div className="text-[9px] text-zinc-600 mb-0.5">여력</div>
+            <div className={`text-xs font-semibold font-mono ${upsideColor}`}>{r.upside.score}점</div>
+          </div>
+          <span className="text-zinc-600 text-xs">{open ? '▲' : '▼'}</span>
         </div>
       </div>
 
-      {/* Earnings badge */}
-      {earnings && <div className="mb-3"><EarningsBadge info={earnings} /></div>}
+      {/* ── 접힌 상태: 한 줄 요약 ── */}
+      {!open && (
+        <div className="px-5 pb-3 border-t border-zinc-900 pt-2 flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-zinc-500">
+          <span>평균매수 <span className="text-zinc-400 font-mono">${r.avgPrice}</span></span>
+          {r.shares > 0 && <span>{r.shares}주</span>}
+          <span>RSI <span className={r.indicators.rsi > 78 ? 'text-red-400' : r.indicators.rsi < 35 ? 'text-sky-400' : 'text-emerald-400'}>{r.indicators.rsi}</span></span>
+          <span>MA위 <span className={r.indicators.aboveCount >= 3 ? 'text-emerald-400' : r.indicators.aboveCount <= 1 ? 'text-red-400' : 'text-amber-400'}>{r.indicators.aboveCount}/4</span></span>
+          <span>거래량 <span className={r.indicators.volRatio > 1.3 ? 'text-emerald-400' : 'text-zinc-400'}>{r.indicators.volRatio}x</span></span>
+          <span className={upsideColor}>{r.upside.label}</span>
+          {r.sellSignals.length > 0 && <span className="text-red-400">매도신호 {r.sellSignals.length}개</span>}
+          {r.stopLoss.recommended.price && (
+            <span>손절 <span className="text-amber-400 font-mono">${r.stopLoss.recommended.price}</span></span>
+          )}
+        </div>
+      )}
 
-      {/* Upside potential bar */}
-      <UpsideBar score={r.upside.score} label={r.upside.label} />
+      {/* ── 펼친 상태: 전체 상세 ── */}
+      {open && (
+        <div className="px-5 pb-5 border-t border-zinc-900 pt-4">
 
-      {/* 7 Indicators grid */}
-      <div className="grid grid-cols-4 sm:grid-cols-7 gap-2 mb-4 p-3 bg-zinc-900/50 rounded-lg">
-        {[
-          { label: 'RSI', val: r.indicators.rsi, color: r.indicators.rsi > 78 ? 'text-red-400' : r.indicators.rsi < 35 ? 'text-sky-400' : 'text-emerald-400' },
-          { label: 'MACD', val: r.indicators.macd, color: r.indicators.macd > 0 ? 'text-emerald-400' : 'text-red-400' },
-          { label: 'ADX', val: r.indicators.adx, color: r.indicators.adx > 50 ? 'text-red-400' : r.indicators.adx >= 25 ? 'text-emerald-400' : 'text-amber-400' },
-          { label: '거래량', val: `${r.indicators.volRatio}x`, color: r.indicators.volRatio > 1.3 ? 'text-emerald-400' : r.indicators.volRatio < 0.7 ? 'text-red-400' : 'text-zinc-400' },
-          { label: 'MA위', val: `${r.indicators.aboveCount}/4`, color: r.indicators.aboveCount >= 3 ? 'text-emerald-400' : r.indicators.aboveCount <= 1 ? 'text-red-400' : 'text-amber-400' },
-          { label: 'BB%', val: `${r.indicators.bbPos}%`, color: r.indicators.bbPos > 85 ? 'text-amber-400' : r.indicators.bbPos < 20 ? 'text-sky-400' : 'text-zinc-400' },
-          { label: '고점%', val: `${r.indicators.distFromHigh}%`, color: r.indicators.distFromHigh > -5 ? 'text-emerald-400' : r.indicators.distFromHigh < -25 ? 'text-red-400' : 'text-zinc-400' },
-        ].map(({ label, val, color }) => (
-          <div key={label} className="text-center">
-            <div className="text-[9px] text-zinc-600 uppercase tracking-widest mb-0.5">{label}</div>
-            <div className={`text-xs font-semibold font-mono ${color}`}>{val}</div>
+          {/* 평균매수 정보 */}
+          <div className="text-xs text-zinc-600 mb-4">
+            평균매수 ${r.avgPrice}{r.shares > 0 && ` · ${r.shares}주`}
           </div>
-        ))}
-      </div>
 
-      {/* Divergence detection */}
-      <DivergenceRow divs={r.divergences} />
+          {/* Earnings badge */}
+          {earnings && <div className="mb-3"><EarningsBadge info={earnings} /></div>}
 
-      {/* Sell signals */}
-      {r.sellSignals.length > 0 && (
-        <div className="mb-4 bg-red-950/20 border border-red-900/40 rounded-lg p-3">
-          <div className="text-[10px] text-red-500 uppercase tracking-widest mb-2">
-            매도 신호 ({r.sellSignals.length}개)
-          </div>
-          <ul className="space-y-2">
-            {r.sellSignals.map((s, i) => (
-              <li key={i} className="flex items-start gap-2">
-                <span className={`mt-1 w-1.5 h-1.5 rounded-full shrink-0 ${SEV_DOT[s.severity]}`} />
-                <span className={`text-xs ${SEV_COLOR[s.severity]}`} style={{ fontFamily: 'system-ui' }}>{s.text}</span>
-              </li>
+          {/* Upside potential bar */}
+          <UpsideBar score={r.upside.score} label={r.upside.label} />
+
+          {/* 7 Indicators grid */}
+          <div className="grid grid-cols-4 sm:grid-cols-7 gap-2 mb-4 p-3 bg-zinc-900/50 rounded-lg">
+            {[
+              { label: 'RSI', val: r.indicators.rsi, color: r.indicators.rsi > 78 ? 'text-red-400' : r.indicators.rsi < 35 ? 'text-sky-400' : 'text-emerald-400' },
+              { label: 'MACD', val: r.indicators.macd, color: r.indicators.macd > 0 ? 'text-emerald-400' : 'text-red-400' },
+              { label: 'ADX', val: r.indicators.adx, color: r.indicators.adx > 50 ? 'text-red-400' : r.indicators.adx >= 25 ? 'text-emerald-400' : 'text-amber-400' },
+              { label: '거래량', val: `${r.indicators.volRatio}x`, color: r.indicators.volRatio > 1.3 ? 'text-emerald-400' : r.indicators.volRatio < 0.7 ? 'text-red-400' : 'text-zinc-400' },
+              { label: 'MA위', val: `${r.indicators.aboveCount}/4`, color: r.indicators.aboveCount >= 3 ? 'text-emerald-400' : r.indicators.aboveCount <= 1 ? 'text-red-400' : 'text-amber-400' },
+              { label: 'BB%', val: `${r.indicators.bbPos}%`, color: r.indicators.bbPos > 85 ? 'text-amber-400' : r.indicators.bbPos < 20 ? 'text-sky-400' : 'text-zinc-400' },
+              { label: '고점%', val: `${r.indicators.distFromHigh}%`, color: r.indicators.distFromHigh > -5 ? 'text-emerald-400' : r.indicators.distFromHigh < -25 ? 'text-red-400' : 'text-zinc-400' },
+            ].map(({ label, val, color }) => (
+              <div key={label} className="text-center">
+                <div className="text-[9px] text-zinc-600 uppercase tracking-widest mb-0.5">{label}</div>
+                <div className={`text-xs font-semibold font-mono ${color}`}>{val}</div>
+              </div>
             ))}
-          </ul>
-        </div>
-      )}
+          </div>
 
-      {/* Hold signals */}
-      {r.holdSignals.length > 0 && (
-        <div className="mb-4 bg-emerald-950/20 border border-emerald-900/40 rounded-lg p-3">
-          <div className="text-[10px] text-emerald-600 uppercase tracking-widest mb-2">
-            홀딩 근거 ({r.holdSignals.length}개)
-          </div>
-          <ul className="space-y-1.5">
-            {r.holdSignals.map((s, i) => (
-              <li key={i} className="flex items-start gap-2 text-xs text-emerald-300" style={{ fontFamily: 'system-ui' }}>
-                <span className="text-emerald-500 shrink-0 mt-0.5">✓</span>{s}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+          {/* Divergence detection */}
+          <DivergenceRow divs={r.divergences} />
 
-      {/* Stop loss */}
-      <div className="mb-4 p-3 bg-zinc-900/50 rounded-lg">
-        <div className="text-[10px] text-zinc-600 uppercase tracking-widest mb-2">손절 구간</div>
-        <div className="flex flex-wrap gap-2">
-          {r.stopLoss.ma20 && <StopPill label="MA20" val={`$${r.stopLoss.ma20}`} highlight={r.stopLoss.recommended.label.includes('MA20')} />}
-          {r.stopLoss.ma50 && <StopPill label="MA50" val={`$${r.stopLoss.ma50}`} highlight={r.stopLoss.recommended.label.includes('MA50')} />}
-          <StopPill label="ATR 2x" val={`$${r.stopLoss.standard}`} highlight={r.stopLoss.recommended.label.includes('ATR')} />
-        </div>
-        <p className="text-[10px] text-zinc-600 mt-2">
-          ★ 추천: <span className="text-amber-400">${r.stopLoss.recommended.price} ({r.stopLoss.recommended.label})</span>
-        </p>
-      </div>
+          {/* Sell signals */}
+          {r.sellSignals.length > 0 && (
+            <div className="mb-4 bg-red-950/20 border border-red-900/40 rounded-lg p-3">
+              <div className="text-[10px] text-red-500 uppercase tracking-widest mb-2">
+                매도 신호 ({r.sellSignals.length}개)
+              </div>
+              <ul className="space-y-2">
+                {r.sellSignals.map((s, i) => (
+                  <li key={i} className="flex items-start gap-2">
+                    <span className={`mt-1 w-1.5 h-1.5 rounded-full shrink-0 ${SEV_DOT[s.severity]}`} />
+                    <span className={`text-xs ${SEV_COLOR[s.severity]}`} style={{ fontFamily: 'system-ui' }}>{s.text}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
 
-      {/* Trailing Stop */}
-      {r.trailing && (
-        <div className="mb-4 p-3 bg-zinc-900/50 rounded-lg border border-amber-900/40">
-          <div className="text-[10px] text-zinc-600 uppercase tracking-widest mb-2">트레일링 스탑 (동적 손절)</div>
-          <div className="flex flex-wrap gap-2 mb-2">
-            <StopPill label="ATR 2x" val={`$${r.trailing.trail2xATR}`} highlight={false} />
-            <StopPill label="ATR 3x" val={`$${r.trailing.trail3xATR}`} highlight={false} />
-            <StopPill label="-8%" val={`$${r.trailing.trailPct8}`} highlight={false} />
-            <StopPill label="-15%" val={`$${r.trailing.trailPct15}`} highlight={false} />
-          </div>
-          <div className="text-[10px] text-amber-400 font-semibold mb-0.5">
-            ★ 추천: ${r.trailing.recommended.price} ({r.trailing.recommended.label})
-          </div>
-          <p className="text-[10px] text-zinc-600" style={{ fontFamily: 'system-ui' }}>{r.trailing.recommended.reasoning}</p>
-        </div>
-      )}
+          {/* Hold signals */}
+          {r.holdSignals.length > 0 && (
+            <div className="mb-4 bg-emerald-950/20 border border-emerald-900/40 rounded-lg p-3">
+              <div className="text-[10px] text-emerald-600 uppercase tracking-widest mb-2">
+                홀딩 근거 ({r.holdSignals.length}개)
+              </div>
+              <ul className="space-y-1.5">
+                {r.holdSignals.map((s, i) => (
+                  <li key={i} className="flex items-start gap-2 text-xs text-emerald-300" style={{ fontFamily: 'system-ui' }}>
+                    <span className="text-emerald-500 shrink-0 mt-0.5">✓</span>{s}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
 
-      {/* Targets — Fibonacci + % */}
-      {r.fibTargets && (
-        <div className="p-3 bg-zinc-900/50 rounded-lg">
-          <div className="flex items-center justify-between mb-2">
-            <div className="text-[10px] text-zinc-600 uppercase tracking-widest">매도 목표가</div>
-            <span className="text-[10px] text-emerald-400">
-              다음 목표: {r.fibTargets.nextTargetLabel} ${r.fibTargets.nextTarget}
-              <span className="text-zinc-600 ml-1">(+{r.fibTargets.remainingUpside}% 여력)</span>
-            </span>
+          {/* Stop loss */}
+          <div className="mb-4 p-3 bg-zinc-900/50 rounded-lg">
+            <div className="text-[10px] text-zinc-600 uppercase tracking-widest mb-2">손절 구간</div>
+            <div className="flex flex-wrap gap-2">
+              {r.stopLoss.ma20 && <StopPill label="MA20" val={`$${r.stopLoss.ma20}`} highlight={r.stopLoss.recommended.label.includes('MA20')} />}
+              {r.stopLoss.ma50 && <StopPill label="MA50" val={`$${r.stopLoss.ma50}`} highlight={r.stopLoss.recommended.label.includes('MA50')} />}
+              <StopPill label="ATR 2x" val={`$${r.stopLoss.standard}`} highlight={r.stopLoss.recommended.label.includes('ATR')} />
+            </div>
+            <p className="text-[10px] text-zinc-600 mt-2">
+              ★ 추천: <span className="text-amber-400">${r.stopLoss.recommended.price} ({r.stopLoss.recommended.label})</span>
+            </p>
           </div>
-          <div className="flex flex-wrap gap-2 mb-2">
-            <TargetPill label="+10%" val={`$${r.fibTargets.pct10}`} color={r.currentPrice >= r.fibTargets.pct10 ? 'text-zinc-600 border-zinc-800 line-through' : 'text-emerald-300 border-emerald-800'} />
-            <TargetPill label="+20%" val={`$${r.fibTargets.pct20}`} color={r.currentPrice >= r.fibTargets.pct20 ? 'text-zinc-600 border-zinc-800 line-through' : 'text-sky-300 border-sky-800'} />
-            <TargetPill label="+30%" val={`$${r.fibTargets.pct30}`} color={r.currentPrice >= r.fibTargets.pct30 ? 'text-zinc-600 border-zinc-800 line-through' : 'text-blue-300 border-blue-800'} />
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <TargetPill label="Fib 61.8%" val={`$${r.fibTargets.fib618}`} color="text-purple-300 border-purple-800" />
-            <TargetPill label="Fib 100%" val={`$${r.fibTargets.fib100}`} color="text-purple-400 border-purple-700" />
-            <TargetPill label="Fib 161.8%" val={`$${r.fibTargets.fib162}`} color="text-purple-500 border-purple-600" />
-          </div>
-          <p className="text-[10px] text-zinc-700 mt-2">이미 달성한 목표는 취소선 표시. 피보나치 목표는 평균매수가 기준 계산.</p>
+
+          {/* Trailing Stop */}
+          {r.trailing && (
+            <div className="mb-4 p-3 bg-zinc-900/50 rounded-lg border border-amber-900/40">
+              <div className="text-[10px] text-zinc-600 uppercase tracking-widest mb-2">트레일링 스탑 (동적 손절)</div>
+              <div className="flex flex-wrap gap-2 mb-2">
+                <StopPill label="ATR 2x" val={`$${r.trailing.trail2xATR}`} highlight={false} />
+                <StopPill label="ATR 3x" val={`$${r.trailing.trail3xATR}`} highlight={false} />
+                <StopPill label="-8%" val={`$${r.trailing.trailPct8}`} highlight={false} />
+                <StopPill label="-15%" val={`$${r.trailing.trailPct15}`} highlight={false} />
+              </div>
+              <div className="text-[10px] text-amber-400 font-semibold mb-0.5">
+                ★ 추천: ${r.trailing.recommended.price} ({r.trailing.recommended.label})
+              </div>
+              <p className="text-[10px] text-zinc-600" style={{ fontFamily: 'system-ui' }}>{r.trailing.recommended.reasoning}</p>
+            </div>
+          )}
+
+          {/* Targets — Fibonacci + % */}
+          {r.fibTargets && (
+            <div className="p-3 bg-zinc-900/50 rounded-lg">
+              <div className="flex items-center justify-between mb-2">
+                <div className="text-[10px] text-zinc-600 uppercase tracking-widest">매도 목표가</div>
+                <span className="text-[10px] text-emerald-400">
+                  다음 목표: {r.fibTargets.nextTargetLabel} ${r.fibTargets.nextTarget}
+                  <span className="text-zinc-600 ml-1">(+{r.fibTargets.remainingUpside}% 여력)</span>
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-2 mb-2">
+                <TargetPill label="+10%" val={`$${r.fibTargets.pct10}`} color={r.currentPrice >= r.fibTargets.pct10 ? 'text-zinc-600 border-zinc-800 line-through' : 'text-emerald-300 border-emerald-800'} />
+                <TargetPill label="+20%" val={`$${r.fibTargets.pct20}`} color={r.currentPrice >= r.fibTargets.pct20 ? 'text-zinc-600 border-zinc-800 line-through' : 'text-sky-300 border-sky-800'} />
+                <TargetPill label="+30%" val={`$${r.fibTargets.pct30}`} color={r.currentPrice >= r.fibTargets.pct30 ? 'text-zinc-600 border-zinc-800 line-through' : 'text-blue-300 border-blue-800'} />
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <TargetPill label="Fib 61.8%" val={`$${r.fibTargets.fib618}`} color="text-purple-300 border-purple-800" />
+                <TargetPill label="Fib 100%" val={`$${r.fibTargets.fib100}`} color="text-purple-400 border-purple-700" />
+                <TargetPill label="Fib 161.8%" val={`$${r.fibTargets.fib162}`} color="text-purple-500 border-purple-600" />
+              </div>
+              <p className="text-[10px] text-zinc-700 mt-2">이미 달성한 목표는 취소선 표시. 피보나치 목표는 평균매수가 기준 계산.</p>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -257,15 +305,15 @@ function TargetPill({ label, val, color }: { label: string; val: string; color: 
 }
 
 export default function PortfolioTab() {
-  const [holdings,  setHoldings]  = useState<Holding[]>([]);
-  const [results,   setResults]   = useState<HoldingResult[]>([]);
-  const [loading,   setLoading]   = useState(false);
-  const [status,    setStatus]    = useState('');
-  const [error,     setError]     = useState('');
-  const [analyzedAt,setAnalyzedAt]= useState('');
+  const [holdings,   setHoldings]   = useState<Holding[]>([]);
+  const [results,    setResults]    = useState<HoldingResult[]>([]);
+  const [loading,    setLoading]    = useState(false);
+  const [status,     setStatus]     = useState('');
+  const [error,      setError]      = useState('');
+  const [analyzedAt, setAnalyzedAt] = useState('');
   const [earningsMap,setEarningsMap]= useState<Record<string,{earningsDate:string|null;daysUntil:number|null;epsEstimate:number|null;revenueEstimate:string|null;lastEPS:number|null}>>({});
-  const [form,      setForm]      = useState({ ticker: '', avgPrice: '', shares: '' });
-  const [editIdx,   setEditIdx]   = useState<number | null>(null);
+  const [form,       setForm]       = useState({ ticker: '', avgPrice: '', shares: '' });
+  const [editIdx,    setEditIdx]    = useState<number | null>(null);
 
   useEffect(() => {
     try { const s = localStorage.getItem(PORTFOLIO_KEY); if (s) setHoldings(JSON.parse(s)); } catch {}
@@ -327,7 +375,6 @@ export default function PortfolioTab() {
       setAnalyzedAt(data.analyzed_at);
       setStatus(`> 분석 완료 — ${data.holdings.length}개 종목 | ${new Date().toLocaleTimeString('ko-KR')}`);
       try { localStorage.setItem(PORTFOLIO_CACHE, JSON.stringify({ results: data.holdings, analyzed_at: data.analyzed_at })); } catch {}
-      // Fetch earnings for portfolio holdings
       try {
         const er = await fetch('/api/earnings', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ tickers: holdings.map(h => h.ticker) }) });
         if (er.ok) {
@@ -424,10 +471,14 @@ export default function PortfolioTab() {
         </div>
       )}
 
+      {/* Holding cards */}
       <div className="flex flex-col gap-4">
         {results.map((r, i) => r.error ? (
           <div key={r.ticker} className="p-4 border border-zinc-800 rounded-xl bg-zinc-900/40 flex items-center justify-between">
-            <div><span className="text-zinc-300 font-semibold">{r.ticker}</span><span className="text-zinc-600 text-xs ml-2">{r.error}</span></div>
+            <div>
+              <span className="text-zinc-300 font-semibold">{r.ticker}</span>
+              <span className="text-zinc-600 text-xs ml-2">{r.error}</span>
+            </div>
             <button onClick={() => removeHolding(i)} className="text-zinc-600 hover:text-red-400 text-xs">✕ 삭제</button>
           </div>
         ) : (
