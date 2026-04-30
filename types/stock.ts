@@ -113,6 +113,22 @@ export interface StockAnalysis {
   // ── 섹터 정보 ──────────────────────────────────────────────────────────────
   sector?:                  string | null;
   industry?:                string | null;
+
+  // ── 4번: Pocket Pivot ──────────────────────────────────────────────────────
+  pocket_pivot?:            boolean;
+  pocket_pivot_days_ago?:   number;
+  pocket_pivot_vol_ratio?:  number;
+  pocket_pivot_above_ma?:   string | null;
+  pocket_pivot_detail?:     string;
+
+  // ── 5번: RS Line ───────────────────────────────────────────────────────────
+  rs_line?:                 number;
+  rs_line_trend?:           'UP' | 'DOWN' | 'FLAT';
+  rs_line_divergence?:      'BULLISH' | 'BEARISH' | 'NONE';
+  rs_line_new_high?:        boolean;
+  rs_line_spy_new_low?:     boolean;
+  rs_line_3m_change?:       number;
+  rs_line_detail?:          string;
 }
 
 export interface AnalysisResult {
