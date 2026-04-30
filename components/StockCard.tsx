@@ -126,6 +126,23 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
   const rsLineDetail = stock.rs_line_detail    ?? '';
   const rsLineNewHigh = stock.rs_line_new_high ?? false;
 
+  // 트레일링 스탑
+  const trailInitial  = stock.trail_initial_stop ?? null;
+  const trailStop10   = stock.trail_stop_10      ?? null;
+  const trailStop20   = stock.trail_stop_20      ?? null;
+  const trailStop30   = stock.trail_stop_30      ?? null;
+  const trailMultiplier = stock.trail_multiplier ?? null;
+  const trailBreakEven  = stock.trail_break_even ?? null;
+
+  // 분할 매수/매도
+  const splitEntry1  = stock.split_entry1   ?? null;
+  const splitEntry2  = stock.split_entry2   ?? null;
+  const splitEntry3  = stock.split_entry3   ?? null;
+  const splitExit1   = stock.split_exit1    ?? null;
+  const splitExit2   = stock.split_exit2    ?? null;
+  const splitExit3   = stock.split_exit3    ?? null;
+  const splitAvgEntry = stock.split_avg_entry ?? null;
+
   return (
     <div className={`stock-card border border-zinc-800 border-l-4 ${c.border} rounded-xl bg-bg-card ${highlight ? 'ring-1 ring-emerald-500/20' : ''}`}>
 
@@ -550,6 +567,95 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
           {/* 주의사항 */}
           {stock.caution && (
             <div className="text-xs text-amber-400 bg-amber-950/30 border-l-2 border-amber-600 pl-3 py-2 rounded-r-md mb-3" style={{ fontFamily: 'system-ui' }}>⚡ {stock.caution}</div>
+          )}
+
+          {/* ── 분할 매수/매도 구간 ── */}
+          {splitEntry1 && (
+            <div className="mb-4 p-3 rounded-lg border border-zinc-700 bg-zinc-900/40">
+              <div className="text-[10px] text-zinc-500 uppercase tracking-widest mb-3">분할 매수 / 매도 전략</div>
+
+              {/* 평균 진입가 */}
+              {splitAvgEntry && (
+                <div className="text-center mb-3 p-2 bg-zinc-800/50 rounded-lg">
+                  <span className="text-[10px] text-zinc-500">예상 평균 진입가</span>
+                  <span className="text-sm font-bold text-emerald-300 font-mono ml-2">${splitAvgEntry}</span>
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-3">
+                {/* 분할 매수 */}
+                <div>
+                  <div className="text-[10px] text-emerald-500 uppercase tracking-widest mb-2">분할 매수</div>
+                  <div className="flex flex-col gap-1.5">
+                    {[splitEntry1, splitEntry2, splitEntry3].map((e, i) => e && (
+                      <div key={i} className="flex items-center justify-between px-2 py-1.5 rounded border border-emerald-900/50 bg-emerald-950/20">
+                        <div>
+                          <span className="text-[9px] text-emerald-600 font-semibold">{i+1}차 {e.ratio}%</span>
+                          <p className="text-[9px] text-zinc-600 mt-0.5" style={{ fontFamily: 'system-ui' }}>{e.condition}</p>
+                        </div>
+                        <span className="text-xs font-bold font-mono text-emerald-300">{e.price}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 분할 매도 */}
+                <div>
+                  <div className="text-[10px] text-red-500 uppercase tracking-widest mb-2">분할 익절</div>
+                  <div className="flex flex-col gap-1.5">
+                    {[splitExit1, splitExit2, splitExit3].map((e, i) => e && (
+                      <div key={i} className="flex items-center justify-between px-2 py-1.5 rounded border border-red-900/50 bg-red-950/20">
+                        <div>
+                          <span className="text-[9px] text-red-500 font-semibold">{i+1}차 {e.ratio}%</span>
+                          <p className="text-[9px] text-zinc-600 mt-0.5">{e.gain}</p>
+                        </div>
+                        <span className="text-xs font-bold font-mono text-red-300">{e.price}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── 트레일링 스탑 ── */}
+          {trailInitial && (
+            <div className="mb-4 p-3 rounded-lg border border-amber-800/60 bg-amber-950/10">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] text-zinc-500 uppercase tracking-widest">트레일링 스탑</span>
+                  <span className="text-[9px] bg-amber-950 text-amber-300 border border-amber-700 px-1.5 py-0.5 rounded">
+                    ATR × {trailMultiplier}
+                  </span>
+                </div>
+                <span className="text-[10px] text-zinc-500">주가 상승 시 자동 손절 상향</span>
+              </div>
+
+              {/* 트레일링 스탑 시나리오 바 */}
+              <div className="flex flex-col gap-2 mb-2">
+                {[
+                  { label: '진입 시',  price: trailInitial, pct: 0,   color: 'text-zinc-400',  bar: 'bg-zinc-700' },
+                  { label: '본전 손절', price: trailBreakEven, pct: 0.5, color: 'text-sky-400', bar: 'bg-sky-900' },
+                  { label: '+10% 시',  price: trailStop10,  pct: 33,  color: 'text-amber-400', bar: 'bg-amber-900' },
+                  { label: '+20% 시',  price: trailStop20,  pct: 66,  color: 'text-emerald-400', bar: 'bg-emerald-900' },
+                  { label: '+30% 시',  price: trailStop30,  pct: 100, color: 'text-emerald-300', bar: 'bg-emerald-800' },
+                ].map((item, i) => item.price && (
+                  <div key={i} className="flex items-center gap-2">
+                    <span className="text-[9px] text-zinc-600 w-16 shrink-0">{item.label}</span>
+                    <div className="flex-1 h-1 bg-zinc-800 rounded-full overflow-hidden">
+                      <div className={`h-full rounded-full ${item.bar}`} style={{ width: `${Math.min(100, 20 + item.pct * 0.8)}%` }} />
+                    </div>
+                    <span className={`text-[10px] font-mono font-semibold ${item.color} w-16 text-right shrink-0`}>
+                      ${item.price}
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              <p className="text-[10px] text-zinc-600" style={{ fontFamily: 'system-ui' }}>
+                주가가 오를수록 손절선도 상향 — 수익 반납 방지
+              </p>
+            </div>
           )}
 
           {/* 가격 레벨 */}
