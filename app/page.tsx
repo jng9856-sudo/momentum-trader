@@ -414,11 +414,20 @@ export default function Home() {
                 )}
 
                 {/* 매수/관망/매도 요약 */}
-                <div className="grid grid-cols-3 gap-3 mb-6 max-w-sm">
-                  <StatCard label="매수" value={buyCnt}  color="text-emerald-400" border="border-emerald-900" />
-                  <StatCard label="관망" value={holdCnt} color="text-amber-400"   border="border-amber-900" />
-                  <StatCard label="매도" value={sellCnt} color="text-red-400"     border="border-red-900" />
-                </div>
+                <div className="flex items-center gap-3 mb-4">
+  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-emerald-900 bg-bg-card">
+    <span className="text-lg font-semibold text-emerald-400">{buyCnt}</span>
+    <span className="text-[10px] text-zinc-600 uppercase tracking-widest">매수</span>
+  </div>
+  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-amber-900 bg-bg-card">
+    <span className="text-lg font-semibold text-amber-400">{holdCnt}</span>
+    <span className="text-[10px] text-zinc-600 uppercase tracking-widest">관망</span>
+  </div>
+  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-900 bg-bg-card">
+    <span className="text-lg font-semibold text-red-400">{sellCnt}</span>
+    <span className="text-[10px] text-zinc-600 uppercase tracking-widest">매도</span>
+  </div>
+</div>
 
                 {/* ✅ Top 10 바차트 */}
                 <TopBarChart stocks={allStocks} />
