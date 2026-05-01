@@ -413,28 +413,7 @@ export default function Home() {
             )}
 
             {error && <div className="mb-4 p-4 bg-red-950 border border-red-800 rounded-xl text-sm text-red-300">오류: {error}</div>}
-
-            {allStocks.length > 0 && (
-              <>
-                {/* 시장 컨텍스트 접기 */}
-                {marketCtx && (
-                  <div className="mb-4 border border-zinc-800 rounded-xl bg-zinc-900/60 overflow-hidden">
-                    <button onClick={() => setCtxOpen(o => !o)}
-                      className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-zinc-800/30 transition-colors">
-                      <div className="flex items-center gap-3 min-w-0">
-                        <span className="text-[10px] text-zinc-600 uppercase tracking-widest shrink-0">시장 컨텍스트</span>
-                        {!ctxOpen && <p className="text-xs text-zinc-500 truncate" style={{ fontFamily: 'system-ui, sans-serif' }}>{marketCtx.slice(0, 60)}...</p>}
-                      </div>
-                      <span className="text-zinc-600 text-xs shrink-0 ml-2">{ctxOpen ? '▲' : '▼'}</span>
-                    </button>
-                    {ctxOpen && (
-                      <div className="px-4 pb-4 border-t border-zinc-800/50 pt-3">
-                        <p className="text-xs text-zinc-400 leading-relaxed" style={{ fontFamily: 'system-ui, sans-serif' }}>{marketCtx}</p>
-                      </div>
-                    )}
-                  </div>
-                )}
-
+          
                 {/* Top 10 바차트 */}
                 <TopBarChart stocks={allStocks} />
 
