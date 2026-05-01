@@ -10,7 +10,7 @@ import MarketStatus from '@/components/MarketStatus';
 import SectorHeatmap from '@/components/SectorHeatmap';
 import BacktestPanel from '@/components/BacktestPanel';
 
-const DEFAULT_TICKERS = ['AMD', 'MRVL', 'AVGO', 'MU', 'INTC', 'ARM', 'NVDA', 'TSM'];
+const DEFAULT_TICKERS = ['PLTR'];
 const CACHE_KEY = 'mt_analysis_v4';
 const WATCHLIST_KEY = 'mt_watchlist_v3';
 const MAX_TICKERS = 1000;
