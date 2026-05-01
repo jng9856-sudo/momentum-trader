@@ -114,20 +114,20 @@ export default function MarketStatus() {
   const cs = CONDITION_STYLE[data.buyCondition];
 
   return (
-    <div className={`mb-6 border rounded-xl overflow-hidden ${cs.bg}`}>
-      {/* Header */}
-      <button onClick={() => setOpen(o => !o)} className="w-full flex items-center justify-between px-4 py-3">
-        <div className="flex items-center gap-3">
-          <span className={`text-sm font-semibold ${cs.text}`}>{cs.label}</span>
-          <span className="text-xs text-zinc-500">{data.conditionDetail}</span>
+    <div className={`mb-0 border rounded-xl overflow-hidden ${cs.bg}`}>
+      {/* ✅ 수정: 헤더 줄바꿈 방지 — whitespace-nowrap + truncate + min-w-0 */}
+      <button onClick={() => setOpen(o => !o)} className="w-full flex items-center justify-between px-4 py-3 min-w-0 gap-2">
+        <div className="flex items-center gap-2 min-w-0 overflow-hidden">
+          <span className={`text-sm font-semibold whitespace-nowrap shrink-0 ${cs.text}`}>{cs.label}</span>
+          <span className="text-xs text-zinc-500 truncate hidden sm:block">{data.conditionDetail}</span>
           {macro?.buyWarning && (
-            <span className="text-[9px] bg-red-950 text-red-300 border border-red-700 px-1.5 py-0.5 rounded animate-pulse">
+            <span className="text-[9px] bg-red-950 text-red-300 border border-red-700 px-1.5 py-0.5 rounded animate-pulse whitespace-nowrap shrink-0">
               ⚡ 이벤트 임박
             </span>
           )}
         </div>
-        <div className="flex items-center gap-3">
-          <span className={`text-xs font-mono ${cs.text}`}>F&G {data.fearGreed.score} — {data.fearGreed.label}</span>
+        <div className="flex items-center gap-2 shrink-0">
+          <span className={`text-xs font-mono whitespace-nowrap ${cs.text}`}>F&G {data.fearGreed.score} — {data.fearGreed.label}</span>
           <span className="text-zinc-600 text-xs">{open ? '▲' : '▼'}</span>
         </div>
       </button>
@@ -178,7 +178,7 @@ export default function MarketStatus() {
             <span className="text-zinc-600 text-[10px]">{new Date(data.analyzed_at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })} 기준</span>
           </div>
 
-          {/* ✅ ETF 헬스 그리드 */}
+          {/* ETF 헬스 그리드 */}
           {data.etfData && data.etfData.length > 0 && (
             <EtfHealthGrid etfData={data.etfData} />
           )}
