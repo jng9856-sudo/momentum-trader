@@ -48,15 +48,8 @@ const SEV_COLOR: Record<string, string> = {
 const SEV_DOT: Record<string, string> = {
   high: 'bg-red-400', medium: 'bg-amber-400', low: 'bg-zinc-500',
 };
-
-// ✅ 정렬 순서 정의
 const ACTION_ORDER: Record<string, number> = {
-  '즉시매도': 0,
-  '매도':     1,
-  '부분익절': 2,
-  '매도검토': 3,
-  '모니터링': 4,
-  '홀딩':     5,
+  '즉시매도': 0, '매도': 1, '부분익절': 2, '매도검토': 3, '모니터링': 4, '홀딩': 5,
 };
 
 const PORTFOLIO_KEY   = 'mt_portfolio_v2';
@@ -118,7 +111,35 @@ function HoldingCard({ result: r, onRemove, earnings }: { result: HoldingResult;
   const router = useRouter();
   const [open, setOpen] = useState(false);
 
-  const pnlPos = r.pnlPct >= 0;
+  // ✅ 실시간 가격 state
+  const [rtPrice, setRtPrice] = useState<{ price: number; changePct: number; isRealtime?: boolean } | null>(null);
+
+  // ✅ 실시간 가격 fetch (30초마다 갱신)
+  useEffect(() => {
+    const fetchPrice = () =>
+      fetch(`/api/realtime?tickers=${r.ticker}`)
+        .then(res => res.json())
+        .then(d => {
+          if (d.price && d.price > 0) {
+            setRtPrice({ price: d.price, changePct: d.changePct ?? 0, isRealtime: d.isRealtime });
+          }
+        })
+        .catch(() => {});
+    fetchPrice();
+    const iv = setInterval(fetchPrice, 30000);
+    return () => clearInterval(iv);
+  }, [r.ticker]);
+
+  // ✅ 실시간 가격 기반 손익 계산
+  const displayPrice = rtPrice ? rtPrice.price : r.currentPrice;
+  const rtPnlPct = rtPrice
+    ? Math.round(((rtPrice.price - r.avgPrice) / r.avgPrice) * 10000) / 100
+    : r.pnlPct;
+  const rtPnlAbs = rtPrice && r.shares > 0
+    ? Math.round((rtPrice.price - r.avgPrice) * r.shares * 100) / 100
+    : r.pnlAbs;
+
+  const pnlPos = rtPnlPct >= 0;
   const borderColor = r.action === '즉시매도' ? 'border-l-red-400' :
     r.action === '매도' ? 'border-l-red-700' :
     r.action === '부분익절' ? 'border-l-orange-500' :
@@ -145,12 +166,27 @@ function HoldingCard({ result: r, onRemove, earnings }: { result: HoldingResult;
               className="w-5 h-5 flex items-center justify-center rounded-full bg-zinc-800 hover:bg-red-900 text-zinc-500 hover:text-red-400 transition-colors text-xs shrink-0">✕</button>
           )}
         </div>
+
         <div className="flex items-center gap-3 shrink-0 ml-2">
           <div className="text-right">
-            <div className="text-sm font-semibold text-zinc-100 font-mono">${r.currentPrice}</div>
+            {/* ✅ 실시간 가격 표시 */}
+            <div className="flex items-center gap-1.5 justify-end">
+              <span className="text-sm font-semibold text-zinc-100 font-mono">${displayPrice.toLocaleString()}</span>
+              {rtPrice && (
+                <>
+                  <span className={`text-[10px] font-mono ${rtPrice.changePct >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                    {rtPrice.changePct >= 0 ? '+' : ''}{rtPrice.changePct.toFixed(2)}%
+                  </span>
+                  <span className={`text-[9px] px-1 py-0.5 rounded ${rtPrice.isRealtime !== false ? 'text-emerald-700 bg-emerald-950 border border-emerald-900 animate-pulse' : 'text-zinc-600 bg-zinc-900 border border-zinc-800'}`}>
+                    {rtPrice.isRealtime !== false ? '실시간' : '15분'}
+                  </span>
+                </>
+              )}
+            </div>
+            {/* ✅ 실시간 기반 손익 */}
             <div className={`text-xs font-semibold ${pnlPos ? 'text-emerald-400' : 'text-red-400'}`}>
-              {pnlPos ? '+' : ''}{r.pnlPct}%
-              {r.shares > 0 && <span className="text-[10px] ml-1">({pnlPos ? '+' : ''}${r.pnlAbs.toLocaleString()})</span>}
+              {pnlPos ? '+' : ''}{rtPnlPct}%
+              {r.shares > 0 && <span className="text-[10px] ml-1">({pnlPos ? '+' : ''}${rtPnlAbs.toLocaleString()})</span>}
             </div>
           </div>
           <div className="text-center hidden sm:block">
@@ -263,13 +299,13 @@ function HoldingCard({ result: r, onRemove, earnings }: { result: HoldingResult;
                 </span>
               </div>
               <div className="flex flex-wrap gap-2 mb-2">
-                <TargetPill label="+10%" val={`$${r.fibTargets.pct10}`} color={r.currentPrice >= r.fibTargets.pct10 ? 'text-zinc-600 border-zinc-800 line-through' : 'text-emerald-300 border-emerald-800'} />
-                <TargetPill label="+20%" val={`$${r.fibTargets.pct20}`} color={r.currentPrice >= r.fibTargets.pct20 ? 'text-zinc-600 border-zinc-800 line-through' : 'text-sky-300 border-sky-800'} />
-                <TargetPill label="+30%" val={`$${r.fibTargets.pct30}`} color={r.currentPrice >= r.fibTargets.pct30 ? 'text-zinc-600 border-zinc-800 line-through' : 'text-blue-300 border-blue-800'} />
+                <TargetPill label="+10%" val={`$${r.fibTargets.pct10}`} color={displayPrice >= r.fibTargets.pct10 ? 'text-zinc-600 border-zinc-800 line-through' : 'text-emerald-300 border-emerald-800'} />
+                <TargetPill label="+20%" val={`$${r.fibTargets.pct20}`} color={displayPrice >= r.fibTargets.pct20 ? 'text-zinc-600 border-zinc-800 line-through' : 'text-sky-300 border-sky-800'} />
+                <TargetPill label="+30%" val={`$${r.fibTargets.pct30}`} color={displayPrice >= r.fibTargets.pct30 ? 'text-zinc-600 border-zinc-800 line-through' : 'text-blue-300 border-blue-800'} />
               </div>
               <div className="flex flex-wrap gap-2">
                 <TargetPill label="Fib 61.8%" val={`$${r.fibTargets.fib618}`} color="text-purple-300 border-purple-800" />
-                <TargetPill label="Fib 100%" val={`$${r.fibTargets.fib100}`} color="text-purple-400 border-purple-700" />
+                <TargetPill label="Fib 100%"  val={`$${r.fibTargets.fib100}`} color="text-purple-400 border-purple-700" />
                 <TargetPill label="Fib 161.8%" val={`$${r.fibTargets.fib162}`} color="text-purple-500 border-purple-600" />
               </div>
               <p className="text-[10px] text-zinc-700 mt-2">이미 달성한 목표는 취소선 표시.</p>
@@ -294,6 +330,31 @@ function TargetPill({ label, val, color }: { label: string; val: string; color: 
   );
 }
 
+// ✅ 실시간 가격 기반 총 손익 계산용 훅
+function usePortfolioRtPrices(results: HoldingResult[]) {
+  const [rtMap, setRtMap] = useState<Record<string, number>>({});
+
+  useEffect(() => {
+    if (results.length === 0) return;
+    const tickers = results.map(r => r.ticker).join(',');
+    const fetchAll = () =>
+      fetch(`/api/realtime?tickers=${tickers}`)
+        .then(res => res.json())
+        .then(d => {
+          const map: Record<string, number> = {};
+          const quotes = d.quotes ?? (d.price ? [{ ticker: results[0].ticker, price: d.price }] : []);
+          for (const q of quotes) if (q?.price > 0) map[q.ticker] = q.price;
+          setRtMap(map);
+        })
+        .catch(() => {});
+    fetchAll();
+    const iv = setInterval(fetchAll, 30000);
+    return () => clearInterval(iv);
+  }, [results.map(r => r.ticker).join(',')]);
+
+  return rtMap;
+}
+
 export default function PortfolioTab() {
   const [holdings,    setHoldings]    = useState<Holding[]>([]);
   const [results,     setResults]     = useState<HoldingResult[]>([]);
@@ -304,8 +365,10 @@ export default function PortfolioTab() {
   const [earningsMap, setEarningsMap] = useState<Record<string,{earningsDate:string|null;daysUntil:number|null;epsEstimate:number|null;revenueEstimate:string|null;lastEPS:number|null}>>({});
   const [form,        setForm]        = useState({ ticker: '', avgPrice: '', shares: '' });
   const [editIdx,     setEditIdx]     = useState<number | null>(null);
-  // ✅ 정렬 state
   const [sort,        setSort]        = useState<SortType>('action');
+
+  // ✅ 총 손익 계산용 실시간 가격
+  const rtMap = usePortfolioRtPrices(results);
 
   useEffect(() => {
     try { const s = localStorage.getItem(PORTFOLIO_KEY); if (s) setHoldings(JSON.parse(s)); } catch {}
@@ -380,12 +443,15 @@ export default function PortfolioTab() {
     setLoading(false);
   }
 
-  const totalCost    = results.reduce((a, r) => a + ((r.avgPrice ?? 0) * (r.shares ?? 0)), 0);
-  const totalCurrent = results.reduce((a, r) => a + ((r.currentPrice ?? 0) * (r.shares ?? 0)), 0);
-  const totalPnl     = totalCurrent - totalCost;
-  const totalPnlPct  = totalCost > 0 ? (totalPnl / totalCost) * 100 : 0;
+  // ✅ 실시간 가격 기반 총 손익
+  const totalCost    = results.reduce((a, r) => a + (r.avgPrice * (r.shares ?? 0)), 0);
+  const totalCurrent = results.reduce((a, r) => {
+    const price = rtMap[r.ticker] ?? r.currentPrice;
+    return a + (price * (r.shares ?? 0));
+  }, 0);
+  const totalPnl    = totalCurrent - totalCost;
+  const totalPnlPct = totalCost > 0 ? (totalPnl / totalCost) * 100 : 0;
 
-  // ✅ 정렬된 결과
   const sortedResults = [...results].sort((a, b) => {
     if (sort === 'action')  return (ACTION_ORDER[a.action] ?? 9) - (ACTION_ORDER[b.action] ?? 9);
     if (sort === 'pnl')     return (b.pnlPct ?? 0) - (a.pnlPct ?? 0);
@@ -449,7 +515,7 @@ export default function PortfolioTab() {
       {status && <div className={`text-xs mb-4 font-mono ${loading ? 'text-sky-500' : 'text-zinc-500'}`}>{status}</div>}
       {error  && <div className="mb-4 p-4 bg-red-950 border border-red-800 rounded-xl text-sm text-red-300">오류: {error}</div>}
 
-      {/* Summary */}
+      {/* ✅ 실시간 기반 총 손익 요약 */}
       {results.length > 0 && totalCost > 0 && (
         <div className="grid grid-cols-3 gap-3 mb-4">
           <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 text-center">
@@ -457,11 +523,11 @@ export default function PortfolioTab() {
             <div className="text-lg font-semibold text-zinc-200 font-mono">${Math.round(totalCost).toLocaleString()}</div>
           </div>
           <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 text-center">
-            <div className="text-[10px] text-zinc-600 uppercase tracking-widest mb-1">평가액</div>
+            <div className="text-[10px] text-zinc-600 uppercase tracking-widest mb-1">평가액 <span className="text-emerald-700 text-[9px]">실시간</span></div>
             <div className="text-lg font-semibold text-zinc-200 font-mono">${Math.round(totalCurrent).toLocaleString()}</div>
           </div>
           <div className={`bg-zinc-900 border rounded-xl p-4 text-center ${totalPnl >= 0 ? 'border-emerald-900' : 'border-red-900'}`}>
-            <div className="text-[10px] text-zinc-600 uppercase tracking-widest mb-1">총 손익</div>
+            <div className="text-[10px] text-zinc-600 uppercase tracking-widest mb-1">총 손익 <span className="text-emerald-700 text-[9px]">실시간</span></div>
             <div className={`text-lg font-semibold font-mono ${totalPnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
               {totalPnl >= 0 ? '+' : ''}${Math.round(totalPnl).toLocaleString()}
             </div>
@@ -472,11 +538,11 @@ export default function PortfolioTab() {
         </div>
       )}
 
-      {/* ✅ 정렬 버튼 */}
+      {/* 정렬 버튼 */}
       {results.length > 0 && (
-        <div className="flex items-center gap-2 mb-4">
+        <div className="flex items-center gap-2 mb-4 flex-wrap">
           <span className="text-[10px] text-zinc-600 uppercase tracking-widest shrink-0">정렬</span>
-          <div className="flex gap-1 flex-wrap">
+          <div className="flex gap-1">
             {SORT_OPTIONS.map(o => (
               <button key={o.key} onClick={() => setSort(o.key)}
                 className={`text-xs px-2.5 py-1.5 rounded-lg border transition-colors
@@ -485,8 +551,7 @@ export default function PortfolioTab() {
               </button>
             ))}
           </div>
-          {/* 신호별 카운트 */}
-          <div className="flex gap-1.5 ml-2 flex-wrap">
+          <div className="flex gap-1.5 ml-1 flex-wrap">
             {['즉시매도','매도','매도검토','홀딩','모니터링'].map(a => {
               const cnt = results.filter(r => r.action === a).length;
               if (cnt === 0) return null;
@@ -500,7 +565,7 @@ export default function PortfolioTab() {
         </div>
       )}
 
-      {/* ✅ 2열 그리드 */}
+      {/* 2열 그리드 */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
         {sortedResults.map((r, i) => r.error ? (
           <div key={r.ticker} className="p-4 border border-zinc-800 rounded-xl bg-zinc-900/40 flex items-center justify-between">
