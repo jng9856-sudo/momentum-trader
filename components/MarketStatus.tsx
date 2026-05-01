@@ -1,5 +1,6 @@
 'use client';
 import { useState, useEffect } from 'react';
+import EtfHealthGrid, { EtfItem } from '@/components/EtfHealthGrid';
 
 interface MarketData {
   vix: number | null;
@@ -14,9 +15,9 @@ interface MarketData {
   buyCondition: 'GO' | 'CAUTION' | 'STOP';
   conditionDetail: string;
   analyzed_at: string;
+  etfData?: EtfItem[];
 }
 
-// 🆕 매크로 이벤트 타입
 interface MacroEvent {
   id: string;
   type: 'FOMC' | 'CPI' | 'NFP' | 'PCE' | 'GDP';
@@ -45,7 +46,6 @@ const CONDITION_STYLE = {
 };
 const FG_COLOR = (score: number) => score >= 65 ? '#10b981' : score >= 45 ? '#f59e0b' : '#ef4444';
 
-// 🆕 이벤트 타입별 스타일
 const EVENT_STYLE: Record<string, { color: string; bg: string; border: string }> = {
   FOMC: { color: 'text-red-300',    bg: 'bg-red-950/40',    border: 'border-red-800' },
   CPI:  { color: 'text-orange-300', bg: 'bg-orange-950/40', border: 'border-orange-800' },
@@ -71,12 +71,11 @@ function dDayColor(days: number | undefined): string {
 
 export default function MarketStatus() {
   const [data,    setData]    = useState<MarketData | null>(null);
-  const [macro,   setMacro]   = useState<MacroData | null>(null);  // 🆕
+  const [macro,   setMacro]   = useState<MacroData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [open, setOpen] = useState(false);
+  const [open,    setOpen]    = useState(false);
 
   useEffect(() => {
-    // 시장 데이터
     try {
       const cached = localStorage.getItem('mt_market_v1');
       if (cached) {
@@ -91,7 +90,6 @@ export default function MarketStatus() {
       .catch(() => {})
       .finally(() => setLoading(false));
 
-    // 🆕 매크로 이벤트 (14일 이내)
     try {
       const cachedMacro = localStorage.getItem('mt_macro_v1');
       if (cachedMacro) {
@@ -122,7 +120,6 @@ export default function MarketStatus() {
         <div className="flex items-center gap-3">
           <span className={`text-sm font-semibold ${cs.text}`}>{cs.label}</span>
           <span className="text-xs text-zinc-500">{data.conditionDetail}</span>
-          {/* 🆕 이벤트 임박 알림 배지 */}
           {macro?.buyWarning && (
             <span className="text-[9px] bg-red-950 text-red-300 border border-red-700 px-1.5 py-0.5 rounded animate-pulse">
               ⚡ 이벤트 임박
@@ -181,9 +178,14 @@ export default function MarketStatus() {
             <span className="text-zinc-600 text-[10px]">{new Date(data.analyzed_at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })} 기준</span>
           </div>
 
-          {/* 🆕 매크로 이벤트 캘린더 */}
+          {/* ✅ ETF 헬스 그리드 */}
+          {data.etfData && data.etfData.length > 0 && (
+            <EtfHealthGrid etfData={data.etfData} />
+          )}
+
+          {/* 매크로 이벤트 캘린더 */}
           {macro && macro.events.length > 0 && (
-            <div className="border-t border-zinc-800/50 pt-4">
+            <div className="border-t border-zinc-800/50 pt-4 mt-4">
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
                   <span className="text-[10px] text-zinc-500 uppercase tracking-widest">매크로 이벤트 캘린더</span>
@@ -201,7 +203,6 @@ export default function MarketStatus() {
                 <span className="text-[10px] text-zinc-600">14일 이내 주요 지표</span>
               </div>
 
-              {/* 이벤트 리스트 */}
               <div className="flex flex-col gap-2">
                 {macro.events.map(e => {
                   const style = EVENT_STYLE[e.type] ?? EVENT_STYLE.GDP;
@@ -210,7 +211,6 @@ export default function MarketStatus() {
                   return (
                     <div key={e.id} className={`flex items-center justify-between px-3 py-2 rounded-lg border ${isPast ? 'border-zinc-800 bg-zinc-900/20 opacity-50' : e.isUrgent ? `${style.border} ${style.bg}` : 'border-zinc-800 bg-zinc-900/30'}`}>
                       <div className="flex items-center gap-2 min-w-0">
-                        {/* 타입 배지 */}
                         <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded shrink-0 ${style.bg} ${style.color} border ${style.border}`}>
                           {e.type}
                         </span>
@@ -232,7 +232,6 @@ export default function MarketStatus() {
                 })}
               </div>
 
-              {/* 이벤트 임박 경고 메시지 */}
               {macro.nextUrgent && (
                 <div className="mt-3 p-2 rounded-lg border border-red-800 bg-red-950/20">
                   <p className="text-[10px] text-red-300" style={{ fontFamily: 'system-ui' }}>
