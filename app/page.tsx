@@ -63,21 +63,22 @@ export default function Home() {
   const [error, setError] = useState('');
   const [filter, setFilter] = useState<FilterType>('ALL');
   const [sort, setSort] = useState<SortType>('SCORE');
-  const [xlsxMsg, setXlsxMsg] = useState('');
+  // ✅ 수정 4: xlsxOpen 실제 활용
   const [xlsxOpen, setXlsxOpen] = useState(false);
+  const [xlsxMsg, setXlsxMsg] = useState('');
   const [search, setSearch] = useState('');
+  // ✅ 수정 3: 시장 컨텍스트 접기 state
+  const [ctxOpen, setCtxOpen] = useState(false);
   const [earningsMap, setEarningsMap] = useState<Record<string, { earningsDate: string | null; daysUntil: number | null; epsEstimate: number | null; revenueEstimate: string | null; lastEPS: number | null }>>({});
   const fileRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef(false);
 
   useEffect(() => {
-    // Try loading watchlist from DB first
     fetch('/api/db?type=watchlist').then(r => r.json()).then(d => {
       if (d.tickers?.length > 0) setWatchlist(d.tickers);
       else { try { const wl = localStorage.getItem(WATCHLIST_KEY); if (wl) setWatchlist(JSON.parse(wl)); } catch {} }
     }).catch(() => { try { const wl = localStorage.getItem(WATCHLIST_KEY); if (wl) setWatchlist(JSON.parse(wl)); } catch {} });
 
-    // Try loading today's analysis from DB (cron result)
     fetch(`/api/db?type=analysis&date=${todayKey()}`).then(r => r.json()).then(d => {
       if (d && !d.empty && d.stocks?.length > 0) {
         setAllStocks(d.stocks); setMarketCtx(d.market_context ?? '');
@@ -85,7 +86,6 @@ export default function Home() {
         setStatus(`> 크론 분석 결과 로드 완료 — ${d.stocks.length}개 종목`);
         return;
       }
-      // Fallback to localStorage
       try {
         const cached = localStorage.getItem(CACHE_KEY);
         if (cached) { const p = JSON.parse(cached); if (p.date === todayKey()) { setAllStocks(p.stocks ?? []); setMarketCtx(p.market_context ?? ''); setAnalyzedAt(p.analyzed_at ?? ''); } }
@@ -140,12 +140,10 @@ export default function Home() {
     e.target.value = '';
   }
 
-  // ── 🔧 수정된 runAnalysis: 새 티커만 분석 후 기존 목록에 append ──────────
   const runAnalysis = useCallback(async () => {
     if (watchlist.length === 0 || loading) return;
     abortRef.current = false;
 
-    // 이미 분석된 티커 제외 → 새로 추가된 티커만 추출
     const analyzedSet = new Set(allStocks.map(s => s.ticker));
     const tickersToAnalyze = watchlist.filter(t => !analyzedSet.has(t));
 
@@ -155,12 +153,11 @@ export default function Home() {
     }
 
     setLoading(true); setError(''); setSearch('');
-    // ✅ setAllStocks([]) 제거 — 기존 데이터 유지
     const batches = chunk(tickersToAnalyze, BATCH_SIZE);
     setProgress({ done: 0, total: tickersToAnalyze.length });
 
-    let accumulated: StockAnalysis[] = [...allStocks]; // 기존 결과 보존
-    let firstCtx = marketCtx || '';                    // 기존 시장 컨텍스트 보존
+    let accumulated: StockAnalysis[] = [...allStocks];
+    let firstCtx = marketCtx || '';
 
     for (let i = 0; i < batches.length; i++) {
       if (abortRef.current) break;
@@ -187,11 +184,8 @@ export default function Home() {
     setStatus(`> 완료 — ${accumulated.length}개 종목 · 실적 발표일 조회 중...`);
 
     try { localStorage.setItem(CACHE_KEY, JSON.stringify({ date: todayKey(), stocks: accumulated, market_context: firstCtx, analyzed_at: ts })); } catch {}
-
-    // Save to Supabase DB for cross-device sync
     await saveAnalysisToDB(accumulated, firstCtx, ts);
 
-    // Fetch earnings calendar in background (새 티커만)
     try {
       const tBatches = chunk(tickersToAnalyze, 20);
       const eMap: Record<string, { earningsDate: string | null; daysUntil: number | null; epsEstimate: number | null; revenueEstimate: string | null; lastEPS: number | null }> = { ...earningsMap };
@@ -216,11 +210,10 @@ export default function Home() {
     abortRef.current = true;
     setLoading(false); setAllStocks([]); setMarketCtx(''); setAnalyzedAt('');
     setStatus(''); setError(''); setSearch(''); setFilter('ALL'); setSort('SCORE');
-    setWatchlist([]); setXlsxMsg(''); setEarningsMap({});
+    setWatchlist([]); setXlsxMsg(''); setXlsxOpen(false); setCtxOpen(false); setEarningsMap({});
     try { localStorage.removeItem(CACHE_KEY); localStorage.removeItem(WATCHLIST_KEY); localStorage.removeItem('mt_earnings_v1'); } catch {}
   }
 
-  // ── Supabase DB sync ──────────────────────────────────────────────────────
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async function loadFromDB() {
     try {
@@ -269,7 +262,6 @@ export default function Home() {
   const pct = progress.total > 0 ? Math.round((progress.done / progress.total) * 100) : 0;
   const today = new Date().toLocaleDateString('ko-KR', { year:'numeric', month:'long', day:'numeric', weekday:'short' });
 
-  // 분석 버튼 라벨: 새 티커 수에 따라 동적으로 표시
   const analyzedSet = new Set(allStocks.map(s => s.ticker));
   const newTickerCount = watchlist.filter(t => !analyzedSet.has(t)).length;
   const analyzeButtonLabel = loading
@@ -282,11 +274,10 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-bg-base">
-      {/* ✅ 수정 1: max-w-4xl → max-w-[1400px], px-4 → px-6 */}
       <div className="max-w-[1400px] mx-auto px-6 py-8">
 
-        {/* ── Header ── */}
-        <header className="mb-6">
+        {/* ── Header ✅ 수정 1: sticky 고정 ── */}
+        <header className="mb-6 sticky top-0 z-20 bg-bg-base pt-2 pb-3">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-border mb-4">
             <div>
               <h1 className="text-lg font-semibold tracking-tight text-zinc-100">MOMENTUM SIGNAL</h1>
@@ -351,38 +342,52 @@ export default function Home() {
             <MarketStatus />
             <WatchlistManager watchlist={watchlist} onAdd={addTicker} onRemove={removeTicker} maxTickers={MAX_TICKERS} />
 
-            {/* Excel Upload */}
-            <div className="mb-6 p-4 border border-zinc-800 rounded-xl bg-zinc-900/40">
-              <div className="text-[10px] text-zinc-600 uppercase tracking-widest mb-3">엑셀 일괄 업로드</div>
-              <div className="flex flex-wrap items-center gap-3">
-                <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleFile} className="hidden" />
-                <button onClick={() => fileRef.current?.click()}
-                  className="text-sm px-4 py-2 bg-zinc-800 border border-zinc-700 text-zinc-200 rounded-lg hover:bg-zinc-700 transition-colors">
-                  파일 선택 (.xlsx / .xls / .csv)
-                </button>
-                <button onClick={() => { setWatchlist(DEFAULT_TICKERS); setXlsxMsg(''); }}
-                  className="text-xs px-3 py-2 border border-zinc-800 text-zinc-500 rounded-lg hover:text-zinc-300 transition-colors">
-                  초기화
-                </button>
-                {xlsxMsg && (
-                  <span className={`text-xs ${xlsxMsg.startsWith('✓') ? 'text-emerald-400' : 'text-zinc-400'}`}>
-                    {xlsxMsg}
-                  </span>
-                )}
-              </div>
-              <p className="text-[10px] text-zinc-700 mt-2">어느 셀에나 티커가 있으면 자동 추출. 최대 {MAX_TICKERS.toLocaleString()}개.</p>
+            {/* ✅ 수정 4: 엑셀 업로드 접기/펼치기 */}
+            <div className="mb-6 border border-zinc-800 rounded-xl bg-zinc-900/40 overflow-hidden">
+              <button
+                onClick={() => setXlsxOpen(o => !o)}
+                className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-zinc-800/40 transition-colors">
+                <span className="text-[10px] text-zinc-500 uppercase tracking-widest">엑셀 일괄 업로드</span>
+                <span className="text-zinc-600 text-xs">{xlsxOpen ? '▲' : '▼'}</span>
+              </button>
+              {xlsxOpen && (
+                <div className="px-4 pb-4 border-t border-zinc-800/50 pt-3">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleFile} className="hidden" />
+                    <button onClick={() => fileRef.current?.click()}
+                      className="text-sm px-4 py-2 bg-zinc-800 border border-zinc-700 text-zinc-200 rounded-lg hover:bg-zinc-700 transition-colors">
+                      파일 선택 (.xlsx / .xls / .csv)
+                    </button>
+                    <button onClick={() => { setWatchlist(DEFAULT_TICKERS); setXlsxMsg(''); }}
+                      className="text-xs px-3 py-2 border border-zinc-800 text-zinc-500 rounded-lg hover:text-zinc-300 transition-colors">
+                      초기화
+                    </button>
+                    {xlsxMsg && (
+                      <span className={`text-xs ${xlsxMsg.startsWith('✓') ? 'text-emerald-400' : 'text-zinc-400'}`}>
+                        {xlsxMsg}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[10px] text-zinc-700 mt-2">어느 셀에나 티커가 있으면 자동 추출. 최대 {MAX_TICKERS.toLocaleString()}개.</p>
+                </div>
+              )}
             </div>
 
-            {/* Progress bar */}
+            {/* ✅ 수정 7: 진행률 토스트 (우하단 fixed) */}
             {loading && progress.total > 0 && (
-              <div className="mb-4">
-                <div className="flex justify-between text-xs text-zinc-500 mb-1.5 font-mono">
-                  <span>{status}</span>
-                  <span className="text-emerald-400">{progress.done} / {progress.total} ({pct}%)</span>
+              <div className="fixed bottom-6 right-6 z-50 w-72 bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-semibold text-zinc-300">분석 중...</span>
+                  <span className="text-xs font-mono text-emerald-400">{progress.done}/{progress.total} ({pct}%)</span>
                 </div>
-                <div className="h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+                <div className="h-1.5 bg-zinc-800 rounded-full overflow-hidden mb-2">
                   <div className="h-full bg-emerald-500 rounded-full transition-all duration-500" style={{ width: `${pct}%` }} />
                 </div>
+                <p className="text-[10px] text-zinc-600 font-mono truncate">{status}</p>
+                <button onClick={stopAnalysis}
+                  className="mt-2 w-full text-xs py-1.5 rounded-lg border border-red-800 text-red-400 hover:bg-red-950 transition-colors">
+                  중단
+                </button>
               </div>
             )}
 
@@ -398,10 +403,27 @@ export default function Home() {
 
             {allStocks.length > 0 && (
               <>
+                {/* ✅ 수정 3: 시장 컨텍스트 접기/펼치기 */}
                 {marketCtx && (
-                  <div className="mb-6 p-4 bg-zinc-900/60 border border-zinc-800 rounded-xl">
-                    <div className="text-[10px] text-zinc-600 uppercase tracking-widest mb-2">시장 컨텍스트</div>
-                    <p className="text-xs text-zinc-400 leading-relaxed" style={{ fontFamily: 'system-ui, sans-serif' }}>{marketCtx}</p>
+                  <div className="mb-6 border border-zinc-800 rounded-xl bg-zinc-900/60 overflow-hidden">
+                    <button
+                      onClick={() => setCtxOpen(o => !o)}
+                      className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-zinc-800/30 transition-colors">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <span className="text-[10px] text-zinc-600 uppercase tracking-widest shrink-0">시장 컨텍스트</span>
+                        {!ctxOpen && (
+                          <p className="text-xs text-zinc-500 truncate" style={{ fontFamily: 'system-ui, sans-serif' }}>
+                            {marketCtx.slice(0, 60)}...
+                          </p>
+                        )}
+                      </div>
+                      <span className="text-zinc-600 text-xs shrink-0 ml-2">{ctxOpen ? '▲' : '▼'}</span>
+                    </button>
+                    {ctxOpen && (
+                      <div className="px-4 pb-4 border-t border-zinc-800/50 pt-3">
+                        <p className="text-xs text-zinc-400 leading-relaxed" style={{ fontFamily: 'system-ui, sans-serif' }}>{marketCtx}</p>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -425,8 +447,8 @@ export default function Home() {
                   )}
                 </div>
 
-                {/* Filter + Sort */}
-                <div className="flex flex-wrap gap-2 items-center justify-between mb-4">
+                {/* ✅ 수정 2: 필터/정렬 sticky */}
+                <div className="flex flex-wrap gap-2 items-center justify-between mb-4 sticky top-[120px] z-10 bg-bg-base py-2">
                   <div className="flex flex-wrap gap-1">
                     {([
                       ['ALL', `전체(${allStocks.length})`],
@@ -454,7 +476,6 @@ export default function Home() {
                   </div>
                 </div>
 
-                {/* ✅ 수정 2: flex flex-col → grid xl:grid-cols-2 */}
                 <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
                   {displayed.map((s, i) => (
                     <StockCard key={s.ticker} stock={s} highlight={i===0 && filter!=='SELL' && filter!=='STRONG_SELL'} onRemove={removeFromResults} earnings={earningsMap[s.ticker]} />
