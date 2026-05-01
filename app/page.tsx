@@ -63,15 +63,24 @@ export default function Home() {
   const [error, setError] = useState('');
   const [filter, setFilter] = useState<FilterType>('ALL');
   const [sort, setSort] = useState<SortType>('SCORE');
-  // ✅ 수정 4: xlsxOpen 실제 활용
   const [xlsxOpen, setXlsxOpen] = useState(false);
   const [xlsxMsg, setXlsxMsg] = useState('');
   const [search, setSearch] = useState('');
-  // ✅ 수정 3: 시장 컨텍스트 접기 state
   const [ctxOpen, setCtxOpen] = useState(false);
+  // ✅ 수정 5: 컴팩트 뷰 state
+  const [isCompact, setIsCompact] = useState(false);
+  // ✅ 수정 8: Drawer state
+  const [drawerTicker, setDrawerTicker] = useState<string | null>(null);
   const [earningsMap, setEarningsMap] = useState<Record<string, { earningsDate: string | null; daysUntil: number | null; epsEstimate: number | null; revenueEstimate: string | null; lastEPS: number | null }>>({});
   const fileRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef(false);
+
+  // ESC 키로 Drawer 닫기
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') setDrawerTicker(null); };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
 
   useEffect(() => {
     fetch('/api/db?type=watchlist').then(r => r.json()).then(d => {
@@ -111,6 +120,7 @@ export default function Home() {
   function removeFromResults(ticker: string) {
     setAllStocks(s => s.filter(x => x.ticker !== ticker));
     setWatchlist(w => w.filter(x => x !== ticker));
+    if (drawerTicker === ticker) setDrawerTicker(null);
     try {
       const ec = localStorage.getItem('mt_earnings_v1');
       if (ec) { const ep = JSON.parse(ec); if (ep.date === todayKey()) setEarningsMap(ep.data ?? {}); }
@@ -210,7 +220,8 @@ export default function Home() {
     abortRef.current = true;
     setLoading(false); setAllStocks([]); setMarketCtx(''); setAnalyzedAt('');
     setStatus(''); setError(''); setSearch(''); setFilter('ALL'); setSort('SCORE');
-    setWatchlist([]); setXlsxMsg(''); setXlsxOpen(false); setCtxOpen(false); setEarningsMap({});
+    setWatchlist([]); setXlsxMsg(''); setXlsxOpen(false); setCtxOpen(false);
+    setIsCompact(false); setDrawerTicker(null); setEarningsMap({});
     try { localStorage.removeItem(CACHE_KEY); localStorage.removeItem(WATCHLIST_KEY); localStorage.removeItem('mt_earnings_v1'); } catch {}
   }
 
@@ -272,11 +283,14 @@ export default function Home() {
         ? '✓ 분석 완료 (초기화 후 재분석)'
         : '분석 실행 →';
 
+  // Drawer에 표시할 종목 데이터
+  const drawerStock = drawerTicker ? allStocks.find(s => s.ticker === drawerTicker) ?? null : null;
+
   return (
     <div className="min-h-screen bg-bg-base">
       <div className="max-w-[1400px] mx-auto px-6 py-8">
 
-        {/* ── Header ✅ 수정 1: sticky 고정 ── */}
+        {/* ── Header: sticky ── */}
         <header className="mb-6 sticky top-0 z-20 bg-bg-base pt-2 pb-3">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-border mb-4">
             <div>
@@ -329,10 +343,8 @@ export default function Home() {
 
         {/* ── Portfolio Tab ── */}
         {activeTab === 'portfolio' && <PortfolioTab />}
-
         {/* ── Sector Heatmap Tab ── */}
         {activeTab === 'sectors' && <SectorHeatmap />}
-
         {/* ── Backtest Tab ── */}
         {activeTab === 'backtest' && <BacktestPanel />}
 
@@ -342,7 +354,7 @@ export default function Home() {
             <MarketStatus />
             <WatchlistManager watchlist={watchlist} onAdd={addTicker} onRemove={removeTicker} maxTickers={MAX_TICKERS} />
 
-            {/* ✅ 수정 4: 엑셀 업로드 접기/펼치기 */}
+            {/* 엑셀 업로드 접기 */}
             <div className="mb-6 border border-zinc-800 rounded-xl bg-zinc-900/40 overflow-hidden">
               <button
                 onClick={() => setXlsxOpen(o => !o)}
@@ -363,9 +375,7 @@ export default function Home() {
                       초기화
                     </button>
                     {xlsxMsg && (
-                      <span className={`text-xs ${xlsxMsg.startsWith('✓') ? 'text-emerald-400' : 'text-zinc-400'}`}>
-                        {xlsxMsg}
-                      </span>
+                      <span className={`text-xs ${xlsxMsg.startsWith('✓') ? 'text-emerald-400' : 'text-zinc-400'}`}>{xlsxMsg}</span>
                     )}
                   </div>
                   <p className="text-[10px] text-zinc-700 mt-2">어느 셀에나 티커가 있으면 자동 추출. 최대 {MAX_TICKERS.toLocaleString()}개.</p>
@@ -373,7 +383,7 @@ export default function Home() {
               )}
             </div>
 
-            {/* ✅ 수정 7: 진행률 토스트 (우하단 fixed) */}
+            {/* 진행률 토스트 (우하단 fixed) */}
             {loading && progress.total > 0 && (
               <div className="fixed bottom-6 right-6 z-50 w-72 bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl p-4">
                 <div className="flex items-center justify-between mb-2">
@@ -396,14 +406,12 @@ export default function Home() {
             )}
 
             {error && (
-              <div className="mb-6 p-4 bg-red-950 border border-red-800 rounded-xl text-sm text-red-300">
-                오류: {error}
-              </div>
+              <div className="mb-6 p-4 bg-red-950 border border-red-800 rounded-xl text-sm text-red-300">오류: {error}</div>
             )}
 
             {allStocks.length > 0 && (
               <>
-                {/* ✅ 수정 3: 시장 컨텍스트 접기/펼치기 */}
+                {/* 시장 컨텍스트 접기 */}
                 {marketCtx && (
                   <div className="mb-6 border border-zinc-800 rounded-xl bg-zinc-900/60 overflow-hidden">
                     <button
@@ -433,7 +441,8 @@ export default function Home() {
                   <StatCard label="매도" value={sellCnt} color="text-red-400" border="border-red-900" />
                 </div>
 
-                <TopPicks stocks={allStocks} />
+                {/* TopPicks: onOpenDrawer 연결 */}
+                <TopPicks stocks={allStocks} onOpenDrawer={setDrawerTicker} />
 
                 {/* Search */}
                 <div className="relative mb-3">
@@ -447,7 +456,7 @@ export default function Home() {
                   )}
                 </div>
 
-                {/* ✅ 수정 2: 필터/정렬 sticky */}
+                {/* 필터/정렬 + 컴팩트 토글: sticky */}
                 <div className="flex flex-wrap gap-2 items-center justify-between mb-4 sticky top-[120px] z-10 bg-bg-base py-2">
                   <div className="flex flex-wrap gap-1">
                     {([
@@ -473,12 +482,28 @@ export default function Home() {
                         {s==='SCORE'?'점수순':s==='SIGNAL'?'신호순':'티커순'}
                       </button>
                     ))}
+                    {/* ✅ 수정 5: 컴팩트 뷰 토글 버튼 */}
+                    <button
+                      onClick={() => setIsCompact(c => !c)}
+                      className={`text-xs px-3 py-1.5 rounded-lg border transition-colors
+                        ${isCompact ? 'bg-zinc-700 border-zinc-600 text-zinc-100' : 'bg-transparent border-zinc-800 text-zinc-500 hover:text-zinc-300'}`}>
+                      {isCompact ? '■ 컴팩트' : '☰ 컴팩트'}
+                    </button>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                {/* ✅ 컴팩트/상세 뷰 전환 + Drawer 연동 */}
+                <div className={isCompact ? 'flex flex-col gap-1.5' : 'grid grid-cols-1 xl:grid-cols-2 gap-4'}>
                   {displayed.map((s, i) => (
-                    <StockCard key={s.ticker} stock={s} highlight={i===0 && filter!=='SELL' && filter!=='STRONG_SELL'} onRemove={removeFromResults} earnings={earningsMap[s.ticker]} />
+                    <StockCard
+                      key={s.ticker}
+                      stock={s}
+                      highlight={i===0 && filter!=='SELL' && filter!=='STRONG_SELL'}
+                      onRemove={removeFromResults}
+                      earnings={earningsMap[s.ticker]}
+                      compact={isCompact}
+                      onOpenDrawer={setDrawerTicker}
+                    />
                   ))}
                   {displayed.length === 0 && (
                     <p className="text-sm text-zinc-600 py-6 text-center col-span-2">해당 조건의 종목이 없습니다.</p>
@@ -509,6 +534,49 @@ export default function Home() {
           </p>
         </footer>
       </div>
+
+      {/* ✅ 수정 8: 사이드 Drawer */}
+      {drawerStock && (
+        <>
+          {/* Backdrop */}
+          <div
+            className="fixed inset-0 z-30 bg-black/60 backdrop-blur-sm"
+            onClick={() => setDrawerTicker(null)}
+          />
+          {/* Panel */}
+          <div className="fixed top-0 right-0 h-full w-full sm:w-[520px] z-40 bg-zinc-950 border-l border-zinc-800 overflow-y-auto shadow-2xl">
+            {/* Drawer 헤더 */}
+            <div className="sticky top-0 bg-zinc-950 border-b border-zinc-800 px-4 py-3 flex items-center justify-between z-10">
+              <div className="flex items-center gap-3">
+                <span className="text-base font-bold text-zinc-100">{drawerStock.ticker}</span>
+                <span className="text-xs text-zinc-500">상세 분석</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <a
+                  href={`/stock/${drawerStock.ticker}`}
+                  className="text-xs px-3 py-1.5 rounded-lg border border-zinc-700 text-zinc-400 hover:bg-zinc-800 transition-colors">
+                  전체 페이지 →
+                </a>
+                <button
+                  onClick={() => setDrawerTicker(null)}
+                  className="w-8 h-8 flex items-center justify-center rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200 transition-colors text-sm">
+                  ✕
+                </button>
+              </div>
+            </div>
+            {/* Drawer 컨텐츠: StockCard forceOpen */}
+            <div className="p-4">
+              <StockCard
+                stock={drawerStock}
+                highlight={false}
+                onRemove={removeFromResults}
+                earnings={earningsMap[drawerStock.ticker]}
+                forceOpen={true}
+              />
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }
