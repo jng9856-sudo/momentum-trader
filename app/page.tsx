@@ -264,9 +264,7 @@ export default function Home() {
       return (o[a.signal] ?? 5) - (o[b.signal] ?? 5);
     });
 
-  const buyCnt  = allStocks.filter(s => s.signal === 'STRONG_BUY' || s.signal === 'BUY').length;
   const holdCnt = allStocks.filter(s => s.signal === 'HOLD').length;
-  const sellCnt = allStocks.filter(s => s.signal === 'SELL' || s.signal === 'STRONG_SELL').length;
   const pct = progress.total > 0 ? Math.round((progress.done / progress.total) * 100) : 0;
   const today = new Date().toLocaleDateString('ko-KR', { year:'numeric', month:'long', day:'numeric', weekday:'short' });
 
@@ -348,12 +346,9 @@ export default function Home() {
               <WatchlistManager watchlist={watchlist} onAdd={addTicker} onRemove={removeTicker} maxTickers={MAX_TICKERS} />
             </div>
 
-            {/* ── 2행: 상태메시지 + 엑셀업로드 ── */}
+            {/* ── 2행: 빈칸 + 엑셀업로드 (우측 반쪽만) ── */}
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 mb-4">
-              <div className="flex flex-col justify-center">
-                {!loading && status && <div className="text-xs font-mono text-zinc-500">{status}</div>}
-                {error && <div className="p-4 bg-red-950 border border-red-800 rounded-xl text-sm text-red-300">오류: {error}</div>}
-              </div>
+              <div>{/* 좌측 빈칸 */}</div>
               <div className="border border-zinc-800 rounded-xl bg-zinc-900/40 overflow-hidden">
                 <button onClick={() => setXlsxOpen(o => !o)}
                   className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-zinc-800/40 transition-colors">
@@ -398,6 +393,8 @@ export default function Home() {
               </div>
             )}
 
+            {error && <div className="mb-4 p-4 bg-red-950 border border-red-800 rounded-xl text-sm text-red-300">오류: {error}</div>}
+
             {allStocks.length > 0 && (
               <>
                 {/* 시장 컨텍스트 접기 */}
@@ -418,22 +415,6 @@ export default function Home() {
                     )}
                   </div>
                 )}
-
-                {/* 매수/관망/매도 요약 */}
-                <div className="flex items-center gap-3 mb-4">
-                  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-emerald-900 bg-bg-card">
-                    <span className="text-lg font-semibold text-emerald-400">{buyCnt}</span>
-                    <span className="text-[10px] text-zinc-600 uppercase tracking-widest">매수</span>
-                  </div>
-                  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-amber-900 bg-bg-card">
-                    <span className="text-lg font-semibold text-amber-400">{holdCnt}</span>
-                    <span className="text-[10px] text-zinc-600 uppercase tracking-widest">관망</span>
-                  </div>
-                  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-900 bg-bg-card">
-                    <span className="text-lg font-semibold text-red-400">{sellCnt}</span>
-                    <span className="text-[10px] text-zinc-600 uppercase tracking-widest">매도</span>
-                  </div>
-                </div>
 
                 {/* Top 10 바차트 */}
                 <TopBarChart stocks={allStocks} />
@@ -556,15 +537,6 @@ export default function Home() {
           </div>
         </>
       )}
-    </div>
-  );
-}
-
-function StatCard({ label, value, color, border }: { label: string; value: number; color: string; border: string }) {
-  return (
-    <div className={`bg-bg-card border ${border} rounded-xl p-4 text-center`}>
-      <div className={`text-2xl font-semibold ${color}`}>{value}</div>
-      <div className="text-[10px] text-zinc-600 uppercase tracking-widest mt-0.5">{label}</div>
     </div>
   );
 }
