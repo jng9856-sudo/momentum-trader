@@ -73,7 +73,7 @@ export default function MarketStatus() {
   const [data,    setData]    = useState<MarketData | null>(null);
   const [macro,   setMacro]   = useState<MacroData | null>(null);  // 🆕
   const [loading, setLoading] = useState(true);
-  const [open,    setOpen]    = useState(true);
+  const [open, setOpen] = useState(false);
 
   useEffect(() => {
     // 시장 데이터
