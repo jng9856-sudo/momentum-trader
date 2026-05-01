@@ -340,42 +340,61 @@ export default function Home() {
 
         {activeTab === 'scanner' && (
           <>
-            {/* ── 1행: 시장상태 + 관심종목 ── */}
-            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 mb-4">
-              <MarketStatus />
-              <WatchlistManager watchlist={watchlist} onAdd={addTicker} onRemove={removeTicker} maxTickers={MAX_TICKERS} />
-            </div>
+            {/* ── 2x2 그리드 ── */}
+<div className="grid grid-cols-1 xl:grid-cols-2 gap-4 mb-4">
+  {/* 좌상: 시장상태 */}
+  <MarketStatus />
 
-            {/* ── 2행: 빈칸 + 엑셀업로드 (우측 반쪽만) ── */}
-            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 mb-4">
-              <div>{/* 좌측 빈칸 */}</div>
-              <div className="border border-zinc-800 rounded-xl bg-zinc-900/40 overflow-hidden">
-                <button onClick={() => setXlsxOpen(o => !o)}
-                  className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-zinc-800/40 transition-colors">
-                  <span className="text-[10px] text-zinc-500 uppercase tracking-widest">엑셀 일괄 업로드</span>
-                  <span className="text-zinc-600 text-xs">{xlsxOpen ? '▲' : '▼'}</span>
-                </button>
-                {xlsxOpen && (
-                  <div className="px-4 pb-4 border-t border-zinc-800/50 pt-3">
-                    <div className="flex flex-wrap items-center gap-3">
-                      <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleFile} className="hidden" />
-                      <button onClick={() => fileRef.current?.click()}
-                        className="text-sm px-4 py-2 bg-zinc-800 border border-zinc-700 text-zinc-200 rounded-lg hover:bg-zinc-700 transition-colors">
-                        파일 선택 (.xlsx / .xls / .csv)
-                      </button>
-                      <button onClick={() => { setWatchlist(DEFAULT_TICKERS); setXlsxMsg(''); }}
-                        className="text-xs px-3 py-2 border border-zinc-800 text-zinc-500 rounded-lg hover:text-zinc-300 transition-colors">
-                        초기화
-                      </button>
-                      {xlsxMsg && (
-                        <span className={`text-xs ${xlsxMsg.startsWith('✓') ? 'text-emerald-400' : 'text-zinc-400'}`}>{xlsxMsg}</span>
-                      )}
-                    </div>
-                    <p className="text-[10px] text-zinc-700 mt-2">어느 셀에나 티커가 있으면 자동 추출. 최대 {MAX_TICKERS.toLocaleString()}개.</p>
-                  </div>
-                )}
-              </div>
-            </div>
+  {/* 우상: 관심종목 */}
+  <WatchlistManager watchlist={watchlist} onAdd={addTicker} onRemove={removeTicker} maxTickers={MAX_TICKERS} />
+
+  {/* 좌하: 시장 컨텍스트 */}
+  {marketCtx ? (
+    <div className="border border-zinc-800 rounded-xl bg-zinc-900/60 overflow-hidden">
+      <button onClick={() => setCtxOpen(o => !o)}
+        className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-zinc-800/30 transition-colors">
+        <div className="flex items-center gap-3 min-w-0">
+          <span className="text-[10px] text-zinc-600 uppercase tracking-widest shrink-0">시장 컨텍스트</span>
+          {!ctxOpen && <p className="text-xs text-zinc-500 truncate" style={{ fontFamily: 'system-ui, sans-serif' }}>{marketCtx.slice(0, 60)}...</p>}
+        </div>
+        <span className="text-zinc-600 text-xs shrink-0 ml-2">{ctxOpen ? '▲' : '▼'}</span>
+      </button>
+      {ctxOpen && (
+        <div className="px-4 pb-4 border-t border-zinc-800/50 pt-3">
+          <p className="text-xs text-zinc-400 leading-relaxed" style={{ fontFamily: 'system-ui, sans-serif' }}>{marketCtx}</p>
+        </div>
+      )}
+    </div>
+  ) : <div />}
+
+  {/* 우하: 엑셀 업로드 */}
+  <div className="border border-zinc-800 rounded-xl bg-zinc-900/40 overflow-hidden">
+    <button onClick={() => setXlsxOpen(o => !o)}
+      className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-zinc-800/40 transition-colors">
+      <span className="text-[10px] text-zinc-500 uppercase tracking-widest">엑셀 일괄 업로드</span>
+      <span className="text-zinc-600 text-xs">{xlsxOpen ? '▲' : '▼'}</span>
+    </button>
+    {xlsxOpen && (
+      <div className="px-4 pb-4 border-t border-zinc-800/50 pt-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleFile} className="hidden" />
+          <button onClick={() => fileRef.current?.click()}
+            className="text-sm px-4 py-2 bg-zinc-800 border border-zinc-700 text-zinc-200 rounded-lg hover:bg-zinc-700 transition-colors">
+            파일 선택 (.xlsx / .xls / .csv)
+          </button>
+          <button onClick={() => { setWatchlist(DEFAULT_TICKERS); setXlsxMsg(''); }}
+            className="text-xs px-3 py-2 border border-zinc-800 text-zinc-500 rounded-lg hover:text-zinc-300 transition-colors">
+            초기화
+          </button>
+          {xlsxMsg && (
+            <span className={`text-xs ${xlsxMsg.startsWith('✓') ? 'text-emerald-400' : 'text-zinc-400'}`}>{xlsxMsg}</span>
+          )}
+        </div>
+        <p className="text-[10px] text-zinc-700 mt-2">어느 셀에나 티커가 있으면 자동 추출. 최대 {MAX_TICKERS.toLocaleString()}개.</p>
+      </div>
+    )}
+  </div>
+</div>
 
             {/* 진행률 토스트 */}
             {loading && progress.total > 0 && (
