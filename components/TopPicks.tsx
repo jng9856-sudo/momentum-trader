@@ -69,8 +69,8 @@ export default function TopPicks({ stocks }: { stocks: StockAnalysis[] }) {
         </span>
       </div>
 
-      {/* 종목 카드 그리드 */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+      {/* ✅ 수정 3: lg:grid-cols-3 → xl:grid-cols-4 2xl:grid-cols-5 추가 */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3">
         {picks.map((s, i) => {
           const rt = rtPrices[s.ticker];
           const score = Math.min(10, Math.max(1, Number(s.momentum_score)));
