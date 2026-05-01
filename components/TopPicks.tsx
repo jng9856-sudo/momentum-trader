@@ -9,7 +9,11 @@ function sigScore(s: string) {
 
 interface RtPrice { price: number; changePct: number; isRealtime?: boolean; }
 
-export default function TopPicks({ stocks }: { stocks: StockAnalysis[] }) {
+export default function TopPicks({ stocks, onOpenDrawer }: {
+  stocks: StockAnalysis[];
+  // ✅ 수정 8: Drawer 연동 prop
+  onOpenDrawer?: (ticker: string) => void;
+}) {
   const router = useRouter();
   const [rtPrices, setRtPrices] = useState<Record<string, RtPrice & { isRealtime?: boolean }>>({});
 
@@ -18,14 +22,12 @@ export default function TopPicks({ stocks }: { stocks: StockAnalysis[] }) {
     .sort((a, b) => {
       const sigDiff = sigScore(b.signal) - sigScore(a.signal);
       if (sigDiff !== 0) return sigDiff;
-      // 52w 신고가 돌파 우선
       if (a.breakout_52w && !b.breakout_52w) return -1;
       if (!a.breakout_52w && b.breakout_52w) return 1;
       return Number(b.momentum_score) - Number(a.momentum_score);
     })
     .slice(0, 5);
 
-  // 실시간 가격 조회
   useEffect(() => {
     if (picks.length === 0) return;
     const tickers = picks.map(s => s.ticker).join(',');
@@ -69,7 +71,7 @@ export default function TopPicks({ stocks }: { stocks: StockAnalysis[] }) {
         </span>
       </div>
 
-      {/* ✅ 수정 3: lg:grid-cols-3 → xl:grid-cols-4 2xl:grid-cols-5 추가 */}
+      {/* ✅ 수정 3 + 수정 8: 카드 그리드 확장 + Drawer 연동 */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3">
         {picks.map((s, i) => {
           const rt = rtPrices[s.ticker];
@@ -80,7 +82,11 @@ export default function TopPicks({ stocks }: { stocks: StockAnalysis[] }) {
           return (
             <button
               key={s.ticker}
-              onClick={() => router.push(`/stock/${s.ticker}`)}
+              onClick={() => {
+                // ✅ Drawer가 있으면 drawer로, 없으면 페이지 이동
+                if (onOpenDrawer) onOpenDrawer(s.ticker);
+                else router.push(`/stock/${s.ticker}`);
+              }}
               className={`relative rounded-xl border p-4 bg-bg-card text-left transition-all hover:scale-[1.01] hover:border-zinc-600 active:scale-[0.99]
                 ${i === 0 && isStrong ? 'border-emerald-500/70 shadow-[0_0_24px_rgba(16,185,129,0.12)]' :
                   isBreakout ? 'border-amber-600/60' : 'border-emerald-800/50'}`}
@@ -88,19 +94,12 @@ export default function TopPicks({ stocks }: { stocks: StockAnalysis[] }) {
               {/* 순위 배지 */}
               <div className="absolute top-2 right-2 flex gap-1">
                 {isBreakout && (
-                  <span className="text-[9px] bg-amber-900 text-amber-300 border border-amber-700 px-1.5 py-0.5 rounded">
-                    🚀 신고가
-                  </span>
+                  <span className="text-[9px] bg-amber-900 text-amber-300 border border-amber-700 px-1.5 py-0.5 rounded">🚀 신고가</span>
                 )}
-                {isStrong && (
-                  <span className="text-[9px] bg-emerald-900 text-emerald-200 border border-emerald-700 px-1.5 py-0.5 rounded font-semibold">
-                    즉시매수
-                  </span>
-                )}
-                {!isStrong && (
-                  <span className="text-[9px] bg-zinc-800 text-zinc-400 border border-zinc-700 px-1.5 py-0.5 rounded">
-                    매수
-                  </span>
+                {isStrong ? (
+                  <span className="text-[9px] bg-emerald-900 text-emerald-200 border border-emerald-700 px-1.5 py-0.5 rounded font-semibold">즉시매수</span>
+                ) : (
+                  <span className="text-[9px] bg-zinc-800 text-zinc-400 border border-zinc-700 px-1.5 py-0.5 rounded">매수</span>
                 )}
               </div>
 
@@ -140,8 +139,7 @@ export default function TopPicks({ stocks }: { stocks: StockAnalysis[] }) {
                   <span className="text-emerald-400 font-semibold">{score}/10</span>
                 </div>
                 <div className="h-1.5 bg-zinc-800 rounded-full overflow-hidden">
-                  <div className="h-full rounded-full bg-emerald-500 transition-all"
-                    style={{ width: `${score * 10}%` }} />
+                  <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${score * 10}%` }} />
                 </div>
               </div>
 
@@ -164,25 +162,22 @@ export default function TopPicks({ stocks }: { stocks: StockAnalysis[] }) {
               {/* 진입/손절 */}
               <div className="flex flex-wrap gap-1.5">
                 {s.entry_zone && (
-                  <span className="text-[10px] px-2 py-0.5 rounded border bg-emerald-950/40 text-emerald-300 border-emerald-800">
-                    진입 {s.entry_zone}
-                  </span>
+                  <span className="text-[10px] px-2 py-0.5 rounded border bg-emerald-950/40 text-emerald-300 border-emerald-800">진입 {s.entry_zone}</span>
                 )}
                 {s.stop_loss && (
-                  <span className="text-[10px] px-2 py-0.5 rounded border bg-red-950/40 text-red-300 border-red-800">
-                    손절 {s.stop_loss}
-                  </span>
+                  <span className="text-[10px] px-2 py-0.5 rounded border bg-red-950/40 text-red-300 border-red-800">손절 {s.stop_loss}</span>
                 )}
               </div>
 
               {/* 클릭 힌트 */}
-              <div className="text-[9px] text-zinc-700 mt-2 text-right">탭하면 상세 차트 →</div>
+              <div className="text-[9px] text-zinc-700 mt-2 text-right">
+                {onOpenDrawer ? '탭하면 상세 패널 ▶' : '탭하면 상세 차트 →'}
+              </div>
             </button>
           );
         })}
       </div>
 
-      {/* 면책 */}
       <p className="text-[10px] text-zinc-700 mt-3 text-center" style={{ fontFamily: 'system-ui' }}>
         ⚠ 자동 선정 참고 정보 — 시장 배너 확인 후 손절선 설정 필수. 투자 판단은 본인 책임.
       </p>
