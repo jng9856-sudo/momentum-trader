@@ -32,7 +32,6 @@ function rrColors(grade: string | null) {
   }
 }
 
-// 🆕 눌림목 등급 색상
 function pullbackColors(grade: string | null) {
   switch (grade) {
     case 'IDEAL': return { text: 'text-emerald-300', border: 'border-emerald-600', bg: 'bg-emerald-950/30', badge: 'bg-emerald-900 text-emerald-200 border-emerald-700' };
@@ -51,12 +50,24 @@ function regimeBadgeStyle(note: string) {
 
 interface EarningsInfo { earningsDate: string | null; daysUntil: number | null; epsEstimate: number | null; revenueEstimate: string | null; lastEPS: number | null; }
 
-export default function StockCard({ stock, highlight = false, onRemove, earnings }: {
-  stock: StockAnalysis; highlight?: boolean; onRemove?: (ticker: string) => void; earnings?: EarningsInfo;
+export default function StockCard({ stock, highlight = false, onRemove, earnings, compact = false, forceOpen = false, onOpenDrawer }: {
+  stock: StockAnalysis;
+  highlight?: boolean;
+  onRemove?: (ticker: string) => void;
+  earnings?: EarningsInfo;
+  // ✅ 수정 5: 컴팩트 뷰 prop
+  compact?: boolean;
+  // ✅ 수정 8: Drawer용 props
+  forceOpen?: boolean;
+  onOpenDrawer?: (ticker: string) => void;
 }) {
   const router = useRouter();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(forceOpen);
   const [rtPrice, setRtPrice] = useState<{ price: number; changePct: number; isRealtime?: boolean } | null>(null);
+
+  useEffect(() => {
+    if (forceOpen) setOpen(true);
+  }, [forceOpen]);
 
   useEffect(() => {
     const fetchPrice = () => fetch(`/api/realtime?tickers=${stock.ticker}`)
@@ -70,11 +81,8 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
 
   const score = Math.min(10, Math.max(1, Math.round(Number(stock.momentum_score) * 2) / 2));
   const c = sigColors(stock.signal);
-  // 시장 국면
   const regimeNote  = stock.regime_note  ?? null;
   const regimeStyle = regimeNote ? regimeBadgeStyle(regimeNote) : null;
-
-  // R/R 비율
   const rrRatio  = stock.rr_ratio  ?? null;
   const rrGrade  = stock.rr_grade  ?? null;
   const rrRisk   = stock.rr_risk   ?? null;
@@ -83,7 +91,6 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
   const rrc = rrColors(rrGrade ?? null);
   const rrBarWidth = rrRatio ? Math.min(100, (rrRatio / 5) * 100) : 0;
 
-  // 매크로 이벤트 경고
   const [macroWarning, setMacroWarning] = useState<{ title: string; daysUntil: number; date: string } | null>(null);
   useEffect(() => {
     try {
@@ -95,7 +102,6 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
     } catch {}
   }, []);
 
-  // 눌림목
   const pbIs            = stock.pullback_is             ?? false;
   const pbGrade         = stock.pullback_grade          ?? null;
   const pbPct           = stock.pullback_pct            ?? 0;
@@ -108,33 +114,24 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
   const pbDetail        = stock.pullback_detail         ?? '';
   const pbc = pullbackColors(pbGrade);
 
-  // 섹터 정보
   const sector   = stock.sector   ?? null;
   const industry = stock.industry ?? null;
-
-  // Pocket Pivot
   const ppIs      = stock.pocket_pivot          ?? false;
   const ppDaysAgo = stock.pocket_pivot_days_ago ?? -1;
   const ppVolRatio = stock.pocket_pivot_vol_ratio ?? 0;
   const ppAboveMA = stock.pocket_pivot_above_ma  ?? null;
   const ppDetail  = stock.pocket_pivot_detail    ?? '';
-
-  // RS Line
   const rsLineTrend = stock.rs_line_trend      ?? 'FLAT';
   const rsLineDivergence = stock.rs_line_divergence ?? 'NONE';
   const rsLine3m  = stock.rs_line_3m_change    ?? 0;
   const rsLineDetail = stock.rs_line_detail    ?? '';
   const rsLineNewHigh = stock.rs_line_new_high ?? false;
-
-  // 트레일링 스탑
   const trailInitial  = stock.trail_initial_stop ?? null;
   const trailStop10   = stock.trail_stop_10      ?? null;
   const trailStop20   = stock.trail_stop_20      ?? null;
   const trailStop30   = stock.trail_stop_30      ?? null;
   const trailMultiplier = stock.trail_multiplier ?? null;
   const trailBreakEven  = stock.trail_break_even ?? null;
-
-  // 분할 매수/매도
   const splitEntry1  = stock.split_entry1   ?? null;
   const splitEntry2  = stock.split_entry2   ?? null;
   const splitEntry3  = stock.split_entry3   ?? null;
@@ -143,14 +140,67 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
   const splitExit3   = stock.split_exit3    ?? null;
   const splitAvgEntry = stock.split_avg_entry ?? null;
 
+  // ✅ 수정 5: 컴팩트 뷰 렌더링
+  if (compact) {
+    return (
+      <div className={`stock-card border border-zinc-800 border-l-4 ${c.border} rounded-xl bg-bg-card ${highlight ? 'ring-1 ring-emerald-500/20' : ''}`}>
+        <div className="flex items-center justify-between px-4 py-2.5 gap-2 flex-wrap">
+          {/* 좌측: 티커 + 배지들 */}
+          <div className="flex items-center gap-2 flex-wrap min-w-0">
+            <button
+              onClick={() => onOpenDrawer ? onOpenDrawer(stock.ticker) : router.push(`/stock/${stock.ticker}`)}
+              className="text-sm font-bold text-zinc-100 hover:text-emerald-300 transition-colors shrink-0">
+              {stock.ticker} {onOpenDrawer ? '▶' : '↗'}
+            </button>
+            {onRemove && (
+              <button onClick={() => onRemove(stock.ticker)}
+                className="w-4 h-4 flex items-center justify-center rounded-full bg-zinc-800 hover:bg-red-900 text-zinc-500 hover:text-red-400 transition-colors text-[9px] shrink-0">✕</button>
+            )}
+            {stock.rs_rank !== undefined && (
+              <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded border ${stock.rs_rank >= 90 ? 'bg-emerald-950 text-emerald-300 border-emerald-700' : 'bg-zinc-900 text-zinc-500 border-zinc-800'}`}>
+                RS {stock.rs_rank}%
+              </span>
+            )}
+            {stock.breakout_52w && <span className="text-[9px] bg-emerald-900 text-emerald-200 border border-emerald-700 px-1.5 py-0.5 rounded">🚀 신고가</span>}
+            {ppIs && <span className="text-[9px] bg-violet-950 text-violet-200 border border-violet-700 px-1.5 py-0.5 rounded">⚡ 포켓피벗</span>}
+            {pbIs && pbGrade && <span className={`text-[9px] px-1.5 py-0.5 rounded border ${pbc.badge}`}>{pbGrade === 'IDEAL' ? '🎯 눌림목' : '📉 눌림목'}</span>}
+            {rrRatio !== null && <span className={`text-[9px] px-1.5 py-0.5 rounded border font-mono ${rrc.bg} ${rrc.text} ${rrc.border}`}>R/R 1:{rrRatio}</span>}
+          </div>
+          {/* 우측: 가격 + 신호 + 점수 */}
+          <div className="flex items-center gap-2 shrink-0">
+            {rtPrice && (
+              <div className="flex items-center gap-1">
+                <span className="text-xs font-bold text-zinc-100 font-mono">${rtPrice.price.toLocaleString()}</span>
+                <span className={`text-[10px] font-mono ${rtPrice.changePct >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{rtPrice.changePct >= 0 ? '+' : ''}{rtPrice.changePct?.toFixed(2)}%</span>
+              </div>
+            )}
+            <span className={`text-[10px] font-semibold px-2 py-0.5 rounded border ${c.badge}`}>{SIG_KO[stock.signal] ?? stock.signal}</span>
+            <span className="text-xs font-mono" style={{ color: barColor(score) }}>{score}</span>
+            {stock.entry_zone && <span className="text-[9px] text-emerald-400 font-mono hidden sm:inline">진입 {stock.entry_zone}</span>}
+            {stock.stop_loss  && <span className="text-[9px] text-red-400 font-mono hidden sm:inline">손절 {stock.stop_loss}</span>}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ✅ 기존 상세 뷰 (forceOpen이면 토글 없이 항상 펼침)
   return (
     <div className={`stock-card border border-zinc-800 border-l-4 ${c.border} rounded-xl bg-bg-card ${highlight ? 'ring-1 ring-emerald-500/20' : ''}`}>
 
       {/* ── 헤더 ── */}
-      <div className="flex items-center justify-between px-4 py-3 cursor-pointer select-none" onClick={() => setOpen(o => !o)}>
+      <div
+        className={`flex items-center justify-between px-4 py-3 select-none ${!forceOpen ? 'cursor-pointer' : ''}`}
+        onClick={() => { if (!forceOpen) setOpen(o => !o); }}>
         <div className="flex items-center gap-2 flex-wrap min-w-0">
-          <button onClick={e => { e.stopPropagation(); router.push(`/stock/${stock.ticker}`); }}
-            className="text-base font-bold text-zinc-100 hover:text-emerald-300 transition-colors shrink-0">{stock.ticker} ↗</button>
+          <button onClick={e => {
+            e.stopPropagation();
+            if (onOpenDrawer) onOpenDrawer(stock.ticker);
+            else router.push(`/stock/${stock.ticker}`);
+          }}
+            className="text-base font-bold text-zinc-100 hover:text-emerald-300 transition-colors shrink-0">
+            {stock.ticker} {onOpenDrawer ? '▶' : '↗'}
+          </button>
           {onRemove && (
             <button onClick={e => { e.stopPropagation(); onRemove(stock.ticker); }}
               className="w-5 h-5 flex items-center justify-center rounded-full bg-zinc-800 hover:bg-red-900 text-zinc-500 hover:text-red-400 transition-colors text-xs shrink-0">✕</button>
@@ -170,19 +220,16 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
           {stock.breakout_52w && <span className="text-[9px] bg-emerald-900 text-emerald-200 border border-emerald-700 px-1.5 py-0.5 rounded">🚀 신고가</span>}
           {stock.weekly_is_entry && <span className="text-[9px] bg-amber-900 text-amber-200 border border-amber-700 px-1.5 py-0.5 rounded">🎯 최고타점</span>}
           {stock.pead_signal && <span className="text-[9px] bg-sky-900 text-sky-200 border border-sky-700 px-1.5 py-0.5 rounded">📈 PEAD</span>}
-          {/* Pocket Pivot 배지 */}
           {ppIs && (
             <span className="text-[9px] bg-violet-950 text-violet-200 border border-violet-700 px-1.5 py-0.5 rounded">
               ⚡ 포켓피벗{ppDaysAgo === 0 ? ' 오늘' : ' 어제'}
             </span>
           )}
-          {/* RS Line 다이버전스 배지 */}
           {rsLineDivergence === 'BULLISH' && (
             <span className="text-[9px] bg-emerald-950 text-emerald-200 border border-emerald-600 px-1.5 py-0.5 rounded">
               🏆 RS 강세
             </span>
           )}
-          {/* 🆕 눌림목 배지 */}
           {pbIs && pbGrade && (
             <span className={`text-[9px] px-1.5 py-0.5 rounded border ${pbc.badge}`}>
               {pbGrade === 'IDEAL' ? '🎯 눌림목' : pbGrade === 'GOOD' ? '📉 눌림목' : '△ 눌림목'}
@@ -194,7 +241,6 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
           {regimeNote && regimeStyle && (
             <span className={`text-[9px] px-1.5 py-0.5 rounded border ${regimeStyle.bg} ${regimeStyle.text} ${regimeStyle.border}`}>{regimeNote.split('—')[0].trim()}</span>
           )}
-          {/* 🆕 매크로 이벤트 임박 배지 — 매수 신호 종목만 */}
           {macroWarning && stock.signal.includes('BUY') && (
             <span className="text-[9px] bg-red-950 text-red-300 border border-red-700 px-1.5 py-0.5 rounded">
               ⚡ {macroWarning.title} D-{macroWarning.daysUntil}
@@ -204,14 +250,13 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
         <div className="flex items-center gap-2 shrink-0 ml-2">
           <span className={`text-xs font-semibold px-2.5 py-1 rounded-md border ${c.badge}`}>{SIG_KO[stock.signal] ?? stock.signal}</span>
           <span className="text-xs font-mono" style={{ color: barColor(score) }}>{score}</span>
-          <span className="text-zinc-600 text-xs">{open ? '▲' : '▼'}</span>
+          {!forceOpen && <span className="text-zinc-600 text-xs">{open ? '▲' : '▼'}</span>}
         </div>
       </div>
 
       {/* ── 접힌 상태 ── */}
-      {!open && (
+      {!open && !forceOpen && (
         <div className="px-4 pb-3 border-t border-zinc-900 pt-2 flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-zinc-500">
-          {/* 섹터 — 맨 앞에 표시 */}
           {sector && <span className="text-zinc-400 font-medium">{sector}</span>}
           <span>지수RS <span className={rsClass(stock.rs_vs_index)}>{RS_KO[stock.rs_vs_index]}</span></span>
           <span>섹터RS <span className={rsClass(stock.rs_vs_sector)}>{RS_KO[stock.rs_vs_sector]}</span></span>
@@ -231,12 +276,11 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
       )}
 
       {/* ── 펼친 상태 ── */}
-      {open && (
+      {(open || forceOpen) && (
         <div className="px-5 pb-5 border-t border-zinc-900 pt-4">
 
           {earnings && <div className="mb-3"><EarningsBadge info={earnings} /></div>}
 
-          {/* 시장 국면 경고 */}
           {regimeNote && regimeStyle && (
             <div className={`mb-4 p-3 rounded-lg border ${regimeStyle.block}`}>
               <span className="text-[10px] uppercase tracking-widest opacity-70">시장 국면 필터</span>
@@ -244,7 +288,6 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
             </div>
           )}
 
-          {/* 🆕 매크로 이벤트 경고 블록 */}
           {macroWarning && stock.signal.includes('BUY') && (
             <div className="mb-4 p-3 rounded-lg border border-red-800 bg-red-950/20">
               <div className="flex items-center gap-2 mb-1">
@@ -260,7 +303,6 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
             </div>
           )}
 
-          {/* 🆕 눌림목 분석 블록 */}
           {pbIs && (
             <div className={`mb-4 p-3 rounded-lg border ${pbc.border} ${pbc.bg}`}>
               <div className="flex items-center justify-between mb-2">
@@ -270,12 +312,8 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
                     {pbGrade === 'IDEAL' ? '🎯 이상적' : pbGrade === 'GOOD' ? '✓ 양호' : '△ 약함'}
                   </span>
                 </div>
-                <span className={`text-xs font-bold font-mono ${pbc.text}`}>
-                  고점 대비 {Math.abs(pbPct)}% 조정
-                </span>
+                <span className={`text-xs font-bold font-mono ${pbc.text}`}>고점 대비 {Math.abs(pbPct)}% 조정</span>
               </div>
-
-              {/* 눌림목 진행 바 (0% ~ -20%) */}
               <div className="mb-2">
                 <div className="flex justify-between text-[9px] text-zinc-600 mb-1">
                   <span>얕음 (-3%)</span>
@@ -288,8 +326,6 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
                     style={{ left: `${Math.min(99, Math.abs(pbPct) / 20 * 100)}%` }} />
                 </div>
               </div>
-
-              {/* 핵심 지표 3개 */}
               <div className="grid grid-cols-3 gap-2 text-[10px] mb-2">
                 <div className="text-center">
                   <div className="text-zinc-600 mb-0.5">근접 지지선</div>
@@ -307,25 +343,17 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
                   <div className="text-zinc-300 font-mono">${pbHigh}</div>
                 </div>
               </div>
-
-              {/* 눌림목 품질 체크리스트 */}
               <div className="flex flex-wrap gap-x-3 gap-y-1 text-[9px]">
                 <span className={pbVolTrend === 'DECLINING' ? 'text-emerald-400' : pbVolTrend === 'RISING' ? 'text-red-400' : 'text-zinc-500'}>
                   {pbVolTrend === 'DECLINING' ? '✓ 거래량 감소' : pbVolTrend === 'RISING' ? '✕ 거래량 증가' : '— 거래량 보합'}
                 </span>
-                <span className={pbRsiCooled ? 'text-emerald-400' : 'text-zinc-500'}>
-                  {pbRsiCooled ? '✓ RSI 냉각' : '— RSI 미냉각'}
-                </span>
-                <span className={pbSupport ? 'text-emerald-400' : 'text-zinc-500'}>
-                  {pbSupport ? `✓ MA 지지 확인 (${pbSupport})` : '— MA 지지 없음'}
-                </span>
+                <span className={pbRsiCooled ? 'text-emerald-400' : 'text-zinc-500'}>{pbRsiCooled ? '✓ RSI 냉각' : '— RSI 미냉각'}</span>
+                <span className={pbSupport ? 'text-emerald-400' : 'text-zinc-500'}>{pbSupport ? `✓ MA 지지 확인 (${pbSupport})` : '— MA 지지 없음'}</span>
               </div>
-
               <p className="text-[10px] text-zinc-500 mt-2" style={{ fontFamily: 'system-ui' }}>{pbDetail}</p>
             </div>
           )}
 
-          {/* R/R 비율 */}
           {rrRatio !== null && (
             <div className={`mb-4 p-3 rounded-lg border ${rrc.border} ${rrc.bg}/20`}>
               <div className="flex items-center justify-between mb-2">
@@ -351,13 +379,11 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
             </div>
           )}
 
-          {/* 모멘텀 바 */}
           <div className="mb-3">
             <div className="flex justify-between text-xs text-zinc-500 mb-1.5"><span>모멘텀 강도</span><span className="font-semibold" style={{ color: c.bar }}>{score} / 10</span></div>
             <div className="h-1.5 bg-zinc-800 rounded-full overflow-hidden"><div className="h-full rounded-full" style={{ width: `${score * 10}%`, background: c.bar }} /></div>
           </div>
 
-          {/* 4개 핵심 지표 */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
             <Metric label="지수 RS"><span className={`text-sm font-medium ${rsClass(stock.rs_vs_index)}`}>{RS_KO[stock.rs_vs_index]}</span></Metric>
             <Metric label="섹터 RS"><span className={`text-sm font-medium ${rsClass(stock.rs_vs_sector)}`}>{RS_KO[stock.rs_vs_sector]}</span></Metric>
@@ -365,7 +391,6 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
             <Metric label="패턴"><span className="text-sm font-medium text-zinc-300">{PT_KO[stock.pattern]}</span></Metric>
           </div>
 
-          {/* 섹터/업종 정보 */}
           {(sector || industry) && (
             <div className="flex items-center gap-2 mb-4 px-3 py-2 rounded-lg border border-zinc-800 bg-zinc-900/30">
               <span className="text-[10px] text-zinc-600 uppercase tracking-widest shrink-0">섹터</span>
@@ -375,7 +400,6 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
             </div>
           )}
 
-          {/* 확장 지표 */}
           <div className="grid grid-cols-5 gap-2 mb-4 p-3 bg-zinc-900/50 rounded-lg">
             <IndBox label="RSI(14)" val={stock.rsi} color={stock.rsi > 78 ? 'text-red-400' : stock.rsi < 35 ? 'text-sky-400' : 'text-emerald-400'} sub={stock.rsi > 78 ? '과열' : stock.rsi < 35 ? '침체' : '정상'} />
             <IndBox label="MACD" val={stock.macd_histogram} color={stock.macd_histogram > 0 ? 'text-emerald-400' : 'text-red-400'} sub={stock.macd_histogram > 0 ? '상승' : '하락'} />
@@ -384,7 +408,6 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
             <IndBox label="ATR%" val={`${stock.atr_pct}%`} color="text-zinc-400" sub="변동성" />
           </div>
 
-          {/* RSI 바 */}
           <div className="mb-4">
             <div className="flex justify-between text-[10px] text-zinc-600 mb-1"><span>RSI</span><span className="flex gap-3"><span className="text-sky-700">침체30</span><span className="text-emerald-700">정상45–75</span><span className="text-red-700">과열80</span></span></div>
             <div className="relative h-1.5 bg-zinc-800 rounded-full">
@@ -395,7 +418,6 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
             </div>
           </div>
 
-          {/* 52w 신고가 */}
           {stock.breakout_52w && (
             <div className="mb-3 p-3 rounded-lg border border-emerald-600 bg-emerald-950/30">
               <div className="flex items-center gap-2 mb-1">
@@ -406,7 +428,6 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
             </div>
           )}
 
-          {/* PEAD */}
           {stock.pead_signal && (
             <div className="mb-3 p-3 rounded-lg border border-sky-800 bg-sky-950/20">
               <div className="flex items-center gap-2 mb-1">
@@ -417,14 +438,12 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
             </div>
           )}
 
-          {/* 섹터 경고 */}
           {stock.sector_warning && (
             <div className="mb-3 p-2 rounded-lg border border-amber-800 bg-amber-950/20">
               <p className="text-[10px] text-amber-400" style={{ fontFamily: 'system-ui' }}>⚠ {stock.sector_warning}</p>
             </div>
           )}
 
-          {/* 주봉 멀티 타임프레임 */}
           {stock.weekly_trend && (
             <div className={`mb-3 p-3 rounded-lg border ${stock.weekly_is_entry ? 'border-emerald-600 bg-emerald-950/30' : stock.weekly_trend === 'UPTREND' ? 'border-emerald-900 bg-emerald-950/10' : stock.weekly_trend === 'DOWNTREND' ? 'border-red-900 bg-red-950/10' : 'border-zinc-800 bg-zinc-900/20'}`}>
               <div className="flex items-center justify-between mb-2">
@@ -444,7 +463,6 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
             </div>
           )}
 
-          {/* OBV */}
           {stock.obv_trend !== undefined && (
             <div className={`mb-3 p-3 rounded-lg border ${stock.obv_divergence ? 'border-red-800 bg-red-950/20' : stock.obv_trend === 'UP' ? 'border-emerald-900 bg-emerald-950/10' : 'border-zinc-800 bg-zinc-900/30'}`}>
               <div className="flex items-center justify-between mb-1">
@@ -457,7 +475,6 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
             </div>
           )}
 
-          {/* 공매도 */}
           {stock.short_pct !== undefined && stock.short_pct !== null && (
             <div className={`mb-3 p-3 rounded-lg border ${stock.short_squeeze === 'HIGH' ? 'border-amber-800 bg-amber-950/20' : 'border-zinc-800 bg-zinc-900/20'}`}>
               <div className="flex items-center justify-between mb-1">
@@ -473,7 +490,6 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
             </div>
           )}
 
-          {/* ── Pocket Pivot ── */}
           {ppIs && (
             <div className="mb-3 p-3 rounded-lg border border-violet-800 bg-violet-950/20">
               <div className="flex items-center justify-between mb-2">
@@ -487,55 +503,30 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
                 <span className="text-xs font-bold font-mono text-violet-300">거래량 {ppVolRatio}x</span>
               </div>
               <p className="text-[10px] text-zinc-500" style={{ fontFamily: 'system-ui' }}>{ppDetail}</p>
-              <p className="text-[10px] text-zinc-600 mt-1" style={{ fontFamily: 'system-ui' }}>
-                Minervini 기법 — 하락일 최대 거래량 초과 + MA 위 = 기관 선취매 신호
-              </p>
+              <p className="text-[10px] text-zinc-600 mt-1" style={{ fontFamily: 'system-ui' }}>Minervini 기법 — 하락일 최대 거래량 초과 + MA 위 = 기관 선취매 신호</p>
             </div>
           )}
 
-          {/* ── RS Line ── */}
           {stock.rs_line !== undefined && (
-            <div className={`mb-3 p-3 rounded-lg border ${
-              rsLineDivergence === 'BULLISH' ? 'border-emerald-600 bg-emerald-950/20' :
-              rsLineDivergence === 'BEARISH' ? 'border-red-800 bg-red-950/20' :
-              rsLineTrend === 'UP' ? 'border-emerald-900 bg-emerald-950/10' :
-              'border-zinc-800 bg-zinc-900/20'
-            }`}>
+            <div className={`mb-3 p-3 rounded-lg border ${rsLineDivergence === 'BULLISH' ? 'border-emerald-600 bg-emerald-950/20' : rsLineDivergence === 'BEARISH' ? 'border-red-800 bg-red-950/20' : rsLineTrend === 'UP' ? 'border-emerald-900 bg-emerald-950/10' : 'border-zinc-800 bg-zinc-900/20'}`}>
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
                   <span className="text-[10px] text-zinc-500 uppercase tracking-widest">RS Line (상대강도선)</span>
-                  {rsLineDivergence === 'BULLISH' && (
-                    <span className="text-[9px] bg-emerald-900 text-emerald-200 border border-emerald-600 px-1.5 py-0.5 rounded font-semibold">
-                      🏆 강세 다이버전스
-                    </span>
-                  )}
-                  {rsLineDivergence === 'BEARISH' && (
-                    <span className="text-[9px] bg-red-900 text-red-300 border border-red-700 px-1.5 py-0.5 rounded">
-                      ⚠ 약세 다이버전스
-                    </span>
-                  )}
+                  {rsLineDivergence === 'BULLISH' && <span className="text-[9px] bg-emerald-900 text-emerald-200 border border-emerald-600 px-1.5 py-0.5 rounded font-semibold">🏆 강세 다이버전스</span>}
+                  {rsLineDivergence === 'BEARISH' && <span className="text-[9px] bg-red-900 text-red-300 border border-red-700 px-1.5 py-0.5 rounded">⚠ 약세 다이버전스</span>}
                 </div>
-                <span className={`text-xs font-semibold font-mono ${
-                  rsLineTrend === 'UP' ? 'text-emerald-400' :
-                  rsLineTrend === 'DOWN' ? 'text-red-400' : 'text-zinc-400'
-                }`}>
-                  3개월 {rsLine3m > 0 ? '+' : ''}{rsLine3m}%
-                  {rsLineTrend === 'UP' ? ' ▲' : rsLineTrend === 'DOWN' ? ' ▼' : ' —'}
+                <span className={`text-xs font-semibold font-mono ${rsLineTrend === 'UP' ? 'text-emerald-400' : rsLineTrend === 'DOWN' ? 'text-red-400' : 'text-zinc-400'}`}>
+                  3개월 {rsLine3m > 0 ? '+' : ''}{rsLine3m}%{rsLineTrend === 'UP' ? ' ▲' : rsLineTrend === 'DOWN' ? ' ▼' : ' —'}
                 </span>
               </div>
               <div className="flex gap-4 text-[10px] mb-2">
-                <span className={rsLineNewHigh ? 'text-emerald-400' : 'text-zinc-500'}>
-                  RS Line {rsLineNewHigh ? '✓ 신고점' : '— 신고점 아님'}
-                </span>
-                <span className={stock.rs_line_spy_new_low ? 'text-amber-400' : 'text-zinc-500'}>
-                  SPY {stock.rs_line_spy_new_low ? '⚠ 신저점' : '— 정상'}
-                </span>
+                <span className={rsLineNewHigh ? 'text-emerald-400' : 'text-zinc-500'}>RS Line {rsLineNewHigh ? '✓ 신고점' : '— 신고점 아님'}</span>
+                <span className={stock.rs_line_spy_new_low ? 'text-amber-400' : 'text-zinc-500'}>SPY {stock.rs_line_spy_new_low ? '⚠ 신저점' : '— 정상'}</span>
               </div>
               <p className="text-[10px] text-zinc-500" style={{ fontFamily: 'system-ui' }}>{rsLineDetail}</p>
             </div>
           )}
 
-          {/* VCP */}
           {stock.vcp_score !== undefined && (
             <div className={`mb-3 p-3 rounded-lg border ${stock.vcp_is_vcp ? 'border-emerald-800 bg-emerald-950/20' : 'border-zinc-800 bg-zinc-900/30'}`}>
               <div className="flex items-center justify-between mb-2">
@@ -561,29 +552,22 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
             </div>
           )}
 
-          {/* 요약 */}
           <p className="text-xs text-zinc-400 leading-relaxed mb-3" style={{ fontFamily: 'system-ui, sans-serif' }}>{stock.summary}</p>
 
-          {/* 주의사항 */}
           {stock.caution && (
             <div className="text-xs text-amber-400 bg-amber-950/30 border-l-2 border-amber-600 pl-3 py-2 rounded-r-md mb-3" style={{ fontFamily: 'system-ui' }}>⚡ {stock.caution}</div>
           )}
 
-          {/* ── 분할 매수/매도 구간 ── */}
           {splitEntry1 && (
             <div className="mb-4 p-3 rounded-lg border border-zinc-700 bg-zinc-900/40">
               <div className="text-[10px] text-zinc-500 uppercase tracking-widest mb-3">분할 매수 / 매도 전략</div>
-
-              {/* 평균 진입가 */}
               {splitAvgEntry && (
                 <div className="text-center mb-3 p-2 bg-zinc-800/50 rounded-lg">
                   <span className="text-[10px] text-zinc-500">예상 평균 진입가</span>
                   <span className="text-sm font-bold text-emerald-300 font-mono ml-2">${splitAvgEntry}</span>
                 </div>
               )}
-
               <div className="grid grid-cols-2 gap-3">
-                {/* 분할 매수 */}
                 <div>
                   <div className="text-[10px] text-emerald-500 uppercase tracking-widest mb-2">분할 매수</div>
                   <div className="flex flex-col gap-1.5">
@@ -598,8 +582,6 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
                     ))}
                   </div>
                 </div>
-
-                {/* 분할 매도 */}
                 <div>
                   <div className="text-[10px] text-red-500 uppercase tracking-widest mb-2">분할 익절</div>
                   <div className="flex flex-col gap-1.5">
@@ -618,52 +600,41 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
             </div>
           )}
 
-          {/* ── 트레일링 스탑 ── */}
           {trailInitial && (
             <div className="mb-4 p-3 rounded-lg border border-amber-800/60 bg-amber-950/10">
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
                   <span className="text-[10px] text-zinc-500 uppercase tracking-widest">트레일링 스탑</span>
-                  <span className="text-[9px] bg-amber-950 text-amber-300 border border-amber-700 px-1.5 py-0.5 rounded">
-                    ATR × {trailMultiplier}
-                  </span>
+                  <span className="text-[9px] bg-amber-950 text-amber-300 border border-amber-700 px-1.5 py-0.5 rounded">ATR × {trailMultiplier}</span>
                 </div>
                 <span className="text-[10px] text-zinc-500">주가 상승 시 자동 손절 상향</span>
               </div>
-
-              {/* 트레일링 스탑 시나리오 바 */}
               <div className="flex flex-col gap-2 mb-2">
                 {[
-                  { label: '진입 시',  price: trailInitial, pct: 0,   color: 'text-zinc-400',  bar: 'bg-zinc-700' },
-                  { label: '본전 손절', price: trailBreakEven, pct: 0.5, color: 'text-sky-400', bar: 'bg-sky-900' },
-                  { label: '+10% 시',  price: trailStop10,  pct: 33,  color: 'text-amber-400', bar: 'bg-amber-900' },
-                  { label: '+20% 시',  price: trailStop20,  pct: 66,  color: 'text-emerald-400', bar: 'bg-emerald-900' },
-                  { label: '+30% 시',  price: trailStop30,  pct: 100, color: 'text-emerald-300', bar: 'bg-emerald-800' },
+                  { label: '진입 시',   price: trailInitial,  pct: 0,   color: 'text-zinc-400',    bar: 'bg-zinc-700' },
+                  { label: '본전 손절', price: trailBreakEven, pct: 0.5, color: 'text-sky-400',     bar: 'bg-sky-900' },
+                  { label: '+10% 시',  price: trailStop10,   pct: 33,  color: 'text-amber-400',   bar: 'bg-amber-900' },
+                  { label: '+20% 시',  price: trailStop20,   pct: 66,  color: 'text-emerald-400', bar: 'bg-emerald-900' },
+                  { label: '+30% 시',  price: trailStop30,   pct: 100, color: 'text-emerald-300', bar: 'bg-emerald-800' },
                 ].map((item, i) => item.price && (
                   <div key={i} className="flex items-center gap-2">
                     <span className="text-[9px] text-zinc-600 w-16 shrink-0">{item.label}</span>
                     <div className="flex-1 h-1 bg-zinc-800 rounded-full overflow-hidden">
                       <div className={`h-full rounded-full ${item.bar}`} style={{ width: `${Math.min(100, 20 + item.pct * 0.8)}%` }} />
                     </div>
-                    <span className={`text-[10px] font-mono font-semibold ${item.color} w-16 text-right shrink-0`}>
-                      ${item.price}
-                    </span>
+                    <span className={`text-[10px] font-mono font-semibold ${item.color} w-16 text-right shrink-0`}>${item.price}</span>
                   </div>
                 ))}
               </div>
-
-              <p className="text-[10px] text-zinc-600" style={{ fontFamily: 'system-ui' }}>
-                주가가 오를수록 손절선도 상향 — 수익 반납 방지
-              </p>
+              <p className="text-[10px] text-zinc-600" style={{ fontFamily: 'system-ui' }}>주가가 오를수록 손절선도 상향 — 수익 반납 방지</p>
             </div>
           )}
 
-          {/* 가격 레벨 */}
           <div className="flex flex-wrap gap-2">
-            {stock.entry_zone    && <LvPill label="진입" val={stock.entry_zone}      c="text-emerald-300 border-emerald-800 bg-emerald-950/40" />}
-            {stock.key_support   && <LvPill label="지지" val={stock.key_support}     c="text-sky-300 border-sky-800 bg-sky-950/40" />}
-            {stock.key_resistance && <LvPill label="저항" val={stock.key_resistance} c="text-purple-300 border-purple-800 bg-purple-950/40" />}
-            {stock.stop_loss     && <LvPill label="손절" val={stock.stop_loss}       c="text-red-300 border-red-800 bg-red-950/40" />}
+            {stock.entry_zone    && <LvPill label="진입" val={stock.entry_zone}       c="text-emerald-300 border-emerald-800 bg-emerald-950/40" />}
+            {stock.key_support   && <LvPill label="지지" val={stock.key_support}      c="text-sky-300 border-sky-800 bg-sky-950/40" />}
+            {stock.key_resistance && <LvPill label="저항" val={stock.key_resistance}  c="text-purple-300 border-purple-800 bg-purple-950/40" />}
+            {stock.stop_loss     && <LvPill label="손절" val={stock.stop_loss}        c="text-red-300 border-red-800 bg-red-950/40" />}
           </div>
         </div>
       )}
