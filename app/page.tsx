@@ -3,7 +3,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type { AnalysisResult, StockAnalysis } from '@/types/stock';
 import StockCard from '@/components/StockCard';
-import TopPicks from '@/components/TopPicks';
 import TopBarChart from '@/components/TopBarChart';
 import WatchlistManager from '@/components/WatchlistManager';
 import PortfolioTab from '@/components/PortfolioTab';
@@ -423,10 +422,7 @@ export default function Home() {
 
                 {/* ✅ Top 10 바차트 */}
                 <TopBarChart stocks={allStocks} />
-
-                {/* Top Picks 카드 */}
-                <TopPicks stocks={allStocks} onOpenDrawer={setDrawerTicker} />
-
+                            
                 {/* 검색 */}
                 <div className="relative mb-3">
                   <input type="text" value={search} onChange={e => setSearch(e.target.value)}
