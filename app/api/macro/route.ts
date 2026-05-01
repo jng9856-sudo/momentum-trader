@@ -78,13 +78,13 @@ const EVENTS_2026: Omit<MacroEvent, 'daysUntil' | 'isUrgent' | 'isPast'>[] = [
 
 // ── D-day 계산 및 필터링 ────────────────────────────────────────────────────
 function enrichEvents(events: typeof EVENTS_2026): MacroEvent[] {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  // ✅ 수정: UTC 기준으로 명시하여 시간대 파싱 오류 방지
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const today = new Date(todayStr + 'T00:00:00Z');
 
   return events.map(e => {
-    const eventDate = new Date(e.date);
-    eventDate.setHours(0, 0, 0, 0);
-    const diffMs   = eventDate.getTime() - today.getTime();
+    const eventDate = new Date(e.date + 'T00:00:00Z'); // ✅ UTC 명시
+    const diffMs    = eventDate.getTime() - today.getTime();
     const daysUntil = Math.round(diffMs / (1000 * 60 * 60 * 24));
     return {
       ...e,
@@ -117,7 +117,6 @@ export async function GET(req: Request) {
     nextUrgent,
     nextHigh,
     highWithin7,
-    // 매수 주의 여부: 3일 이내 HIGH 이벤트 있으면 true
     buyWarning:   !!nextUrgent,
     analyzed_at:  new Date().toISOString(),
   });
