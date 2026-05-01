@@ -208,7 +208,7 @@ export default function Home() {
 
     setStatus(`> 완료 — ${accumulated.length}개 종목 | ${new Date().toLocaleTimeString('ko-KR')}`);
     setLoading(false);
-  }, [watchlist, loading, allStocks, marketCtx, earningsMap]); // ✅ deps에 allStocks, marketCtx, earningsMap 추가
+  }, [watchlist, loading, allStocks, marketCtx, earningsMap]);
 
   function stopAnalysis() { abortRef.current = true; setLoading(false); setStatus('> 분석 중단됨'); }
 
@@ -282,7 +282,8 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-bg-base">
-      <div className="max-w-4xl mx-auto px-4 py-8">
+      {/* ✅ 수정 1: max-w-4xl → max-w-[1400px], px-4 → px-6 */}
+      <div className="max-w-[1400px] mx-auto px-6 py-8">
 
         {/* ── Header ── */}
         <header className="mb-6">
@@ -404,7 +405,7 @@ export default function Home() {
                   </div>
                 )}
 
-                <div className="grid grid-cols-3 gap-3 mb-6">
+                <div className="grid grid-cols-3 gap-3 mb-6 max-w-sm">
                   <StatCard label="매수" value={buyCnt} color="text-emerald-400" border="border-emerald-900" />
                   <StatCard label="관망" value={holdCnt} color="text-amber-400" border="border-amber-900" />
                   <StatCard label="매도" value={sellCnt} color="text-red-400" border="border-red-900" />
@@ -453,12 +454,13 @@ export default function Home() {
                   </div>
                 </div>
 
-                <div className="flex flex-col gap-4">
+                {/* ✅ 수정 2: flex flex-col → grid xl:grid-cols-2 */}
+                <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
                   {displayed.map((s, i) => (
                     <StockCard key={s.ticker} stock={s} highlight={i===0 && filter!=='SELL' && filter!=='STRONG_SELL'} onRemove={removeFromResults} earnings={earningsMap[s.ticker]} />
                   ))}
                   {displayed.length === 0 && (
-                    <p className="text-sm text-zinc-600 py-6 text-center">해당 조건의 종목이 없습니다.</p>
+                    <p className="text-sm text-zinc-600 py-6 text-center col-span-2">해당 조건의 종목이 없습니다.</p>
                   )}
                 </div>
 
