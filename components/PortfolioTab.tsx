@@ -48,8 +48,27 @@ const SEV_COLOR: Record<string, string> = {
 const SEV_DOT: Record<string, string> = {
   high: 'bg-red-400', medium: 'bg-amber-400', low: 'bg-zinc-500',
 };
+
+// ✅ 정렬 순서 정의
+const ACTION_ORDER: Record<string, number> = {
+  '즉시매도': 0,
+  '매도':     1,
+  '부분익절': 2,
+  '매도검토': 3,
+  '모니터링': 4,
+  '홀딩':     5,
+};
+
 const PORTFOLIO_KEY   = 'mt_portfolio_v2';
 const PORTFOLIO_CACHE = 'mt_portfolio_cache_v2';
+
+type SortType = 'action' | 'pnl' | 'upside' | 'ticker';
+const SORT_OPTIONS: { key: SortType; label: string }[] = [
+  { key: 'action',  label: '신호순' },
+  { key: 'pnl',     label: '손익순' },
+  { key: 'upside',  label: '여력순' },
+  { key: 'ticker',  label: '티커순' },
+];
 
 function UpsideBar({ score, label }: { score: number; label: string }) {
   const color = score >= 70 ? '#10b981' : score >= 50 ? '#f59e0b' : score >= 30 ? '#f97316' : '#ef4444';
@@ -97,7 +116,6 @@ interface EarningsInfo { earningsDate: string|null; daysUntil: number|null; epsE
 
 function HoldingCard({ result: r, onRemove, earnings }: { result: HoldingResult; onRemove?: () => void; earnings?: EarningsInfo }) {
   const router = useRouter();
-  // ── 🆕 접기/펼치기 상태 ──────────────────────────────────────────────────────
   const [open, setOpen] = useState(false);
 
   const pnlPos = r.pnlPct >= 0;
@@ -106,16 +124,14 @@ function HoldingCard({ result: r, onRemove, earnings }: { result: HoldingResult;
     r.action === '부분익절' ? 'border-l-orange-500' :
     r.action === '홀딩' ? 'border-l-emerald-600' : 'border-l-zinc-600';
 
-  // 상승여력 색상 (헤더 한 줄 요약용)
   const upsideColor = r.upside.score >= 70 ? 'text-emerald-400' : r.upside.score >= 50 ? 'text-amber-400' : r.upside.score >= 30 ? 'text-orange-400' : 'text-red-400';
 
   return (
     <div className={`border border-zinc-800 border-l-4 ${borderColor} rounded-xl bg-bg-card`}>
 
-      {/* ── 항상 보이는 헤더 (클릭으로 펼치기) ── */}
-      <div className="flex items-center justify-between px-5 py-4 cursor-pointer select-none"
+      {/* ── 헤더 ── */}
+      <div className="flex items-center justify-between px-4 py-3 cursor-pointer select-none"
         onClick={() => setOpen(o => !o)}>
-        {/* 왼쪽: 티커 + 액션 배지 */}
         <div className="flex items-center gap-2 flex-wrap min-w-0">
           <button onClick={e => { e.stopPropagation(); router.push(`/stock/${r.ticker}`); }}
             className="text-base font-bold text-zinc-100 hover:text-emerald-300 transition-colors shrink-0">
@@ -129,11 +145,9 @@ function HoldingCard({ result: r, onRemove, earnings }: { result: HoldingResult;
               className="w-5 h-5 flex items-center justify-center rounded-full bg-zinc-800 hover:bg-red-900 text-zinc-500 hover:text-red-400 transition-colors text-xs shrink-0">✕</button>
           )}
         </div>
-
-        {/* 오른쪽: 현재가 + 손익 + 상승여력 + 화살표 */}
-        <div className="flex items-center gap-4 shrink-0 ml-2">
+        <div className="flex items-center gap-3 shrink-0 ml-2">
           <div className="text-right">
-            <div className="text-base font-semibold text-zinc-100 font-mono">${r.currentPrice}</div>
+            <div className="text-sm font-semibold text-zinc-100 font-mono">${r.currentPrice}</div>
             <div className={`text-xs font-semibold ${pnlPos ? 'text-emerald-400' : 'text-red-400'}`}>
               {pnlPos ? '+' : ''}{r.pnlPct}%
               {r.shares > 0 && <span className="text-[10px] ml-1">({pnlPos ? '+' : ''}${r.pnlAbs.toLocaleString()})</span>}
@@ -147,9 +161,9 @@ function HoldingCard({ result: r, onRemove, earnings }: { result: HoldingResult;
         </div>
       </div>
 
-      {/* ── 접힌 상태: 한 줄 요약 ── */}
+      {/* ── 접힌 요약 ── */}
       {!open && (
-        <div className="px-5 pb-3 border-t border-zinc-900 pt-2 flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-zinc-500">
+        <div className="px-4 pb-3 border-t border-zinc-900 pt-2 flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-zinc-500">
           <span>평균매수 <span className="text-zinc-400 font-mono">${r.avgPrice}</span></span>
           {r.shares > 0 && <span>{r.shares}주</span>}
           <span>RSI <span className={r.indicators.rsi > 78 ? 'text-red-400' : r.indicators.rsi < 35 ? 'text-sky-400' : 'text-emerald-400'}>{r.indicators.rsi}</span></span>
@@ -163,22 +177,14 @@ function HoldingCard({ result: r, onRemove, earnings }: { result: HoldingResult;
         </div>
       )}
 
-      {/* ── 펼친 상태: 전체 상세 ── */}
+      {/* ── 펼친 상세 ── */}
       {open && (
-        <div className="px-5 pb-5 border-t border-zinc-900 pt-4">
-
-          {/* 평균매수 정보 */}
+        <div className="px-4 pb-5 border-t border-zinc-900 pt-4">
           <div className="text-xs text-zinc-600 mb-4">
             평균매수 ${r.avgPrice}{r.shares > 0 && ` · ${r.shares}주`}
           </div>
-
-          {/* Earnings badge */}
           {earnings && <div className="mb-3"><EarningsBadge info={earnings} /></div>}
-
-          {/* Upside potential bar */}
           <UpsideBar score={r.upside.score} label={r.upside.label} />
-
-          {/* 7 Indicators grid */}
           <div className="grid grid-cols-4 sm:grid-cols-7 gap-2 mb-4 p-3 bg-zinc-900/50 rounded-lg">
             {[
               { label: 'RSI', val: r.indicators.rsi, color: r.indicators.rsi > 78 ? 'text-red-400' : r.indicators.rsi < 35 ? 'text-sky-400' : 'text-emerald-400' },
@@ -195,16 +201,10 @@ function HoldingCard({ result: r, onRemove, earnings }: { result: HoldingResult;
               </div>
             ))}
           </div>
-
-          {/* Divergence detection */}
           <DivergenceRow divs={r.divergences} />
-
-          {/* Sell signals */}
           {r.sellSignals.length > 0 && (
             <div className="mb-4 bg-red-950/20 border border-red-900/40 rounded-lg p-3">
-              <div className="text-[10px] text-red-500 uppercase tracking-widest mb-2">
-                매도 신호 ({r.sellSignals.length}개)
-              </div>
+              <div className="text-[10px] text-red-500 uppercase tracking-widest mb-2">매도 신호 ({r.sellSignals.length}개)</div>
               <ul className="space-y-2">
                 {r.sellSignals.map((s, i) => (
                   <li key={i} className="flex items-start gap-2">
@@ -215,13 +215,9 @@ function HoldingCard({ result: r, onRemove, earnings }: { result: HoldingResult;
               </ul>
             </div>
           )}
-
-          {/* Hold signals */}
           {r.holdSignals.length > 0 && (
             <div className="mb-4 bg-emerald-950/20 border border-emerald-900/40 rounded-lg p-3">
-              <div className="text-[10px] text-emerald-600 uppercase tracking-widest mb-2">
-                홀딩 근거 ({r.holdSignals.length}개)
-              </div>
+              <div className="text-[10px] text-emerald-600 uppercase tracking-widest mb-2">홀딩 근거 ({r.holdSignals.length}개)</div>
               <ul className="space-y-1.5">
                 {r.holdSignals.map((s, i) => (
                   <li key={i} className="flex items-start gap-2 text-xs text-emerald-300" style={{ fontFamily: 'system-ui' }}>
@@ -231,8 +227,6 @@ function HoldingCard({ result: r, onRemove, earnings }: { result: HoldingResult;
               </ul>
             </div>
           )}
-
-          {/* Stop loss */}
           <div className="mb-4 p-3 bg-zinc-900/50 rounded-lg">
             <div className="text-[10px] text-zinc-600 uppercase tracking-widest mb-2">손절 구간</div>
             <div className="flex flex-wrap gap-2">
@@ -244,8 +238,6 @@ function HoldingCard({ result: r, onRemove, earnings }: { result: HoldingResult;
               ★ 추천: <span className="text-amber-400">${r.stopLoss.recommended.price} ({r.stopLoss.recommended.label})</span>
             </p>
           </div>
-
-          {/* Trailing Stop */}
           {r.trailing && (
             <div className="mb-4 p-3 bg-zinc-900/50 rounded-lg border border-amber-900/40">
               <div className="text-[10px] text-zinc-600 uppercase tracking-widest mb-2">트레일링 스탑 (동적 손절)</div>
@@ -261,8 +253,6 @@ function HoldingCard({ result: r, onRemove, earnings }: { result: HoldingResult;
               <p className="text-[10px] text-zinc-600" style={{ fontFamily: 'system-ui' }}>{r.trailing.recommended.reasoning}</p>
             </div>
           )}
-
-          {/* Targets — Fibonacci + % */}
           {r.fibTargets && (
             <div className="p-3 bg-zinc-900/50 rounded-lg">
               <div className="flex items-center justify-between mb-2">
@@ -282,7 +272,7 @@ function HoldingCard({ result: r, onRemove, earnings }: { result: HoldingResult;
                 <TargetPill label="Fib 100%" val={`$${r.fibTargets.fib100}`} color="text-purple-400 border-purple-700" />
                 <TargetPill label="Fib 161.8%" val={`$${r.fibTargets.fib162}`} color="text-purple-500 border-purple-600" />
               </div>
-              <p className="text-[10px] text-zinc-700 mt-2">이미 달성한 목표는 취소선 표시. 피보나치 목표는 평균매수가 기준 계산.</p>
+              <p className="text-[10px] text-zinc-700 mt-2">이미 달성한 목표는 취소선 표시.</p>
             </div>
           )}
         </div>
@@ -305,15 +295,17 @@ function TargetPill({ label, val, color }: { label: string; val: string; color: 
 }
 
 export default function PortfolioTab() {
-  const [holdings,   setHoldings]   = useState<Holding[]>([]);
-  const [results,    setResults]    = useState<HoldingResult[]>([]);
-  const [loading,    setLoading]    = useState(false);
-  const [status,     setStatus]     = useState('');
-  const [error,      setError]      = useState('');
-  const [analyzedAt, setAnalyzedAt] = useState('');
-  const [earningsMap,setEarningsMap]= useState<Record<string,{earningsDate:string|null;daysUntil:number|null;epsEstimate:number|null;revenueEstimate:string|null;lastEPS:number|null}>>({});
-  const [form,       setForm]       = useState({ ticker: '', avgPrice: '', shares: '' });
-  const [editIdx,    setEditIdx]    = useState<number | null>(null);
+  const [holdings,    setHoldings]    = useState<Holding[]>([]);
+  const [results,     setResults]     = useState<HoldingResult[]>([]);
+  const [loading,     setLoading]     = useState(false);
+  const [status,      setStatus]      = useState('');
+  const [error,       setError]       = useState('');
+  const [analyzedAt,  setAnalyzedAt]  = useState('');
+  const [earningsMap, setEarningsMap] = useState<Record<string,{earningsDate:string|null;daysUntil:number|null;epsEstimate:number|null;revenueEstimate:string|null;lastEPS:number|null}>>({});
+  const [form,        setForm]        = useState({ ticker: '', avgPrice: '', shares: '' });
+  const [editIdx,     setEditIdx]     = useState<number | null>(null);
+  // ✅ 정렬 state
+  const [sort,        setSort]        = useState<SortType>('action');
 
   useEffect(() => {
     try { const s = localStorage.getItem(PORTFOLIO_KEY); if (s) setHoldings(JSON.parse(s)); } catch {}
@@ -393,10 +385,19 @@ export default function PortfolioTab() {
   const totalPnl     = totalCurrent - totalCost;
   const totalPnlPct  = totalCost > 0 ? (totalPnl / totalCost) * 100 : 0;
 
+  // ✅ 정렬된 결과
+  const sortedResults = [...results].sort((a, b) => {
+    if (sort === 'action')  return (ACTION_ORDER[a.action] ?? 9) - (ACTION_ORDER[b.action] ?? 9);
+    if (sort === 'pnl')     return (b.pnlPct ?? 0) - (a.pnlPct ?? 0);
+    if (sort === 'upside')  return (b.upside?.score ?? 0) - (a.upside?.score ?? 0);
+    if (sort === 'ticker')  return a.ticker.localeCompare(b.ticker);
+    return 0;
+  });
+
   return (
     <div>
       {/* Add/Edit form */}
-      <div className="mb-6 p-4 border border-zinc-800 rounded-xl bg-zinc-900/40">
+      <div className="mb-4 p-4 border border-zinc-800 rounded-xl bg-zinc-900/40">
         <div className="text-[10px] text-zinc-600 uppercase tracking-widest mb-3">
           {editIdx !== null ? '종목 수정' : '보유 종목 추가'}
         </div>
@@ -423,7 +424,7 @@ export default function PortfolioTab() {
 
       {/* Holdings chips */}
       {holdings.length > 0 && (
-        <div className="mb-6">
+        <div className="mb-4">
           <div className="text-[10px] text-zinc-600 uppercase tracking-widest mb-3">보유 종목 ({holdings.length}개)</div>
           <div className="flex flex-wrap gap-2 mb-4">
             {holdings.map((h, i) => (
@@ -450,7 +451,7 @@ export default function PortfolioTab() {
 
       {/* Summary */}
       {results.length > 0 && totalCost > 0 && (
-        <div className="grid grid-cols-3 gap-3 mb-6">
+        <div className="grid grid-cols-3 gap-3 mb-4">
           <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 text-center">
             <div className="text-[10px] text-zinc-600 uppercase tracking-widest mb-1">총 투자금</div>
             <div className="text-lg font-semibold text-zinc-200 font-mono">${Math.round(totalCost).toLocaleString()}</div>
@@ -471,9 +472,37 @@ export default function PortfolioTab() {
         </div>
       )}
 
-      {/* Holding cards */}
-      <div className="flex flex-col gap-4">
-        {results.map((r, i) => r.error ? (
+      {/* ✅ 정렬 버튼 */}
+      {results.length > 0 && (
+        <div className="flex items-center gap-2 mb-4">
+          <span className="text-[10px] text-zinc-600 uppercase tracking-widest shrink-0">정렬</span>
+          <div className="flex gap-1 flex-wrap">
+            {SORT_OPTIONS.map(o => (
+              <button key={o.key} onClick={() => setSort(o.key)}
+                className={`text-xs px-2.5 py-1.5 rounded-lg border transition-colors
+                  ${sort === o.key ? 'bg-zinc-700 border-zinc-600 text-zinc-100' : 'bg-transparent border-zinc-800 text-zinc-500 hover:text-zinc-300'}`}>
+                {o.label}
+              </button>
+            ))}
+          </div>
+          {/* 신호별 카운트 */}
+          <div className="flex gap-1.5 ml-2 flex-wrap">
+            {['즉시매도','매도','매도검토','홀딩','모니터링'].map(a => {
+              const cnt = results.filter(r => r.action === a).length;
+              if (cnt === 0) return null;
+              return (
+                <span key={a} className={`text-[9px] px-1.5 py-0.5 rounded border ${ACTION_STYLE[a]}`}>
+                  {a} {cnt}
+                </span>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ✅ 2열 그리드 */}
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+        {sortedResults.map((r, i) => r.error ? (
           <div key={r.ticker} className="p-4 border border-zinc-800 rounded-xl bg-zinc-900/40 flex items-center justify-between">
             <div>
               <span className="text-zinc-300 font-semibold">{r.ticker}</span>
