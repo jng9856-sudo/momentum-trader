@@ -478,6 +478,19 @@ export default function PortfolioTab() {
       setAnalyzedAt(data.analyzed_at);
       setStatus(`> 분석 완료 — ${data.holdings.length}개 종목 | ${new Date().toLocaleTimeString('ko-KR')}`);
       try { localStorage.setItem(PORTFOLIO_CACHE, JSON.stringify({ results: data.holdings, analyzed_at: data.analyzed_at })); } catch {}
+      // ✅ Supabase 저장 (위젯 연동용)
+try {
+  await fetch('/api/db', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      type: 'portfolio',
+      holdings: holdings,
+      results: data.holdings,
+      analyzed_at: data.analyzed_at,
+    }),
+  });
+} catch {}
       try {
         const er = await fetch('/api/earnings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tickers: holdings.map(h => h.ticker) }) });
         if (er.ok) {
