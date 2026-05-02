@@ -365,7 +365,8 @@ export default function PortfolioTab() {
   const [earningsMap, setEarningsMap] = useState<Record<string,{earningsDate:string|null;daysUntil:number|null;epsEstimate:number|null;revenueEstimate:string|null;lastEPS:number|null}>>({});
   const [form,        setForm]        = useState({ ticker: '', avgPrice: '', shares: '' });
   const [editIdx,     setEditIdx]     = useState<number | null>(null);
-  const [sort,        setSort]        = useState<SortType>('action');
+  const [sort, setSort] = useState<SortType>('action');
+  const [showHoldings, setShowHoldings] = useState(true);
 
   // ✅ 총 손익 계산용 실시간 가격
   const rtMap = usePortfolioRtPrices(results);
@@ -489,28 +490,52 @@ export default function PortfolioTab() {
       </div>
 
       {/* Holdings chips */}
-      {holdings.length > 0 && (
-        <div className="mb-4">
-          <div className="text-[10px] text-zinc-600 uppercase tracking-widest mb-3">보유 종목 ({holdings.length}개)</div>
-          <div className="flex flex-wrap gap-2 mb-4">
-            {holdings.map((h, i) => (
-              <div key={i} className="flex items-center gap-2 px-3 py-2 bg-zinc-900 border border-zinc-700 rounded-lg text-sm">
-                <span className="font-semibold text-zinc-100">{h.ticker}</span>
-                <span className="text-zinc-500 text-xs">${h.avgPrice}</span>
-                {h.shares > 0 && <span className="text-zinc-600 text-xs">{h.shares}주</span>}
-                <button onClick={() => startEdit(i)} className="text-zinc-600 hover:text-zinc-300 text-xs">✎</button>
-                <button onClick={() => removeHolding(i)} className="text-zinc-600 hover:text-red-400 text-xs">✕</button>
-              </div>
-            ))}
+{/* Holdings chips — 접기/펼치기 */}
+{holdings.length > 0 && (
+  <div className="mb-4">
+
+    {/* 헤더: 항상 표시 — 탭으로 접기/펼치기 */}
+    <button
+      onClick={() => setShowHoldings(o => !o)}
+      className="w-full flex items-center justify-between px-3 py-2 mb-2 rounded-lg border border-zinc-800 bg-zinc-900/40 hover:bg-zinc-800/40 transition-colors">
+      <div className="flex items-center gap-2">
+        <span className="text-[10px] text-zinc-500 uppercase tracking-widest">보유 종목</span>
+        <span className="text-[10px] font-semibold text-zinc-300">{holdings.length}개</span>
+        {/* 접혀있을 때 티커 요약 한 줄 */}
+        {!showHoldings && (
+          <span className="text-[10px] text-zinc-600 font-mono">
+            {holdings.map(h => h.ticker).join(' · ')}
+          </span>
+        )}
+      </div>
+      <span className="text-zinc-600 text-xs">{showHoldings ? '▲ 접기' : '▼ 펼치기'}</span>
+    </button>
+
+    {/* 종목 칩 — 펼쳤을 때만 표시 */}
+    {showHoldings && (
+      <div className="flex flex-wrap gap-1.5 mb-3">
+        {holdings.map((h, i) => (
+          <div key={i} className="flex items-center gap-1.5 px-2 py-1 bg-zinc-900 border border-zinc-800 rounded-md">
+            <span className="text-xs font-semibold text-zinc-100 font-mono">{h.ticker}</span>
+            <span className="text-[10px] text-zinc-600 font-mono">${h.avgPrice}</span>
+            {h.shares > 0 && <span className="text-[10px] text-zinc-700">{h.shares}주</span>}
+            <button onClick={() => startEdit(i)} className="text-zinc-700 hover:text-zinc-400 text-[10px] leading-none">✎</button>
+            <button onClick={() => removeHolding(i)} className="text-zinc-700 hover:text-red-400 text-[10px] leading-none">✕</button>
           </div>
-          <button onClick={analyze} disabled={loading}
-            className={`w-full py-3 text-sm font-semibold rounded-lg border transition-all
-              ${loading ? 'bg-zinc-900 border-zinc-700 text-zinc-500 cursor-not-allowed'
-                        : 'bg-emerald-500 border-emerald-400 text-black hover:bg-emerald-400'}`}>
-            {loading ? '분석 중...' : results.length > 0 ? '재분석 실행 →' : '포트폴리오 분석 실행 →'}
-          </button>
-        </div>
-      )}
+        ))}
+      </div>
+    )}
+
+    {/* 재분석 버튼 — 항상 표시 */}
+    <button onClick={analyze} disabled={loading}
+      className={`w-full py-2.5 text-sm font-semibold rounded-lg border transition-all
+        ${loading
+          ? 'bg-zinc-900 border-zinc-700 text-zinc-500 cursor-not-allowed'
+          : 'bg-emerald-500 border-emerald-400 text-black hover:bg-emerald-400'}`}>
+      {loading ? '분석 중...' : results.length > 0 ? '재분석 실행 →' : '포트폴리오 분석 실행 →'}
+    </button>
+  </div>
+)}
 
       {status && <div className={`text-xs mb-4 font-mono ${loading ? 'text-sky-500' : 'text-zinc-500'}`}>{status}</div>}
       {error  && <div className="mb-4 p-4 bg-red-950 border border-red-800 rounded-xl text-sm text-red-300">오류: {error}</div>}
