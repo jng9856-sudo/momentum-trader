@@ -380,6 +380,36 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
                   </div>
                 )}
 
+                {/* 매도 신호 */}
+                {stock.sell_signals && stock.sell_signals.length > 0 && (
+                  <div className="mb-3 bg-red-950/20 border border-red-900/40 rounded-lg p-3">
+                    <div className="text-[10px] text-red-500 uppercase tracking-widest mb-2">매도 신호 ({stock.sell_signals.length}개)</div>
+                    <ul className="space-y-1.5">
+                      {stock.sell_signals.map((s: string, i: number) => (
+                        <li key={i} className="text-xs text-red-300 flex items-start gap-1.5" style={{ fontFamily: 'system-ui' }}>
+                          <span className="text-red-500 shrink-0 mt-0.5">•</span>{s}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* 홀딩 근거 */}
+                {stock.hold_signals && stock.hold_signals.length > 0 && (
+                  <div className="bg-emerald-950/20 border border-emerald-900/40 rounded-lg p-3">
+                    <div className="text-[10px] text-emerald-600 uppercase tracking-widest mb-2">홀딩 근거 ({stock.hold_signals.length}개)</div>
+                    <ul className="space-y-1.5">
+                      {stock.hold_signals.map((s: string, i: number) => (
+                        <li key={i} className="text-xs text-emerald-300 flex items-start gap-1.5" style={{ fontFamily: 'system-ui' }}>
+                          <span className="text-emerald-500 shrink-0 mt-0.5">✓</span>{s}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* ════════════════════════════════════════
                 탭 2: 패턴/RS
             ════════════════════════════════════════ */}
