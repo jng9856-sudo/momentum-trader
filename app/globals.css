@@ -46,3 +46,9 @@ html, body {
 .glow-buy  { box-shadow: 0 0 0 1px rgba(16,185,129,0.25); }
 .glow-sell { box-shadow: 0 0 0 1px rgba(239,68,68,0.25); }
 .glow-hold { box-shadow: 0 0 0 1px rgba(245,158,11,0.25); }
+
+/* 기존 globals.css 맨 아래에 이 내용 추가 */
+
+/* 모바일 가로스크롤 스크롤바 숨김 */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
