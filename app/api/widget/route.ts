@@ -13,14 +13,18 @@ export async function GET() {
 
     const sb = createClient(url, key);
 
+    // maybeSingle() — row 없어도 에러 안 남
     const { data, error } = await sb
       .from('user_portfolio')
       .select('*')
       .eq('id', 1)
-      .single();
+      .maybeSingle();
 
-    if (error || !data) {
-      return NextResponse.json({ error: '포트폴리오 없음', detail: error?.message }, { status: 404 });
+    if (error) {
+      return NextResponse.json({ error: 'DB 오류', detail: error.message }, { status: 500 });
+    }
+    if (!data) {
+      return NextResponse.json({ error: '포트폴리오 없음 — 사이트에서 재분석 버튼을 눌러주세요' }, { status: 404 });
     }
 
     const results = data.results as Array<{
@@ -35,7 +39,7 @@ export async function GET() {
     }> | null;
 
     if (!results || results.length === 0) {
-      return NextResponse.json({ error: '분석 데이터 없음 — 포트폴리오 재분석 필요' }, { status: 404 });
+      return NextResponse.json({ error: '분석 데이터 없음 — 재분석 필요', holdings_count: data.holdings?.length ?? 0 }, { status: 404 });
     }
 
     const totalCost     = results.reduce((a, r) => a + (r.avgPrice * (r.shares ?? 0)), 0);
