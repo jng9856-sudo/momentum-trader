@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import EarningsBadge from '@/components/EarningsBadge';
 
@@ -54,6 +54,7 @@ const ACTION_ORDER: Record<string, number> = {
 
 const PORTFOLIO_KEY   = 'mt_portfolio_v2';
 const PORTFOLIO_CACHE = 'mt_portfolio_cache_v2';
+const CACHE_TTL_MS    = 6 * 60 * 60 * 1000; // 6시간
 
 type SortType = 'action' | 'pnl' | 'upside' | 'ticker';
 const SORT_OPTIONS: { key: SortType; label: string }[] = [
@@ -63,6 +64,42 @@ const SORT_OPTIONS: { key: SortType; label: string }[] = [
   { key: 'ticker',  label: '티커순' },
 ];
 
+// ── 실시간 가격 기반 action 재판단 ──────────────────────────────────────────
+// 지표(RSI/MACD/ADX)는 분석 시 계산된 값 유지, 실시간 가격으로 MA 이탈/손절 재평가
+function deriveRealtimeAction(r: HoldingResult, livePrice: number): string {
+  const { ma10, ma20, ma50, ma120 } = r.mas;
+  const { rsi, macd } = r.indicators;
+  const macdContracting = r.divergences.macd.contracting;
+  const pnlPct = ((livePrice - r.avgPrice) / r.avgPrice) * 100;
+
+  // 실시간 가격 기준 MA 위치 재계산
+  const liveAbove = [ma10, ma20, ma50, ma120].filter(m => m > 0 && livePrice > m).length;
+
+  // 손절가 도달 → 즉시매도
+  if (r.stopLoss.recommended.price && livePrice <= r.stopLoss.recommended.price) return '즉시매도';
+
+  // 구조적 붕괴 → 즉시매도
+  if (ma50 > 0 && livePrice < ma50 && macd < 0 && liveAbove <= 1) return '즉시매도';
+
+  const highSigs     = r.sellSignals.filter(s => s.severity === 'high').length;
+  const medSigs      = r.sellSignals.filter(s => s.severity === 'medium').length;
+  const totalSigs    = r.sellSignals.length;
+  const macdPositive = macd > 0 && !macdContracting;
+  const allMAsAligned = ma10 > 0 && ma20 > 0 && ma50 > 0 && ma120 > 0
+    ? livePrice > ma10 && livePrice > ma20 && livePrice > ma50 && livePrice > ma120
+    : liveAbove === 4;
+  const strongUptrend = macdPositive && allMAsAligned;
+
+  if (highSigs >= 2 && totalSigs >= 3) return '매도';
+  if (ma50 > 0 && livePrice < ma50) return '매도검토'; // 실시간 MA50 이탈
+  if (pnlPct > 20 && rsi > 78 && !macdPositive) return '부분익절';
+  if (strongUptrend && highSigs === 0 && medSigs <= 1) return '홀딩';
+  if (highSigs >= 1 || (medSigs >= 2 && !strongUptrend)) return '매도검토';
+  if (r.holdSignals.length >= 2 && r.upside.score >= 50) return '홀딩';
+  return '모니터링';
+}
+
+// ── UI helpers ────────────────────────────────────────────────────────────────
 function UpsideBar({ score, label }: { score: number; label: string }) {
   const color = score >= 70 ? '#10b981' : score >= 50 ? '#f59e0b' : score >= 30 ? '#f97316' : '#ef4444';
   return (
@@ -83,9 +120,9 @@ function UpsideBar({ score, label }: { score: number; label: string }) {
 
 function DivergenceRow({ divs }: { divs: HoldingResult['divergences'] }) {
   const items = [
-    { label: 'RSI 다이버전스', active: divs.rsi.bearish, detail: divs.rsi.detail, bull: divs.rsi.bullish },
+    { label: 'RSI 다이버전스',  active: divs.rsi.bearish,    detail: divs.rsi.detail,    bull: divs.rsi.bullish },
     { label: '거래량 다이버전스', active: divs.volume.bearish, detail: divs.volume.detail, bull: false },
-    { label: 'MACD 수축', active: divs.macd.contracting, detail: divs.macd.detail, bull: false },
+    { label: 'MACD 수축',       active: divs.macd.contracting, detail: divs.macd.detail, bull: false },
   ];
   return (
     <div className="mb-4 p-3 bg-zinc-900/50 rounded-lg">
@@ -107,31 +144,32 @@ function DivergenceRow({ divs }: { divs: HoldingResult['divergences'] }) {
 
 interface EarningsInfo { earningsDate: string|null; daysUntil: number|null; epsEstimate: number|null; revenueEstimate: string|null; lastEPS: number|null; }
 
-function HoldingCard({ result: r, onRemove, earnings }: { result: HoldingResult; onRemove?: () => void; earnings?: EarningsInfo }) {
+// ── HoldingCard ───────────────────────────────────────────────────────────────
+function HoldingCard({ result: r, onRemove, earnings }: {
+  result: HoldingResult; onRemove?: () => void; earnings?: EarningsInfo;
+}) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-
-  // ✅ 실시간 가격 state
   const [rtPrice, setRtPrice] = useState<{ price: number; changePct: number; isRealtime?: boolean } | null>(null);
 
-  // ✅ 실시간 가격 fetch (30초마다 갱신)
+  // 30초마다 실시간 가격 갱신
   useEffect(() => {
     const fetchPrice = () =>
       fetch(`/api/realtime?tickers=${r.ticker}`)
         .then(res => res.json())
-        .then(d => {
-          if (d.price && d.price > 0) {
-            setRtPrice({ price: d.price, changePct: d.changePct ?? 0, isRealtime: d.isRealtime });
-          }
-        })
+        .then(d => { if (d.price && d.price > 0) setRtPrice({ price: d.price, changePct: d.changePct ?? 0, isRealtime: d.isRealtime }); })
         .catch(() => {});
     fetchPrice();
     const iv = setInterval(fetchPrice, 30000);
     return () => clearInterval(iv);
   }, [r.ticker]);
 
-  // ✅ 실시간 가격 기반 손익 계산
   const displayPrice = rtPrice ? rtPrice.price : r.currentPrice;
+
+  // ✅ 실시간 가격으로 action 재판단
+  const liveAction = deriveRealtimeAction(r, displayPrice);
+  const actionChanged = liveAction !== r.action;
+
   const rtPnlPct = rtPrice
     ? Math.round(((rtPrice.price - r.avgPrice) / r.avgPrice) * 10000) / 100
     : r.pnlPct;
@@ -140,10 +178,13 @@ function HoldingCard({ result: r, onRemove, earnings }: { result: HoldingResult;
     : r.pnlAbs;
 
   const pnlPos = rtPnlPct >= 0;
-  const borderColor = r.action === '즉시매도' ? 'border-l-red-400' :
-    r.action === '매도' ? 'border-l-red-700' :
-    r.action === '부분익절' ? 'border-l-orange-500' :
-    r.action === '홀딩' ? 'border-l-emerald-600' : 'border-l-zinc-600';
+
+  // 실시간 action 기준으로 테두리 색상
+  const borderColor =
+    liveAction === '즉시매도' ? 'border-l-red-400' :
+    liveAction === '매도'     ? 'border-l-red-700' :
+    liveAction === '부분익절' ? 'border-l-orange-500' :
+    liveAction === '홀딩'     ? 'border-l-emerald-600' : 'border-l-zinc-600';
 
   const upsideColor = r.upside.score >= 70 ? 'text-emerald-400' : r.upside.score >= 50 ? 'text-amber-400' : r.upside.score >= 30 ? 'text-orange-400' : 'text-red-400';
 
@@ -158,9 +199,17 @@ function HoldingCard({ result: r, onRemove, earnings }: { result: HoldingResult;
             className="text-base font-bold text-zinc-100 hover:text-emerald-300 transition-colors shrink-0">
             {r.ticker} ↗
           </button>
-          <span className={`text-xs font-semibold px-2.5 py-1 rounded-md border ${ACTION_STYLE[r.action] ?? 'bg-zinc-900 text-zinc-400 border-zinc-700'}`}>
-            {r.action}
+
+          {/* ✅ 실시간 action 배지 */}
+          <span className={`text-xs font-semibold px-2.5 py-1 rounded-md border ${ACTION_STYLE[liveAction] ?? 'bg-zinc-900 text-zinc-400 border-zinc-700'}`}>
+            {liveAction}
           </span>
+
+          {/* 분석 당시와 다를 때 이전 값 작게 표기 */}
+          {actionChanged && (
+            <span className="text-[9px] text-zinc-600">(분석시: {r.action})</span>
+          )}
+
           {onRemove && (
             <button onClick={e => { e.stopPropagation(); onRemove(); }}
               className="w-5 h-5 flex items-center justify-center rounded-full bg-zinc-800 hover:bg-red-900 text-zinc-500 hover:text-red-400 transition-colors text-xs shrink-0">✕</button>
@@ -169,7 +218,6 @@ function HoldingCard({ result: r, onRemove, earnings }: { result: HoldingResult;
 
         <div className="flex items-center gap-3 shrink-0 ml-2">
           <div className="text-right">
-            {/* ✅ 실시간 가격 표시 */}
             <div className="flex items-center gap-1.5 justify-end">
               <span className="text-sm font-semibold text-zinc-100 font-mono">${displayPrice.toLocaleString()}</span>
               {rtPrice && (
@@ -183,7 +231,6 @@ function HoldingCard({ result: r, onRemove, earnings }: { result: HoldingResult;
                 </>
               )}
             </div>
-            {/* ✅ 실시간 기반 손익 */}
             <div className={`text-xs font-semibold ${pnlPos ? 'text-emerald-400' : 'text-red-400'}`}>
               {pnlPos ? '+' : ''}{rtPnlPct}%
               {r.shares > 0 && <span className="text-[10px] ml-1">({pnlPos ? '+' : ''}${rtPnlAbs.toLocaleString()})</span>}
@@ -223,12 +270,12 @@ function HoldingCard({ result: r, onRemove, earnings }: { result: HoldingResult;
           <UpsideBar score={r.upside.score} label={r.upside.label} />
           <div className="grid grid-cols-4 sm:grid-cols-7 gap-2 mb-4 p-3 bg-zinc-900/50 rounded-lg">
             {[
-              { label: 'RSI', val: r.indicators.rsi, color: r.indicators.rsi > 78 ? 'text-red-400' : r.indicators.rsi < 35 ? 'text-sky-400' : 'text-emerald-400' },
-              { label: 'MACD', val: r.indicators.macd, color: r.indicators.macd > 0 ? 'text-emerald-400' : 'text-red-400' },
-              { label: 'ADX', val: r.indicators.adx, color: r.indicators.adx > 50 ? 'text-red-400' : r.indicators.adx >= 25 ? 'text-emerald-400' : 'text-amber-400' },
+              { label: 'RSI',  val: r.indicators.rsi,   color: r.indicators.rsi > 78 ? 'text-red-400' : r.indicators.rsi < 35 ? 'text-sky-400' : 'text-emerald-400' },
+              { label: 'MACD', val: r.indicators.macd,  color: r.indicators.macd > 0 ? 'text-emerald-400' : 'text-red-400' },
+              { label: 'ADX',  val: r.indicators.adx,   color: r.indicators.adx > 60 ? 'text-red-400' : r.indicators.adx >= 25 ? 'text-emerald-400' : 'text-amber-400' },
               { label: '거래량', val: `${r.indicators.volRatio}x`, color: r.indicators.volRatio > 1.3 ? 'text-emerald-400' : r.indicators.volRatio < 0.7 ? 'text-red-400' : 'text-zinc-400' },
               { label: 'MA위', val: `${r.indicators.aboveCount}/4`, color: r.indicators.aboveCount >= 3 ? 'text-emerald-400' : r.indicators.aboveCount <= 1 ? 'text-red-400' : 'text-amber-400' },
-              { label: 'BB%', val: `${r.indicators.bbPos}%`, color: r.indicators.bbPos > 85 ? 'text-amber-400' : r.indicators.bbPos < 20 ? 'text-sky-400' : 'text-zinc-400' },
+              { label: 'BB%',  val: `${r.indicators.bbPos}%`, color: r.indicators.bbPos > 85 ? 'text-amber-400' : r.indicators.bbPos < 20 ? 'text-sky-400' : 'text-zinc-400' },
               { label: '고점%', val: `${r.indicators.distFromHigh}%`, color: r.indicators.distFromHigh > -5 ? 'text-emerald-400' : r.indicators.distFromHigh < -25 ? 'text-red-400' : 'text-zinc-400' },
             ].map(({ label, val, color }) => (
               <div key={label} className="text-center">
@@ -280,8 +327,8 @@ function HoldingCard({ result: r, onRemove, earnings }: { result: HoldingResult;
               <div className="flex flex-wrap gap-2 mb-2">
                 <StopPill label="ATR 2x" val={`$${r.trailing.trail2xATR}`} highlight={false} />
                 <StopPill label="ATR 3x" val={`$${r.trailing.trail3xATR}`} highlight={false} />
-                <StopPill label="-8%" val={`$${r.trailing.trailPct8}`} highlight={false} />
-                <StopPill label="-15%" val={`$${r.trailing.trailPct15}`} highlight={false} />
+                <StopPill label="-8%"    val={`$${r.trailing.trailPct8}`}  highlight={false} />
+                <StopPill label="-15%"   val={`$${r.trailing.trailPct15}`} highlight={false} />
               </div>
               <div className="text-[10px] text-amber-400 font-semibold mb-0.5">
                 ★ 추천: ${r.trailing.recommended.price} ({r.trailing.recommended.label})
@@ -299,13 +346,13 @@ function HoldingCard({ result: r, onRemove, earnings }: { result: HoldingResult;
                 </span>
               </div>
               <div className="flex flex-wrap gap-2 mb-2">
-                <TargetPill label="+10%" val={`$${r.fibTargets.pct10}`} color={displayPrice >= r.fibTargets.pct10 ? 'text-zinc-600 border-zinc-800 line-through' : 'text-emerald-300 border-emerald-800'} />
-                <TargetPill label="+20%" val={`$${r.fibTargets.pct20}`} color={displayPrice >= r.fibTargets.pct20 ? 'text-zinc-600 border-zinc-800 line-through' : 'text-sky-300 border-sky-800'} />
-                <TargetPill label="+30%" val={`$${r.fibTargets.pct30}`} color={displayPrice >= r.fibTargets.pct30 ? 'text-zinc-600 border-zinc-800 line-through' : 'text-blue-300 border-blue-800'} />
+                <TargetPill label="+10%"  val={`$${r.fibTargets.pct10}`} color={displayPrice >= r.fibTargets.pct10  ? 'text-zinc-600 border-zinc-800 line-through' : 'text-emerald-300 border-emerald-800'} />
+                <TargetPill label="+20%"  val={`$${r.fibTargets.pct20}`} color={displayPrice >= r.fibTargets.pct20  ? 'text-zinc-600 border-zinc-800 line-through' : 'text-sky-300 border-sky-800'} />
+                <TargetPill label="+30%"  val={`$${r.fibTargets.pct30}`} color={displayPrice >= r.fibTargets.pct30  ? 'text-zinc-600 border-zinc-800 line-through' : 'text-blue-300 border-blue-800'} />
               </div>
               <div className="flex flex-wrap gap-2">
-                <TargetPill label="Fib 61.8%" val={`$${r.fibTargets.fib618}`} color="text-purple-300 border-purple-800" />
-                <TargetPill label="Fib 100%"  val={`$${r.fibTargets.fib100}`} color="text-purple-400 border-purple-700" />
+                <TargetPill label="Fib 61.8%"  val={`$${r.fibTargets.fib618}`} color="text-purple-300 border-purple-800" />
+                <TargetPill label="Fib 100%"   val={`$${r.fibTargets.fib100}`} color="text-purple-400 border-purple-700" />
                 <TargetPill label="Fib 161.8%" val={`$${r.fibTargets.fib162}`} color="text-purple-500 border-purple-600" />
               </div>
               <p className="text-[10px] text-zinc-700 mt-2">이미 달성한 목표는 취소선 표시.</p>
@@ -330,15 +377,15 @@ function TargetPill({ label, val, color }: { label: string; val: string; color: 
   );
 }
 
-// ✅ 실시간 가격 기반 총 손익 계산용 훅
+// ── 총 손익용 실시간 가격 훅 ──────────────────────────────────────────────────
 function usePortfolioRtPrices(results: HoldingResult[]) {
   const [rtMap, setRtMap] = useState<Record<string, number>>({});
+  const tickerKey = results.map(r => r.ticker).join(',');
 
   useEffect(() => {
     if (results.length === 0) return;
-    const tickers = results.map(r => r.ticker).join(',');
     const fetchAll = () =>
-      fetch(`/api/realtime?tickers=${tickers}`)
+      fetch(`/api/realtime?tickers=${tickerKey}`)
         .then(res => res.json())
         .then(d => {
           const map: Record<string, number> = {};
@@ -350,11 +397,12 @@ function usePortfolioRtPrices(results: HoldingResult[]) {
     fetchAll();
     const iv = setInterval(fetchAll, 30000);
     return () => clearInterval(iv);
-  }, [results.map(r => r.ticker).join(',')]);
+  }, [tickerKey]);
 
   return rtMap;
 }
 
+// ── Main Component ────────────────────────────────────────────────────────────
 export default function PortfolioTab() {
   const [holdings,    setHoldings]    = useState<Holding[]>([]);
   const [results,     setResults]     = useState<HoldingResult[]>([]);
@@ -362,28 +410,88 @@ export default function PortfolioTab() {
   const [status,      setStatus]      = useState('');
   const [error,       setError]       = useState('');
   const [analyzedAt,  setAnalyzedAt]  = useState('');
-  const [earningsMap, setEarningsMap] = useState<Record<string,{earningsDate:string|null;daysUntil:number|null;epsEstimate:number|null;revenueEstimate:string|null;lastEPS:number|null}>>({});
+  const [earningsMap, setEarningsMap] = useState<Record<string, EarningsInfo>>({});
   const [form,        setForm]        = useState({ ticker: '', avgPrice: '', shares: '' });
   const [editIdx,     setEditIdx]     = useState<number | null>(null);
-  const [sort, setSort] = useState<SortType>('action');
+  const [sort,        setSort]        = useState<SortType>('action');
   const [showHoldings, setShowHoldings] = useState(true);
 
-  // ✅ 총 손익 계산용 실시간 가격
-  const rtMap = usePortfolioRtPrices(results);
+  const rtMap        = usePortfolioRtPrices(results);
+  const analyzeRef   = useRef<() => Promise<void>>();
 
+  // ── 분석 함수 ──────────────────────────────────────────────────────────────
+  async function analyze() {
+    if (holdings.length === 0 || loading) return;
+    setLoading(true); setError(''); setResults([]);
+    setStatus('> 지표 계산 중...');
+    try { localStorage.removeItem(PORTFOLIO_CACHE); } catch {}
+    try {
+      const res = await fetch('/api/portfolio', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ holdings }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      setResults(data.holdings);
+      setAnalyzedAt(data.analyzed_at);
+      setStatus(`> 분석 완료 — ${data.holdings.length}개 종목 | ${new Date().toLocaleTimeString('ko-KR')}`);
+      try { localStorage.setItem(PORTFOLIO_CACHE, JSON.stringify({ results: data.holdings, analyzed_at: data.analyzed_at })); } catch {}
+      try {
+        const er = await fetch('/api/earnings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tickers: holdings.map(h => h.ticker) }) });
+        if (er.ok) {
+          const ed = await er.json();
+          const eMap: Record<string, EarningsInfo> = {};
+          (ed.earnings ?? []).forEach((e: EarningsInfo & { ticker: string }) => { eMap[e.ticker] = e; });
+          setEarningsMap(eMap);
+        }
+      } catch {}
+    } catch (e) { setError(String(e)); setStatus(''); }
+    setLoading(false);
+  }
+
+  // ref에 최신 analyze 저장 (useEffect 클로저 문제 방지)
+  analyzeRef.current = analyze;
+
+  // ── 초기 로드: localStorage → 캐시 복원 or 자동 분석 ──────────────────────
   useEffect(() => {
-    try { const s = localStorage.getItem(PORTFOLIO_KEY); if (s) setHoldings(JSON.parse(s)); } catch {}
+    let loadedHoldings: Holding[] = [];
+    try {
+      const s = localStorage.getItem(PORTFOLIO_KEY);
+      if (s) loadedHoldings = JSON.parse(s);
+      setHoldings(loadedHoldings);
+    } catch {}
+
+    // 캐시 확인
     try {
       const cached = localStorage.getItem(PORTFOLIO_CACHE);
       if (cached) {
         const p = JSON.parse(cached);
-        setResults(p.results ?? []);
-        setAnalyzedAt(p.analyzed_at ?? '');
-        setStatus(p.analyzed_at ? `> 캐시된 분석 결과 | ${new Date(p.analyzed_at).toLocaleString('ko-KR')}` : '');
+        const age = Date.now() - new Date(p.analyzed_at ?? 0).getTime();
+        if (age < CACHE_TTL_MS) {
+          // 캐시 유효 → 그대로 사용
+          setResults(p.results ?? []);
+          setAnalyzedAt(p.analyzed_at ?? '');
+          setStatus(`> 캐시 결과 | ${new Date(p.analyzed_at).toLocaleString('ko-KR')}`);
+          return; // 자동 분석 스킵
+        }
       }
     } catch {}
+
+    // 캐시 없거나 만료 → 자동 분석
+    if (loadedHoldings.length > 0) {
+      setTimeout(() => analyzeRef.current?.(), 300);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // ── 6시간마다 자동 재분석 ──────────────────────────────────────────────────
+  useEffect(() => {
+    if (holdings.length === 0) return;
+    const iv = setInterval(() => { analyzeRef.current?.(); }, CACHE_TTL_MS);
+    return () => clearInterval(iv);
+  }, [holdings.length]);
+
+  // ── Holdings 관리 ──────────────────────────────────────────────────────────
   function saveHoldings(h: Holding[]) {
     setHoldings(h);
     try { localStorage.setItem(PORTFOLIO_KEY, JSON.stringify(h)); } catch {}
@@ -397,7 +505,9 @@ export default function PortfolioTab() {
     if (editIdx !== null) {
       const updated = [...holdings]; updated[editIdx] = { ticker: t, avgPrice: p, shares: s };
       saveHoldings(updated); setEditIdx(null);
-    } else { saveHoldings([...holdings, { ticker: t, avgPrice: p, shares: s }]); }
+    } else {
+      saveHoldings([...holdings, { ticker: t, avgPrice: p, shares: s }]);
+    }
     setForm({ ticker: '', avgPrice: '', shares: '' });
   }
 
@@ -415,55 +525,30 @@ export default function PortfolioTab() {
     setForm({ ticker: holdings[i].ticker, avgPrice: String(holdings[i].avgPrice), shares: String(holdings[i].shares) });
   }
 
-  async function analyze() {
-    if (holdings.length === 0 || loading) return;
-    setLoading(true); setError(''); setResults([]);
-    setStatus('> 7가지 매도 지표 계산 중...');
-    try { localStorage.removeItem(PORTFOLIO_CACHE); } catch {}
-    try {
-      const res = await fetch('/api/portfolio', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ holdings }),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      setResults(data.holdings);
-      setAnalyzedAt(data.analyzed_at);
-      setStatus(`> 분석 완료 — ${data.holdings.length}개 종목 | ${new Date().toLocaleTimeString('ko-KR')}`);
-      try { localStorage.setItem(PORTFOLIO_CACHE, JSON.stringify({ results: data.holdings, analyzed_at: data.analyzed_at })); } catch {}
-      try {
-        const er = await fetch('/api/earnings', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ tickers: holdings.map(h => h.ticker) }) });
-        if (er.ok) {
-          const ed = await er.json();
-          const eMap: Record<string,{earningsDate:string|null;daysUntil:number|null;epsEstimate:number|null;revenueEstimate:string|null;lastEPS:number|null}> = {};
-          (ed.earnings ?? []).forEach((e: {ticker:string;earningsDate:string|null;daysUntil:number|null;epsEstimate:number|null;revenueEstimate:string|null;lastEPS:number|null}) => { eMap[e.ticker] = e; });
-          setEarningsMap(eMap);
-        }
-      } catch {}
-    } catch (e) { setError(String(e)); setStatus(''); }
-    setLoading(false);
-  }
-
-  // ✅ 실시간 가격 기반 총 손익
+  // ── 총 손익 ────────────────────────────────────────────────────────────────
   const totalCost    = results.reduce((a, r) => a + (r.avgPrice * (r.shares ?? 0)), 0);
-  const totalCurrent = results.reduce((a, r) => {
-    const price = rtMap[r.ticker] ?? r.currentPrice;
-    return a + (price * (r.shares ?? 0));
-  }, 0);
-  const totalPnl    = totalCurrent - totalCost;
-  const totalPnlPct = totalCost > 0 ? (totalPnl / totalCost) * 100 : 0;
+  const totalCurrent = results.reduce((a, r) => a + ((rtMap[r.ticker] ?? r.currentPrice) * (r.shares ?? 0)), 0);
+  const totalPnl     = totalCurrent - totalCost;
+  const totalPnlPct  = totalCost > 0 ? (totalPnl / totalCost) * 100 : 0;
 
+  // ── 정렬 (liveAction 기준으로 정렬) ───────────────────────────────────────
   const sortedResults = [...results].sort((a, b) => {
-    if (sort === 'action')  return (ACTION_ORDER[a.action] ?? 9) - (ACTION_ORDER[b.action] ?? 9);
-    if (sort === 'pnl')     return (b.pnlPct ?? 0) - (a.pnlPct ?? 0);
-    if (sort === 'upside')  return (b.upside?.score ?? 0) - (a.upside?.score ?? 0);
-    if (sort === 'ticker')  return a.ticker.localeCompare(b.ticker);
+    if (sort === 'action') {
+      const aLive = deriveRealtimeAction(a, rtMap[a.ticker] ?? a.currentPrice);
+      const bLive = deriveRealtimeAction(b, rtMap[b.ticker] ?? b.currentPrice);
+      return (ACTION_ORDER[aLive] ?? 9) - (ACTION_ORDER[bLive] ?? 9);
+    }
+    if (sort === 'pnl')    return (b.pnlPct ?? 0) - (a.pnlPct ?? 0);
+    if (sort === 'upside') return (b.upside?.score ?? 0) - (a.upside?.score ?? 0);
+    if (sort === 'ticker') return a.ticker.localeCompare(b.ticker);
     return 0;
   });
 
+  // ── 렌더 ───────────────────────────────────────────────────────────────────
   return (
     <div>
-      {/* Add/Edit form */}
+
+      {/* 종목 추가/수정 폼 */}
       <div className="mb-4 p-4 border border-zinc-800 rounded-xl bg-zinc-900/40">
         <div className="text-[10px] text-zinc-600 uppercase tracking-widest mb-3">
           {editIdx !== null ? '종목 수정' : '보유 종목 추가'}
@@ -483,64 +568,59 @@ export default function PortfolioTab() {
             {editIdx !== null ? '수정 완료' : '+ 추가'}
           </button>
           {editIdx !== null && (
-            <button onClick={() => { setEditIdx(null); setForm({ ticker:'', avgPrice:'', shares:'' }); }}
+            <button onClick={() => { setEditIdx(null); setForm({ ticker: '', avgPrice: '', shares: '' }); }}
               className="px-4 py-2 border border-zinc-700 text-zinc-400 text-sm rounded-lg hover:text-zinc-200">취소</button>
           )}
         </div>
       </div>
 
-      {/* Holdings chips */}
-{/* Holdings chips — 접기/펼치기 */}
-{holdings.length > 0 && (
-  <div className="mb-4">
+      {/* 보유 종목 칩 — 접기/펼치기 */}
+      {holdings.length > 0 && (
+        <div className="mb-4">
+          <button
+            onClick={() => setShowHoldings(o => !o)}
+            className="w-full flex items-center justify-between px-3 py-2 mb-2 rounded-lg border border-zinc-800 bg-zinc-900/40 hover:bg-zinc-800/40 transition-colors">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="text-[10px] text-zinc-500 uppercase tracking-widest shrink-0">보유 종목</span>
+              <span className="text-[10px] font-semibold text-zinc-300 shrink-0">{holdings.length}개</span>
+              {!showHoldings && (
+                <span className="text-[10px] text-zinc-600 font-mono truncate">
+                  {holdings.map(h => h.ticker).join(' · ')}
+                </span>
+              )}
+            </div>
+            <span className="text-zinc-600 text-xs shrink-0">{showHoldings ? '▲ 접기' : '▼ 펼치기'}</span>
+          </button>
 
-    {/* 헤더: 항상 표시 — 탭으로 접기/펼치기 */}
-    <button
-      onClick={() => setShowHoldings(o => !o)}
-      className="w-full flex items-center justify-between px-3 py-2 mb-2 rounded-lg border border-zinc-800 bg-zinc-900/40 hover:bg-zinc-800/40 transition-colors">
-      <div className="flex items-center gap-2">
-        <span className="text-[10px] text-zinc-500 uppercase tracking-widest">보유 종목</span>
-        <span className="text-[10px] font-semibold text-zinc-300">{holdings.length}개</span>
-        {/* 접혀있을 때 티커 요약 한 줄 */}
-        {!showHoldings && (
-          <span className="text-[10px] text-zinc-600 font-mono">
-            {holdings.map(h => h.ticker).join(' · ')}
-          </span>
-        )}
-      </div>
-      <span className="text-zinc-600 text-xs">{showHoldings ? '▲ 접기' : '▼ 펼치기'}</span>
-    </button>
+          {showHoldings && (
+            <div className="flex flex-wrap gap-1.5 mb-3">
+              {holdings.map((h, i) => (
+                <div key={i} className="flex items-center gap-1.5 px-2 py-1 bg-zinc-900 border border-zinc-800 rounded-md">
+                  <span className="text-xs font-semibold text-zinc-100 font-mono">{h.ticker}</span>
+                  <span className="text-[10px] text-zinc-600 font-mono">${h.avgPrice}</span>
+                  {h.shares > 0 && <span className="text-[10px] text-zinc-700">{h.shares}주</span>}
+                  <button onClick={() => startEdit(i)} className="text-zinc-700 hover:text-zinc-400 text-[10px] leading-none">✎</button>
+                  <button onClick={() => removeHolding(i)} className="text-zinc-700 hover:text-red-400 text-[10px] leading-none">✕</button>
+                </div>
+              ))}
+            </div>
+          )}
 
-    {/* 종목 칩 — 펼쳤을 때만 표시 */}
-    {showHoldings && (
-      <div className="flex flex-wrap gap-1.5 mb-3">
-        {holdings.map((h, i) => (
-          <div key={i} className="flex items-center gap-1.5 px-2 py-1 bg-zinc-900 border border-zinc-800 rounded-md">
-            <span className="text-xs font-semibold text-zinc-100 font-mono">{h.ticker}</span>
-            <span className="text-[10px] text-zinc-600 font-mono">${h.avgPrice}</span>
-            {h.shares > 0 && <span className="text-[10px] text-zinc-700">{h.shares}주</span>}
-            <button onClick={() => startEdit(i)} className="text-zinc-700 hover:text-zinc-400 text-[10px] leading-none">✎</button>
-            <button onClick={() => removeHolding(i)} className="text-zinc-700 hover:text-red-400 text-[10px] leading-none">✕</button>
-          </div>
-        ))}
-      </div>
-    )}
+          {/* 재분석 버튼 — 항상 표시 */}
+          <button onClick={analyze} disabled={loading}
+            className={`w-full py-2.5 text-sm font-semibold rounded-lg border transition-all
+              ${loading
+                ? 'bg-zinc-900 border-zinc-700 text-zinc-500 cursor-not-allowed'
+                : 'bg-zinc-800 border-zinc-700 text-zinc-300 hover:bg-zinc-700'}`}>
+            {loading ? '분석 중...' : '↺ 재분석'}
+          </button>
+        </div>
+      )}
 
-    {/* 재분석 버튼 — 항상 표시 */}
-    <button onClick={analyze} disabled={loading}
-      className={`w-full py-2.5 text-sm font-semibold rounded-lg border transition-all
-        ${loading
-          ? 'bg-zinc-900 border-zinc-700 text-zinc-500 cursor-not-allowed'
-          : 'bg-emerald-500 border-emerald-400 text-black hover:bg-emerald-400'}`}>
-      {loading ? '분석 중...' : results.length > 0 ? '재분석 실행 →' : '포트폴리오 분석 실행 →'}
-    </button>
-  </div>
-)}
-
-      {status && <div className={`text-xs mb-4 font-mono ${loading ? 'text-sky-500' : 'text-zinc-500'}`}>{status}</div>}
+      {status && <div className={`text-xs mb-4 font-mono ${loading ? 'text-sky-500' : 'text-zinc-600'}`}>{status}</div>}
       {error  && <div className="mb-4 p-4 bg-red-950 border border-red-800 rounded-xl text-sm text-red-300">오류: {error}</div>}
 
-      {/* ✅ 실시간 기반 총 손익 요약 */}
+      {/* 총 손익 요약 */}
       {results.length > 0 && totalCost > 0 && (
         <div className="grid grid-cols-3 gap-3 mb-4">
           <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 text-center">
@@ -563,7 +643,7 @@ export default function PortfolioTab() {
         </div>
       )}
 
-      {/* 정렬 버튼 */}
+      {/* 정렬 버튼 + action 카운트 */}
       {results.length > 0 && (
         <div className="flex items-center gap-2 mb-4 flex-wrap">
           <span className="text-[10px] text-zinc-600 uppercase tracking-widest shrink-0">정렬</span>
@@ -576,9 +656,10 @@ export default function PortfolioTab() {
               </button>
             ))}
           </div>
+          {/* 실시간 action 기준 카운트 */}
           <div className="flex gap-1.5 ml-1 flex-wrap">
-            {['즉시매도','매도','매도검토','홀딩','모니터링'].map(a => {
-              const cnt = results.filter(r => r.action === a).length;
+            {['즉시매도', '매도', '매도검토', '홀딩', '모니터링'].map(a => {
+              const cnt = results.filter(r => deriveRealtimeAction(r, rtMap[r.ticker] ?? r.currentPrice) === a).length;
               if (cnt === 0) return null;
               return (
                 <span key={a} className={`text-[9px] px-1.5 py-0.5 rounded border ${ACTION_STYLE[a]}`}>
@@ -590,7 +671,7 @@ export default function PortfolioTab() {
         </div>
       )}
 
-      {/* 2열 그리드 */}
+      {/* 종목 카드 그리드 */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
         {sortedResults.map((r, i) => r.error ? (
           <div key={r.ticker} className="p-4 border border-zinc-800 rounded-xl bg-zinc-900/40 flex items-center justify-between">
@@ -609,7 +690,7 @@ export default function PortfolioTab() {
 
       {results.length > 0 && analyzedAt && (
         <div className="text-[10px] text-zinc-700 text-center mt-6">
-          마지막 분석: {new Date(analyzedAt).toLocaleString('ko-KR')}
+          지표 분석: {new Date(analyzedAt).toLocaleString('ko-KR')} · action은 실시간 가격 기준
         </div>
       )}
     </div>
