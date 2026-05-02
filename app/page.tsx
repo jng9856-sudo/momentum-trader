@@ -141,7 +141,7 @@ export default function Home() {
       const prev = watchlist.length;
       const merged = [...new Set([...watchlist, ...found])].slice(0, MAX_TICKERS);
       setWatchlist(merged);
-      setXlsxMsg(`✓ ${found.length}개 발견 → ${merged.length - prev}개 추가 (총 ${merged.length}개)`);
+      setXlsxMsg(`✓ ${found.length}개 → ${merged.length - prev}개 추가`);
     } catch (err) { setXlsxMsg(`오류: ${String(err)}`); }
     e.target.value = '';
   }
@@ -154,7 +154,7 @@ export default function Home() {
     const tickersToAnalyze = watchlist.filter(t => !analyzedSet.has(t));
 
     if (tickersToAnalyze.length === 0) {
-      setStatus('> 추가된 새 종목이 없습니다. 전체 재분석은 초기화(↺) 후 실행하세요.');
+      setStatus('> 추가된 새 종목이 없습니다. 초기화(↺) 후 재분석하세요.');
       return;
     }
 
@@ -167,7 +167,7 @@ export default function Home() {
 
     for (let i = 0; i < batches.length; i++) {
       if (abortRef.current) break;
-      setStatus(`> 배치 ${i+1}/${batches.length} 처리 중... (${batches[i].join(', ')})`);
+      setStatus(`> 배치 ${i+1}/${batches.length} 처리 중...`);
       try {
         const res = await fetch('/api/analyze', {
           method: 'POST',
@@ -187,7 +187,7 @@ export default function Home() {
 
     const ts = new Date().toISOString();
     setAnalyzedAt(ts);
-    setStatus(`> 완료 — ${accumulated.length}개 종목 · 실적 발표일 조회 중...`);
+    setStatus(`> 완료 — ${accumulated.length}개 종목 · 실적 조회 중...`);
 
     try { localStorage.setItem(CACHE_KEY, JSON.stringify({ date: todayKey(), stocks: accumulated, market_context: firstCtx, analyzed_at: ts })); } catch {}
     await saveAnalysisToDB(accumulated, firstCtx, ts);
@@ -206,7 +206,7 @@ export default function Home() {
       try { localStorage.setItem('mt_earnings_v1', JSON.stringify({ date: todayKey(), data: eMap })); } catch {}
     } catch {}
 
-    setStatus(`> 완료 — ${accumulated.length}개 종목 | ${new Date().toLocaleTimeString('ko-KR')}`);
+    setStatus(`> 완료 — ${accumulated.length}개 | ${new Date().toLocaleTimeString('ko-KR')}`);
     setLoading(false);
   }, [watchlist, loading, allStocks, marketCtx, earningsMap]);
 
@@ -231,7 +231,7 @@ export default function Home() {
           setAllStocks(data.stocks);
           setMarketCtx(data.market_context ?? '');
           setAnalyzedAt(data.analyzed_at ?? new Date().toISOString());
-          setStatus(`> DB에서 로드 완료 — ${data.stocks.length}개 종목 | 크론 분석 결과`);
+          setStatus(`> DB 로드 완료 — ${data.stocks.length}개 종목`);
           return true;
         }
       }
@@ -265,45 +265,50 @@ export default function Home() {
 
   const holdCnt = allStocks.filter(s => s.signal === 'HOLD').length;
   const pct = progress.total > 0 ? Math.round((progress.done / progress.total) * 100) : 0;
-  const today = new Date().toLocaleDateString('ko-KR', { year:'numeric', month:'long', day:'numeric', weekday:'short' });
+  const today = new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'short' });
 
   const analyzedSet = new Set(allStocks.map(s => s.ticker));
   const newTickerCount = watchlist.filter(t => !analyzedSet.has(t)).length;
+
+  // ✅ 모바일: 버튼 텍스트 짧게
   const analyzeButtonLabel = loading
-    ? <span className="flex items-center gap-2"><span className="blink">▋</span>분석 중...</span>
+    ? <span className="flex items-center gap-1"><span className="blink">▋</span>분석 중...</span>
     : newTickerCount > 0
-      ? `+${newTickerCount}개 분석 추가 →`
+      ? `+${newTickerCount}개 분석 →`
       : allStocks.length > 0
-        ? '✓ 분석 완료 (초기화 후 재분석)'
-        : '분석 실행 →';
+        ? '✓ 완료'
+        : '분석 →';
 
   const drawerStock = drawerTicker ? allStocks.find(s => s.ticker === drawerTicker) ?? null : null;
 
   return (
     <div className="min-h-screen bg-bg-base">
-      <div className="max-w-[1400px] mx-auto px-6 py-8">
+      {/* ✅ 모바일: px 줄임 */}
+      <div className="max-w-[1400px] mx-auto px-3 sm:px-6 py-4 sm:py-8">
 
         {/* ── Header: sticky ── */}
-        <header className="mb-6 sticky top-0 z-20 bg-bg-base pt-2 pb-3">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-border mb-4">
-            <div>
-              <h1 className="text-lg font-semibold tracking-tight text-zinc-100">MOMENTUM SIGNAL</h1>
+        {/* ✅ 모바일: 여백 축소 */}
+        <header className="mb-3 sticky top-0 z-20 bg-bg-base pt-1 pb-2">
+          <div className="flex items-center justify-between gap-2 pb-3 border-b border-border mb-3">
+            <div className="min-w-0">
+              <h1 className="text-base sm:text-lg font-semibold tracking-tight text-zinc-100 whitespace-nowrap">MOMENTUM SIGNAL</h1>
               <p className="text-xs text-zinc-600 mt-0.5">{today}</p>
             </div>
-            <div className="flex gap-2">
+            {/* ✅ 버튼들 한 줄 유지 */}
+            <div className="flex gap-1.5 shrink-0">
               <button onClick={resetAll}
-                className="px-4 py-2.5 text-sm font-semibold rounded-lg border border-zinc-700 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 transition-all">
-                초기화 ↺
+                className="px-3 py-2 text-xs font-semibold rounded-lg border border-zinc-700 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 transition-all whitespace-nowrap">
+                ↺
               </button>
               {loading && (
                 <button onClick={stopAnalysis}
-                  className="px-4 py-2.5 text-sm font-semibold rounded-lg border border-red-800 text-red-400 hover:bg-red-950 transition-all">
+                  className="px-3 py-2 text-xs font-semibold rounded-lg border border-red-800 text-red-400 hover:bg-red-950 transition-all whitespace-nowrap">
                   중단
                 </button>
               )}
               {activeTab === 'scanner' && (
                 <button onClick={runAnalysis} disabled={loading || watchlist.length === 0}
-                  className={`px-6 py-2.5 text-sm font-semibold rounded-lg border transition-all
+                  className={`px-3 sm:px-5 py-2 text-xs sm:text-sm font-semibold rounded-lg border transition-all whitespace-nowrap
                     ${loading
                       ? 'bg-zinc-900 border-zinc-700 text-zinc-500 cursor-not-allowed'
                       : newTickerCount > 0
@@ -315,7 +320,8 @@ export default function Home() {
             </div>
           </div>
 
-          <div className="flex flex-wrap gap-1">
+          {/* ✅ 탭: 가로 스크롤, 줄바꿈 없음 */}
+          <div className="flex gap-1 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
             {([
               ['scanner',   '모멘텀 스캐너'],
               ['portfolio', '내 포트폴리오'],
@@ -323,7 +329,7 @@ export default function Home() {
               ['backtest',  '백테스트'],
             ] as [TabType, string][]).map(([tab, label]) => (
               <button key={tab} onClick={() => setActiveTab(tab)}
-                className={`px-3 py-2 text-sm font-medium rounded-lg border transition-colors
+                className={`px-3 py-2 text-xs sm:text-sm font-medium rounded-lg border transition-colors whitespace-nowrap shrink-0
                   ${activeTab === tab
                     ? 'bg-zinc-700 border-zinc-600 text-zinc-100'
                     : 'bg-transparent border-zinc-800 text-zinc-500 hover:text-zinc-300'}`}>
@@ -339,16 +345,16 @@ export default function Home() {
 
         {activeTab === 'scanner' && (
           <>
-            {/* ── 2x2 그리드: 항상 표시 ── */}
-            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 mb-4">
+            {/* ── 2x2 그리드 ── */}
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 mb-3">
 
-              {/* 좌상: 시장상태 */}
+              {/* 시장상태 */}
               <MarketStatus />
 
-              {/* 우상: 관심종목 */}
+              {/* 관심종목 */}
               <WatchlistManager watchlist={watchlist} onAdd={addTicker} onRemove={removeTicker} maxTickers={MAX_TICKERS} />
 
-              {/* 좌하: 시장 컨텍스트 */}
+              {/* 시장 컨텍스트 */}
               {marketCtx ? (
                 <div className="border border-zinc-800 rounded-xl bg-zinc-900/60 overflow-hidden">
                   <button onClick={() => setCtxOpen(o => !o)}
@@ -367,7 +373,7 @@ export default function Home() {
                 </div>
               ) : <div />}
 
-              {/* 우하: 엑셀 업로드 */}
+              {/* 엑셀 업로드 */}
               <div className="border border-zinc-800 rounded-xl bg-zinc-900/40 overflow-hidden">
                 <button onClick={() => setXlsxOpen(o => !o)}
                   className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-zinc-800/40 transition-colors">
@@ -376,11 +382,11 @@ export default function Home() {
                 </button>
                 {xlsxOpen && (
                   <div className="px-4 pb-4 border-t border-zinc-800/50 pt-3">
-                    <div className="flex flex-wrap items-center gap-3">
+                    <div className="flex flex-wrap items-center gap-2">
                       <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleFile} className="hidden" />
                       <button onClick={() => fileRef.current?.click()}
                         className="text-sm px-4 py-2 bg-zinc-800 border border-zinc-700 text-zinc-200 rounded-lg hover:bg-zinc-700 transition-colors">
-                        파일 선택 (.xlsx / .xls / .csv)
+                        파일 선택
                       </button>
                       <button onClick={() => { setWatchlist(DEFAULT_TICKERS); setXlsxMsg(''); }}
                         className="text-xs px-3 py-2 border border-zinc-800 text-zinc-500 rounded-lg hover:text-zinc-300 transition-colors">
@@ -398,26 +404,24 @@ export default function Home() {
 
             {/* 진행률 토스트 */}
             {loading && progress.total > 0 && (
-              <div className="fixed bottom-6 right-6 z-50 w-72 bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl p-4">
+              <div className="fixed bottom-6 right-4 z-50 w-64 bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl p-3">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-xs font-semibold text-zinc-300">분석 중...</span>
-                  <span className="text-xs font-mono text-emerald-400">{progress.done}/{progress.total} ({pct}%)</span>
+                  <span className="text-xs font-mono text-emerald-400">{pct}%</span>
                 </div>
                 <div className="h-1.5 bg-zinc-800 rounded-full overflow-hidden mb-2">
                   <div className="h-full bg-emerald-500 rounded-full transition-all duration-500" style={{ width: `${pct}%` }} />
                 </div>
-                <p className="text-[10px] text-zinc-600 font-mono truncate">{status}</p>
                 <button onClick={stopAnalysis}
-                  className="mt-2 w-full text-xs py-1.5 rounded-lg border border-red-800 text-red-400 hover:bg-red-950 transition-colors">중단</button>
+                  className="w-full text-xs py-1.5 rounded-lg border border-red-800 text-red-400 hover:bg-red-950 transition-colors">중단</button>
               </div>
             )}
 
-            {error && <div className="mb-4 p-4 bg-red-950 border border-red-800 rounded-xl text-sm text-red-300">오류: {error}</div>}
+            {error && <div className="mb-3 p-3 bg-red-950 border border-red-800 rounded-xl text-sm text-red-300">오류: {error}</div>}
 
-            {/* ── 분석 결과 영역 ── */}
+            {/* ── 분석 결과 ── */}
             {allStocks.length > 0 && (
               <>
-
                 {/* 검색 */}
                 <div className="relative mb-3">
                   <input type="text" value={search} onChange={e => setSearch(e.target.value)}
@@ -427,9 +431,10 @@ export default function Home() {
                   {search && <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300 text-xs">✕</button>}
                 </div>
 
-                {/* 필터/정렬 + 컴팩트 토글: sticky */}
-                <div className="flex flex-wrap gap-2 items-center justify-between mb-4 sticky top-[120px] z-10 bg-bg-base py-2">
-                  <div className="flex flex-wrap gap-1">
+                {/* ✅ 필터/정렬: 가로 스크롤 */}
+                <div className="mb-3 sticky top-[100px] z-10 bg-bg-base py-2">
+                  {/* 필터 */}
+                  <div className="flex gap-1 overflow-x-auto mb-2" style={{ scrollbarWidth: 'none' }}>
                     {([
                       ['ALL',         `전체(${allStocks.length})`],
                       ['STRONG_BUY',  `즉시매수(${allStocks.filter(s => s.signal==='STRONG_BUY').length})`],
@@ -439,22 +444,23 @@ export default function Home() {
                       ['STRONG_SELL', `즉시매도(${allStocks.filter(s => s.signal==='STRONG_SELL').length})`],
                     ] as [FilterType, string][]).map(([f, label]) => (
                       <button key={f} onClick={() => setFilter(f)}
-                        className={`text-xs px-2.5 py-1.5 rounded-lg border transition-colors
+                        className={`text-xs px-2.5 py-1.5 rounded-lg border transition-colors whitespace-nowrap shrink-0
                           ${filter===f ? 'bg-zinc-700 border-zinc-600 text-zinc-100' : 'bg-transparent border-zinc-800 text-zinc-500 hover:text-zinc-300'}`}>
                         {label}
                       </button>
                     ))}
                   </div>
-                  <div className="flex gap-1">
+                  {/* 정렬 */}
+                  <div className="flex gap-1 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
                     {(['SCORE','SIGNAL','TICKER'] as SortType[]).map(s => (
                       <button key={s} onClick={() => setSort(s)}
-                        className={`text-xs px-3 py-1.5 rounded-lg border transition-colors
+                        className={`text-xs px-3 py-1.5 rounded-lg border transition-colors whitespace-nowrap shrink-0
                           ${sort===s ? 'bg-zinc-700 border-zinc-600 text-zinc-100' : 'bg-transparent border-zinc-800 text-zinc-500 hover:text-zinc-300'}`}>
                         {s==='SCORE'?'점수순':s==='SIGNAL'?'신호순':'티커순'}
                       </button>
                     ))}
                     <button onClick={() => setIsCompact(c => !c)}
-                      className={`text-xs px-3 py-1.5 rounded-lg border transition-colors
+                      className={`text-xs px-3 py-1.5 rounded-lg border transition-colors whitespace-nowrap shrink-0
                         ${isCompact ? 'bg-zinc-700 border-zinc-600 text-zinc-100' : 'bg-transparent border-zinc-800 text-zinc-500 hover:text-zinc-300'}`}>
                       {isCompact ? '■ 컴팩트' : '☰ 컴팩트'}
                     </button>
@@ -497,9 +503,9 @@ export default function Home() {
           </>
         )}
 
-        <footer className="mt-10 pt-6 border-t border-border">
+        <footer className="mt-8 pt-4 border-t border-border">
           <p className="text-[10px] text-zinc-700 leading-relaxed text-center" style={{ fontFamily: 'system-ui, sans-serif' }}>
-            ⚠ Yahoo Finance 공개 데이터 기반 참고 정보이며, 금융 투자 권유가 아닙니다. 투자 판단 및 손익 책임은 본인에게 있습니다.
+            ⚠ Yahoo Finance 공개 데이터 기반 참고 정보이며, 금융 투자 권유가 아닙니다.
           </p>
         </footer>
       </div>
@@ -517,7 +523,7 @@ export default function Home() {
               <div className="flex items-center gap-2">
                 <a href={`/stock/${drawerStock.ticker}`}
                   className="text-xs px-3 py-1.5 rounded-lg border border-zinc-700 text-zinc-400 hover:bg-zinc-800 transition-colors">
-                  전체 페이지 →
+                  전체 →
                 </a>
                 <button onClick={() => setDrawerTicker(null)}
                   className="w-8 h-8 flex items-center justify-center rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200 transition-colors text-sm">
