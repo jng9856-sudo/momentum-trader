@@ -3,7 +3,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type { AnalysisResult, StockAnalysis } from '@/types/stock';
 import StockCard from '@/components/StockCard';
-import TopBarChart from '@/components/TopBarChart';
 import WatchlistManager from '@/components/WatchlistManager';
 import PortfolioTab from '@/components/PortfolioTab';
 import MarketStatus from '@/components/MarketStatus';
@@ -418,8 +417,6 @@ export default function Home() {
             {/* ── 분석 결과 영역 ── */}
             {allStocks.length > 0 && (
               <>
-                {/* Top 10 바차트 */}
-                <TopBarChart stocks={allStocks} />
 
                 {/* 검색 */}
                 <div className="relative mb-3">
