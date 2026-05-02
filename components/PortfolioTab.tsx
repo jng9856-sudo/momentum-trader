@@ -414,10 +414,10 @@ export default function PortfolioTab() {
   const [form,        setForm]        = useState({ ticker: '', avgPrice: '', shares: '' });
   const [editIdx,     setEditIdx]     = useState<number | null>(null);
   const [sort,        setSort]        = useState<SortType>('action');
-  const [showHoldings, setShowHoldings] = useState(true);
+  const [showHoldings, setShowHoldings] = useState(false);
 
   const rtMap        = usePortfolioRtPrices(results);
- const analyzeRef = useRef<(() => Promise<void>) | undefined>(undefined);
+  const analyzeRef   = useRef<() => Promise<void>>();
 
   // ── 분석 함수 ──────────────────────────────────────────────────────────────
   async function analyze() {
