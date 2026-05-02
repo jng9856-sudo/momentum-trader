@@ -417,7 +417,7 @@ export default function PortfolioTab() {
   const [showHoldings, setShowHoldings] = useState(false);
 
   const rtMap        = usePortfolioRtPrices(results);
-  const analyzeRef   = useRef<() => Promise<void>>();
+  const analyzeRef = useRef<(() => Promise<void>) | undefined>(undefined);
 
   // ── 분석 함수 ──────────────────────────────────────────────────────────────
   async function analyze() {
