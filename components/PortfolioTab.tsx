@@ -415,9 +415,10 @@ export default function PortfolioTab() {
   const [editIdx,     setEditIdx]     = useState<number | null>(null);
   const [sort,        setSort]        = useState<SortType>('action');
   const [showHoldings, setShowHoldings] = useState(false);
+  const [showForm,     setShowForm]     = useState(false);
 
   const rtMap        = usePortfolioRtPrices(results);
-  const analyzeRef = useRef<(() => Promise<void>) | undefined>(undefined);
+  const analyzeRef   = useRef<(() => Promise<void>) | undefined>(undefined);
 
   // ── 분석 함수 ──────────────────────────────────────────────────────────────
   async function analyze() {
@@ -523,6 +524,7 @@ export default function PortfolioTab() {
   function startEdit(i: number) {
     setEditIdx(i);
     setForm({ ticker: holdings[i].ticker, avgPrice: String(holdings[i].avgPrice), shares: String(holdings[i].shares) });
+    setShowForm(true);
   }
 
   // ── 총 손익 ────────────────────────────────────────────────────────────────
@@ -548,30 +550,48 @@ export default function PortfolioTab() {
   return (
     <div>
 
-      {/* 종목 추가/수정 폼 */}
-      <div className="mb-4 p-4 border border-zinc-800 rounded-xl bg-zinc-900/40">
-        <div className="text-[10px] text-zinc-600 uppercase tracking-widest mb-3">
-          {editIdx !== null ? '종목 수정' : '보유 종목 추가'}
-        </div>
-        <div className="flex flex-wrap gap-2 mb-2">
-          <input value={form.ticker} onChange={e => setForm(f => ({ ...f, ticker: e.target.value.toUpperCase() }))}
-            placeholder="티커 (예: NVDA)" maxLength={8}
-            className="bg-zinc-900 border border-zinc-700 text-zinc-100 text-sm px-3 py-2 rounded-lg w-28 placeholder:text-zinc-600 focus:outline-none focus:border-zinc-500 font-mono" />
-          <input value={form.avgPrice} onChange={e => setForm(f => ({ ...f, avgPrice: e.target.value }))}
-            placeholder="평균 매수가 ($)" type="number" min="0" step="0.01"
-            className="bg-zinc-900 border border-zinc-700 text-zinc-100 text-sm px-3 py-2 rounded-lg w-40 placeholder:text-zinc-600 focus:outline-none focus:border-zinc-500 font-mono" />
-          <input value={form.shares} onChange={e => setForm(f => ({ ...f, shares: e.target.value }))}
-            placeholder="보유 수량 (주)" type="number" min="0"
-            className="bg-zinc-900 border border-zinc-700 text-zinc-100 text-sm px-3 py-2 rounded-lg w-36 placeholder:text-zinc-600 focus:outline-none focus:border-zinc-500 font-mono" />
-          <button onClick={addHolding}
-            className="px-4 py-2 bg-emerald-700 border border-emerald-600 text-white text-sm rounded-lg hover:bg-emerald-600 transition-colors">
-            {editIdx !== null ? '수정 완료' : '+ 추가'}
-          </button>
-          {editIdx !== null && (
-            <button onClick={() => { setEditIdx(null); setForm({ ticker: '', avgPrice: '', shares: '' }); }}
-              className="px-4 py-2 border border-zinc-700 text-zinc-400 text-sm rounded-lg hover:text-zinc-200">취소</button>
-          )}
-        </div>
+      {/* 종목 추가/수정 폼 — 접기/펼치기 */}
+      <div className="mb-3 border border-zinc-800 rounded-xl bg-zinc-900/40 overflow-hidden">
+        {/* 헤더 탭 */}
+        <button
+          onClick={() => { setShowForm(o => !o); if (editIdx !== null) { setEditIdx(null); setForm({ ticker: '', avgPrice: '', shares: '' }); } }}
+          className="w-full flex items-center justify-between px-3 py-2.5 hover:bg-zinc-800/40 transition-colors">
+          <span className="text-[10px] text-zinc-500 uppercase tracking-widest">
+            {editIdx !== null ? '종목 수정' : '+ 종목 추가'}
+          </span>
+          <span className="text-zinc-600 text-xs">{showForm ? '▲' : '▼'}</span>
+        </button>
+
+        {/* 폼 — 펼쳤을 때만 */}
+        {(showForm || editIdx !== null) && (
+          <div className="px-3 pb-3 border-t border-zinc-800/60 pt-3">
+            {/* 한 줄: 티커 + 매수가 */}
+            <div className="flex gap-2 mb-2">
+              <input value={form.ticker}
+                onChange={e => setForm(f => ({ ...f, ticker: e.target.value.toUpperCase() }))}
+                placeholder="티커" maxLength={8}
+                className="bg-zinc-900 border border-zinc-700 text-zinc-100 text-xs px-2.5 py-2 rounded-lg w-20 placeholder:text-zinc-600 focus:outline-none focus:border-zinc-500 font-mono" />
+              <input value={form.avgPrice}
+                onChange={e => setForm(f => ({ ...f, avgPrice: e.target.value }))}
+                placeholder="매수가 ($)" type="number" min="0" step="0.01"
+                className="bg-zinc-900 border border-zinc-700 text-zinc-100 text-xs px-2.5 py-2 rounded-lg flex-1 placeholder:text-zinc-600 focus:outline-none focus:border-zinc-500 font-mono" />
+              <input value={form.shares}
+                onChange={e => setForm(f => ({ ...f, shares: e.target.value }))}
+                placeholder="수량" type="number" min="0"
+                className="bg-zinc-900 border border-zinc-700 text-zinc-100 text-xs px-2.5 py-2 rounded-lg w-20 placeholder:text-zinc-600 focus:outline-none focus:border-zinc-500 font-mono" />
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => { addHolding(); setShowForm(false); }}
+                className="flex-1 py-2 bg-emerald-700 border border-emerald-600 text-white text-xs font-semibold rounded-lg hover:bg-emerald-600 transition-colors">
+                {editIdx !== null ? '수정 완료' : '+ 추가'}
+              </button>
+              {editIdx !== null && (
+                <button onClick={() => { setEditIdx(null); setForm({ ticker: '', avgPrice: '', shares: '' }); setShowForm(false); }}
+                  className="px-4 py-2 border border-zinc-700 text-zinc-400 text-xs rounded-lg hover:text-zinc-200">취소</button>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* 보유 종목 칩 — 접기/펼치기 */}
