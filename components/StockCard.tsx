@@ -31,7 +31,6 @@ function rrColors(grade: string | null) {
     default:          return { text: 'text-zinc-500',    bg: 'bg-zinc-900',    border: 'border-zinc-700',    bar: '#71717a' };
   }
 }
-
 function pullbackColors(grade: string | null) {
   switch (grade) {
     case 'IDEAL': return { text: 'text-emerald-300', border: 'border-emerald-600', bg: 'bg-emerald-950/30', badge: 'bg-emerald-900 text-emerald-200 border-emerald-700' };
@@ -40,7 +39,6 @@ function pullbackColors(grade: string | null) {
     default:      return { text: 'text-zinc-400',    border: 'border-zinc-700',    bg: 'bg-zinc-900/20',    badge: 'bg-zinc-800 text-zinc-400 border-zinc-700' };
   }
 }
-
 function regimeBadgeStyle(note: string) {
   if (note.includes('🔴')) return { bg: 'bg-red-950', text: 'text-red-300', border: 'border-red-700', block: 'border-red-800 bg-red-950/30 text-red-300' };
   if (note.includes('🟠')) return { bg: 'bg-orange-950', text: 'text-orange-300', border: 'border-orange-700', block: 'border-orange-800 bg-orange-950/30 text-orange-300' };
@@ -50,24 +48,29 @@ function regimeBadgeStyle(note: string) {
 
 interface EarningsInfo { earningsDate: string | null; daysUntil: number | null; epsEstimate: number | null; revenueEstimate: string | null; lastEPS: number | null; }
 
+// ── 탭 정의 ───────────────────────────────────────────────────────────────────
+const TABS = [
+  { key: 'core',     label: '핵심지표' },
+  { key: 'pattern',  label: '패턴/RS' },
+  { key: 'strategy', label: '매매전략' },
+] as const;
+type TabKey = typeof TABS[number]['key'];
+
 export default function StockCard({ stock, highlight = false, onRemove, earnings, compact = false, forceOpen = false, onOpenDrawer }: {
   stock: StockAnalysis;
   highlight?: boolean;
   onRemove?: (ticker: string) => void;
   earnings?: EarningsInfo;
-  // ✅ 수정 5: 컴팩트 뷰 prop
   compact?: boolean;
-  // ✅ 수정 8: Drawer용 props
   forceOpen?: boolean;
   onOpenDrawer?: (ticker: string) => void;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(forceOpen);
+  const [tab, setTab] = useState<TabKey>('core');
   const [rtPrice, setRtPrice] = useState<{ price: number; changePct: number; isRealtime?: boolean } | null>(null);
 
-  useEffect(() => {
-    if (forceOpen) setOpen(true);
-  }, [forceOpen]);
+  useEffect(() => { if (forceOpen) setOpen(true); }, [forceOpen]);
 
   useEffect(() => {
     const fetchPrice = () => fetch(`/api/realtime?tickers=${stock.ticker}`)
@@ -116,39 +119,37 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
 
   const sector   = stock.sector   ?? null;
   const industry = stock.industry ?? null;
-  const ppIs      = stock.pocket_pivot          ?? false;
-  const ppDaysAgo = stock.pocket_pivot_days_ago ?? -1;
+  const ppIs       = stock.pocket_pivot          ?? false;
+  const ppDaysAgo  = stock.pocket_pivot_days_ago ?? -1;
   const ppVolRatio = stock.pocket_pivot_vol_ratio ?? 0;
-  const ppAboveMA = stock.pocket_pivot_above_ma  ?? null;
-  const ppDetail  = stock.pocket_pivot_detail    ?? '';
-  const rsLineTrend = stock.rs_line_trend      ?? 'FLAT';
+  const ppAboveMA  = stock.pocket_pivot_above_ma  ?? null;
+  const ppDetail   = stock.pocket_pivot_detail    ?? '';
+  const rsLineTrend      = stock.rs_line_trend      ?? 'FLAT';
   const rsLineDivergence = stock.rs_line_divergence ?? 'NONE';
-  const rsLine3m  = stock.rs_line_3m_change    ?? 0;
-  const rsLineDetail = stock.rs_line_detail    ?? '';
-  const rsLineNewHigh = stock.rs_line_new_high ?? false;
-  const trailInitial  = stock.trail_initial_stop ?? null;
-  const trailStop10   = stock.trail_stop_10      ?? null;
-  const trailStop20   = stock.trail_stop_20      ?? null;
-  const trailStop30   = stock.trail_stop_30      ?? null;
-  const trailMultiplier = stock.trail_multiplier ?? null;
-  const trailBreakEven  = stock.trail_break_even ?? null;
-  const splitEntry1  = stock.split_entry1   ?? null;
-  const splitEntry2  = stock.split_entry2   ?? null;
-  const splitEntry3  = stock.split_entry3   ?? null;
-  const splitExit1   = stock.split_exit1    ?? null;
-  const splitExit2   = stock.split_exit2    ?? null;
-  const splitExit3   = stock.split_exit3    ?? null;
+  const rsLine3m         = stock.rs_line_3m_change  ?? 0;
+  const rsLineDetail     = stock.rs_line_detail     ?? '';
+  const rsLineNewHigh    = stock.rs_line_new_high   ?? false;
+  const trailInitial   = stock.trail_initial_stop ?? null;
+  const trailStop10    = stock.trail_stop_10      ?? null;
+  const trailStop20    = stock.trail_stop_20      ?? null;
+  const trailStop30    = stock.trail_stop_30      ?? null;
+  const trailMultiplier = stock.trail_multiplier  ?? null;
+  const trailBreakEven  = stock.trail_break_even  ?? null;
+  const splitEntry1  = stock.split_entry1    ?? null;
+  const splitEntry2  = stock.split_entry2    ?? null;
+  const splitEntry3  = stock.split_entry3    ?? null;
+  const splitExit1   = stock.split_exit1     ?? null;
+  const splitExit2   = stock.split_exit2     ?? null;
+  const splitExit3   = stock.split_exit3     ?? null;
   const splitAvgEntry = stock.split_avg_entry ?? null;
 
-  // ✅ 수정 5: 컴팩트 뷰 렌더링
+  // ── 컴팩트 뷰 ────────────────────────────────────────────────────────────────
   if (compact) {
     return (
       <div className={`stock-card border border-zinc-800 border-l-4 ${c.border} rounded-xl bg-bg-card ${highlight ? 'ring-1 ring-emerald-500/20' : ''}`}>
         <div className="flex items-center justify-between px-4 py-2.5 gap-2 flex-wrap">
-          {/* 좌측: 티커 + 배지들 */}
           <div className="flex items-center gap-2 flex-wrap min-w-0">
-            <button
-              onClick={() => onOpenDrawer ? onOpenDrawer(stock.ticker) : router.push(`/stock/${stock.ticker}`)}
+            <button onClick={() => onOpenDrawer ? onOpenDrawer(stock.ticker) : router.push(`/stock/${stock.ticker}`)}
               className="text-sm font-bold text-zinc-100 hover:text-emerald-300 transition-colors shrink-0">
               {stock.ticker} {onOpenDrawer ? '▶' : '↗'}
             </button>
@@ -157,16 +158,13 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
                 className="w-4 h-4 flex items-center justify-center rounded-full bg-zinc-800 hover:bg-red-900 text-zinc-500 hover:text-red-400 transition-colors text-[9px] shrink-0">✕</button>
             )}
             {stock.rs_rank !== undefined && (
-              <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded border ${stock.rs_rank >= 90 ? 'bg-emerald-950 text-emerald-300 border-emerald-700' : 'bg-zinc-900 text-zinc-500 border-zinc-800'}`}>
-                RS {stock.rs_rank}%
-              </span>
+              <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded border ${stock.rs_rank >= 90 ? 'bg-emerald-950 text-emerald-300 border-emerald-700' : 'bg-zinc-900 text-zinc-500 border-zinc-800'}`}>RS {stock.rs_rank}%</span>
             )}
             {stock.breakout_52w && <span className="text-[9px] bg-emerald-900 text-emerald-200 border border-emerald-700 px-1.5 py-0.5 rounded">🚀 신고가</span>}
             {ppIs && <span className="text-[9px] bg-violet-950 text-violet-200 border border-violet-700 px-1.5 py-0.5 rounded">⚡ 포켓피벗</span>}
             {pbIs && pbGrade && <span className={`text-[9px] px-1.5 py-0.5 rounded border ${pbc.badge}`}>{pbGrade === 'IDEAL' ? '🎯 눌림목' : '📉 눌림목'}</span>}
             {rrRatio !== null && <span className={`text-[9px] px-1.5 py-0.5 rounded border font-mono ${rrc.bg} ${rrc.text} ${rrc.border}`}>R/R 1:{rrRatio}</span>}
           </div>
-          {/* 우측: 가격 + 신호 + 점수 */}
           <div className="flex items-center gap-2 shrink-0">
             {rtPrice && (
               <div className="flex items-center gap-1">
@@ -184,20 +182,15 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
     );
   }
 
-  // ✅ 기존 상세 뷰 (forceOpen이면 토글 없이 항상 펼침)
+  // ── 상세 뷰 ───────────────────────────────────────────────────────────────────
   return (
     <div className={`stock-card border border-zinc-800 border-l-4 ${c.border} rounded-xl bg-bg-card ${highlight ? 'ring-1 ring-emerald-500/20' : ''}`}>
 
       {/* ── 헤더 ── */}
-      <div
-        className={`flex items-center justify-between px-4 py-3 select-none ${!forceOpen ? 'cursor-pointer' : ''}`}
+      <div className={`flex items-center justify-between px-4 py-3 select-none ${!forceOpen ? 'cursor-pointer' : ''}`}
         onClick={() => { if (!forceOpen) setOpen(o => !o); }}>
         <div className="flex items-center gap-2 flex-wrap min-w-0">
-          <button onClick={e => {
-            e.stopPropagation();
-            if (onOpenDrawer) onOpenDrawer(stock.ticker);
-            else router.push(`/stock/${stock.ticker}`);
-          }}
+          <button onClick={e => { e.stopPropagation(); if (onOpenDrawer) onOpenDrawer(stock.ticker); else router.push(`/stock/${stock.ticker}`); }}
             className="text-base font-bold text-zinc-100 hover:text-emerald-300 transition-colors shrink-0">
             {stock.ticker} {onOpenDrawer ? '▶' : '↗'}
           </button>
@@ -220,32 +213,12 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
           {stock.breakout_52w && <span className="text-[9px] bg-emerald-900 text-emerald-200 border border-emerald-700 px-1.5 py-0.5 rounded">🚀 신고가</span>}
           {stock.weekly_is_entry && <span className="text-[9px] bg-amber-900 text-amber-200 border border-amber-700 px-1.5 py-0.5 rounded">🎯 최고타점</span>}
           {stock.pead_signal && <span className="text-[9px] bg-sky-900 text-sky-200 border border-sky-700 px-1.5 py-0.5 rounded">📈 PEAD</span>}
-          {ppIs && (
-            <span className="text-[9px] bg-violet-950 text-violet-200 border border-violet-700 px-1.5 py-0.5 rounded">
-              ⚡ 포켓피벗{ppDaysAgo === 0 ? ' 오늘' : ' 어제'}
-            </span>
-          )}
-          {rsLineDivergence === 'BULLISH' && (
-            <span className="text-[9px] bg-emerald-950 text-emerald-200 border border-emerald-600 px-1.5 py-0.5 rounded">
-              🏆 RS 강세
-            </span>
-          )}
-          {pbIs && pbGrade && (
-            <span className={`text-[9px] px-1.5 py-0.5 rounded border ${pbc.badge}`}>
-              {pbGrade === 'IDEAL' ? '🎯 눌림목' : pbGrade === 'GOOD' ? '📉 눌림목' : '△ 눌림목'}
-            </span>
-          )}
-          {rrRatio !== null && (
-            <span className={`text-[9px] px-1.5 py-0.5 rounded border font-mono ${rrc.bg} ${rrc.text} ${rrc.border}`}>R/R 1:{rrRatio}</span>
-          )}
-          {regimeNote && regimeStyle && (
-            <span className={`text-[9px] px-1.5 py-0.5 rounded border ${regimeStyle.bg} ${regimeStyle.text} ${regimeStyle.border}`}>{regimeNote.split('—')[0].trim()}</span>
-          )}
-          {macroWarning && stock.signal.includes('BUY') && (
-            <span className="text-[9px] bg-red-950 text-red-300 border border-red-700 px-1.5 py-0.5 rounded">
-              ⚡ {macroWarning.title} D-{macroWarning.daysUntil}
-            </span>
-          )}
+          {ppIs && <span className="text-[9px] bg-violet-950 text-violet-200 border border-violet-700 px-1.5 py-0.5 rounded">⚡ 포켓피벗{ppDaysAgo === 0 ? ' 오늘' : ' 어제'}</span>}
+          {rsLineDivergence === 'BULLISH' && <span className="text-[9px] bg-emerald-950 text-emerald-200 border border-emerald-600 px-1.5 py-0.5 rounded">🏆 RS 강세</span>}
+          {pbIs && pbGrade && <span className={`text-[9px] px-1.5 py-0.5 rounded border ${pbc.badge}`}>{pbGrade === 'IDEAL' ? '🎯 눌림목' : pbGrade === 'GOOD' ? '📉 눌림목' : '△ 눌림목'}</span>}
+          {rrRatio !== null && <span className={`text-[9px] px-1.5 py-0.5 rounded border font-mono ${rrc.bg} ${rrc.text} ${rrc.border}`}>R/R 1:{rrRatio}</span>}
+          {regimeNote && regimeStyle && <span className={`text-[9px] px-1.5 py-0.5 rounded border ${regimeStyle.bg} ${regimeStyle.text} ${regimeStyle.border}`}>{regimeNote.split('—')[0].trim()}</span>}
+          {macroWarning && stock.signal.includes('BUY') && <span className="text-[9px] bg-red-950 text-red-300 border border-red-700 px-1.5 py-0.5 rounded">⚡ {macroWarning.title} D-{macroWarning.daysUntil}</span>}
         </div>
         <div className="flex items-center gap-2 shrink-0 ml-2">
           <span className={`text-xs font-semibold px-2.5 py-1 rounded-md border ${c.badge}`}>{SIG_KO[stock.signal] ?? stock.signal}</span>
@@ -254,7 +227,7 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
         </div>
       </div>
 
-      {/* ── 접힌 상태 ── */}
+      {/* ── 접힌 요약 ── */}
       {!open && !forceOpen && (
         <div className="px-4 pb-3 border-t border-zinc-900 pt-2 flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-zinc-500">
           {sector && <span className="text-zinc-400 font-medium">{sector}</span>}
@@ -268,373 +241,418 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
           {rrRatio !== null && <span>R/R <span className={rrc.text}>1:{rrRatio}</span></span>}
           {stock.entry_zone && <span>진입 <span className="text-emerald-400 font-mono">{stock.entry_zone}</span></span>}
           {stock.stop_loss  && <span>손절 <span className="text-red-400 font-mono">{stock.stop_loss}</span></span>}
-          {regimeNote && regimeStyle && <span className={regimeStyle.text}>{regimeNote}</span>}
-          {macroWarning && stock.signal.includes('BUY') && (
-            <span className="text-red-400">⚡ {macroWarning.title} D-{macroWarning.daysUntil} — 진입 주의</span>
-          )}
         </div>
       )}
 
       {/* ── 펼친 상태 ── */}
       {(open || forceOpen) && (
-        <div className="px-5 pb-5 border-t border-zinc-900 pt-4">
+        <div className="border-t border-zinc-900">
 
-          {earnings && <div className="mb-3"><EarningsBadge info={earnings} /></div>}
+          {/* ── 탭 네비게이션 ── */}
+          <div className="flex border-b border-zinc-800">
+            {TABS.map(t => (
+              <button key={t.key}
+                onClick={e => { e.stopPropagation(); setTab(t.key); }}
+                className={`flex-1 py-2 text-xs font-semibold transition-colors
+                  ${tab === t.key
+                    ? 'text-zinc-100 border-b-2 border-emerald-500 bg-zinc-900/40'
+                    : 'text-zinc-500 hover:text-zinc-300'}`}>
+                {t.label}
+              </button>
+            ))}
+          </div>
 
-          {regimeNote && regimeStyle && (
-            <div className={`mb-4 p-3 rounded-lg border ${regimeStyle.block}`}>
-              <span className="text-[10px] uppercase tracking-widest opacity-70">시장 국면 필터</span>
-              <p className="text-xs font-semibold mt-0.5" style={{ fontFamily: 'system-ui' }}>{regimeNote}</p>
-            </div>
-          )}
+          <div className="px-4 pb-5 pt-4">
 
-          {macroWarning && stock.signal.includes('BUY') && (
-            <div className="mb-4 p-3 rounded-lg border border-red-800 bg-red-950/20">
-              <div className="flex items-center gap-2 mb-1">
-                <span className="text-[10px] text-zinc-500 uppercase tracking-widest">매크로 이벤트 경고</span>
-                <span className="text-[9px] bg-red-900 text-red-300 border border-red-700 px-1.5 py-0.5 rounded">D-{macroWarning.daysUntil}</span>
-              </div>
-              <p className="text-xs text-red-300 font-semibold" style={{ fontFamily: 'system-ui' }}>
-                ⚡ {macroWarning.title} ({macroWarning.date}) — 이벤트 전 신규 진입 자제 권고
-              </p>
-              <p className="text-[10px] text-zinc-500 mt-1" style={{ fontFamily: 'system-ui' }}>
-                FOMC/CPI/NFP 등 주요 지표 발표 전후 변동성이 크게 확대될 수 있습니다. 기존 포지션 손절 라인 재확인 권장.
-              </p>
-            </div>
-          )}
+            {/* ════════════════════════════════════════
+                탭 1: 핵심지표
+            ════════════════════════════════════════ */}
+            {tab === 'core' && (
+              <div>
+                {earnings && <div className="mb-3"><EarningsBadge info={earnings} /></div>}
 
-          {pbIs && (
-            <div className={`mb-4 p-3 rounded-lg border ${pbc.border} ${pbc.bg}`}>
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] text-zinc-500 uppercase tracking-widest">눌림목 분석</span>
-                  <span className={`text-[9px] px-1.5 py-0.5 rounded border ${pbc.badge}`}>
-                    {pbGrade === 'IDEAL' ? '🎯 이상적' : pbGrade === 'GOOD' ? '✓ 양호' : '△ 약함'}
-                  </span>
-                </div>
-                <span className={`text-xs font-bold font-mono ${pbc.text}`}>고점 대비 {Math.abs(pbPct)}% 조정</span>
-              </div>
-              <div className="mb-2">
-                <div className="flex justify-between text-[9px] text-zinc-600 mb-1">
-                  <span>얕음 (-3%)</span>
-                  <span className="text-emerald-700">적정 (-5~-10%)</span>
-                  <span>깊음 (-20%)</span>
-                </div>
-                <div className="relative h-1.5 bg-zinc-800 rounded-full overflow-hidden">
-                  <div className="absolute h-full bg-emerald-900/50 rounded-full" style={{ left: '15%', width: '40%' }} />
-                  <div className="absolute top-1/2 -translate-y-1/2 w-2 h-2 rounded-full border-2 border-zinc-100 bg-zinc-900 -translate-x-1/2"
-                    style={{ left: `${Math.min(99, Math.abs(pbPct) / 20 * 100)}%` }} />
-                </div>
-              </div>
-              <div className="grid grid-cols-3 gap-2 text-[10px] mb-2">
-                <div className="text-center">
-                  <div className="text-zinc-600 mb-0.5">근접 지지선</div>
-                  <div className={`font-semibold ${pbc.text}`}>{pbSupport ?? '없음'}</div>
-                  {pbSupportPrice && <div className="text-zinc-600 font-mono">${pbSupportPrice}</div>}
-                </div>
-                <div className="text-center">
-                  <div className="text-zinc-600 mb-0.5">지지까지 거리</div>
-                  <div className={`font-semibold ${pbDistToSupport <= 2 ? 'text-emerald-400' : 'text-zinc-400'}`}>
-                    {pbDistToSupport > 0 ? `+${pbDistToSupport}%` : '도달'}
+                {/* 시장 국면 / 매크로 경고 */}
+                {regimeNote && regimeStyle && (
+                  <div className={`mb-3 p-3 rounded-lg border ${regimeStyle.block}`}>
+                    <span className="text-[10px] uppercase tracking-widest opacity-70">시장 국면 필터</span>
+                    <p className="text-xs font-semibold mt-0.5" style={{ fontFamily: 'system-ui' }}>{regimeNote}</p>
                   </div>
-                </div>
-                <div className="text-center">
-                  <div className="text-zinc-600 mb-0.5">기준 고점</div>
-                  <div className="text-zinc-300 font-mono">${pbHigh}</div>
-                </div>
-              </div>
-              <div className="flex flex-wrap gap-x-3 gap-y-1 text-[9px]">
-                <span className={pbVolTrend === 'DECLINING' ? 'text-emerald-400' : pbVolTrend === 'RISING' ? 'text-red-400' : 'text-zinc-500'}>
-                  {pbVolTrend === 'DECLINING' ? '✓ 거래량 감소' : pbVolTrend === 'RISING' ? '✕ 거래량 증가' : '— 거래량 보합'}
-                </span>
-                <span className={pbRsiCooled ? 'text-emerald-400' : 'text-zinc-500'}>{pbRsiCooled ? '✓ RSI 냉각' : '— RSI 미냉각'}</span>
-                <span className={pbSupport ? 'text-emerald-400' : 'text-zinc-500'}>{pbSupport ? `✓ MA 지지 확인 (${pbSupport})` : '— MA 지지 없음'}</span>
-              </div>
-              <p className="text-[10px] text-zinc-500 mt-2" style={{ fontFamily: 'system-ui' }}>{pbDetail}</p>
-            </div>
-          )}
-
-          {rrRatio !== null && (
-            <div className={`mb-4 p-3 rounded-lg border ${rrc.border} ${rrc.bg}/20`}>
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] text-zinc-500 uppercase tracking-widest">리스크 / 리워드 (R/R)</span>
-                  <span className={`text-[9px] px-1.5 py-0.5 rounded border ${rrc.bg} ${rrc.text} ${rrc.border}`}>
-                    {rrGrade === 'EXCELLENT' ? '최상 🏆' : rrGrade === 'GOOD' ? '양호 ✓' : rrGrade === 'FAIR' ? '보통' : '불리 ✗'}
-                  </span>
-                </div>
-                <span className={`text-sm font-bold font-mono ${rrc.text}`}>1 : {rrRatio}</span>
-              </div>
-              <div className="h-1.5 bg-zinc-800 rounded-full overflow-hidden mb-2">
-                <div className="h-full rounded-full transition-all" style={{ width: `${rrBarWidth}%`, background: rrc.bar }} />
-              </div>
-              <div className="grid grid-cols-3 gap-2 text-[10px]">
-                <div className="text-center"><div className="text-zinc-600 mb-0.5">리스크</div><div className="text-red-400 font-mono font-semibold">${rrRisk}</div></div>
-                <div className="text-center"><div className="text-zinc-600 mb-0.5">비율</div><div className={`font-mono font-semibold ${rrc.text}`}>{rrLabel.split('(')[0].trim()}</div></div>
-                <div className="text-center"><div className="text-zinc-600 mb-0.5">리워드</div><div className="text-emerald-400 font-mono font-semibold">${rrReward}</div></div>
-              </div>
-              <div className="mt-2 flex gap-3 text-[9px] text-zinc-600 justify-center">
-                <span className="text-red-700">1:1↓ 불리</span><span className="text-amber-700">1:2 최소</span><span className="text-sky-700">1:3 양호</span><span className="text-emerald-700">1:5 최상</span>
-              </div>
-            </div>
-          )}
-
-          <div className="mb-3">
-            <div className="flex justify-between text-xs text-zinc-500 mb-1.5"><span>모멘텀 강도</span><span className="font-semibold" style={{ color: c.bar }}>{score} / 10</span></div>
-            <div className="h-1.5 bg-zinc-800 rounded-full overflow-hidden"><div className="h-full rounded-full" style={{ width: `${score * 10}%`, background: c.bar }} /></div>
-          </div>
-
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
-            <Metric label="지수 RS"><span className={`text-sm font-medium ${rsClass(stock.rs_vs_index)}`}>{RS_KO[stock.rs_vs_index]}</span></Metric>
-            <Metric label="섹터 RS"><span className={`text-sm font-medium ${rsClass(stock.rs_vs_sector)}`}>{RS_KO[stock.rs_vs_sector]}</span></Metric>
-            <Metric label="이동평균"><span className={`text-sm font-medium ${stock.ma50_status === 'ABOVE' ? 'text-emerald-400' : stock.ma50_status === 'BELOW' ? 'text-red-400' : 'text-zinc-400'}`}>{MA_KO[stock.ma50_status]}</span></Metric>
-            <Metric label="패턴"><span className="text-sm font-medium text-zinc-300">{PT_KO[stock.pattern]}</span></Metric>
-          </div>
-
-          {(sector || industry) && (
-            <div className="flex items-center gap-2 mb-4 px-3 py-2 rounded-lg border border-zinc-800 bg-zinc-900/30">
-              <span className="text-[10px] text-zinc-600 uppercase tracking-widest shrink-0">섹터</span>
-              {sector && <span className="text-xs text-zinc-300 font-medium">{sector}</span>}
-              {sector && industry && <span className="text-zinc-700">·</span>}
-              {industry && <span className="text-[11px] text-zinc-500">{industry}</span>}
-            </div>
-          )}
-
-          <div className="grid grid-cols-5 gap-2 mb-4 p-3 bg-zinc-900/50 rounded-lg">
-            <IndBox label="RSI(14)" val={stock.rsi} color={stock.rsi > 78 ? 'text-red-400' : stock.rsi < 35 ? 'text-sky-400' : 'text-emerald-400'} sub={stock.rsi > 78 ? '과열' : stock.rsi < 35 ? '침체' : '정상'} />
-            <IndBox label="MACD" val={stock.macd_histogram} color={stock.macd_histogram > 0 ? 'text-emerald-400' : 'text-red-400'} sub={stock.macd_histogram > 0 ? '상승' : '하락'} />
-            <IndBox label="거래량" val={`${stock.volume_ratio}x`} color={stock.volume_ratio > 1.5 ? 'text-emerald-400' : stock.volume_ratio < 0.7 ? 'text-red-400' : 'text-zinc-400'} sub={stock.volume_ratio > 1.5 ? '강함' : '보통'} />
-            <IndBox label="BB위치" val={`${stock.bb_position}%`} color={stock.bb_position > 80 ? 'text-amber-400' : 'text-zinc-400'} sub={stock.bb_position > 80 ? '상단' : '중간'} />
-            <IndBox label="ATR%" val={`${stock.atr_pct}%`} color="text-zinc-400" sub="변동성" />
-          </div>
-
-          <div className="mb-4">
-            <div className="flex justify-between text-[10px] text-zinc-600 mb-1"><span>RSI</span><span className="flex gap-3"><span className="text-sky-700">침체30</span><span className="text-emerald-700">정상45–75</span><span className="text-red-700">과열80</span></span></div>
-            <div className="relative h-1.5 bg-zinc-800 rounded-full">
-              <div className="absolute h-full bg-sky-900/60 rounded-l-full" style={{ width: '30%' }} />
-              <div className="absolute h-full bg-emerald-900/40" style={{ left: '45%', width: '30%' }} />
-              <div className="absolute h-full bg-red-900/60 rounded-r-full" style={{ left: '80%', width: '20%' }} />
-              <div className="absolute top-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full border-2 border-zinc-100 bg-zinc-900 -translate-x-1/2 transition-all" style={{ left: `${Math.min(99, stock.rsi)}%` }} />
-            </div>
-          </div>
-
-          {stock.breakout_52w && (
-            <div className="mb-3 p-3 rounded-lg border border-emerald-600 bg-emerald-950/30">
-              <div className="flex items-center gap-2 mb-1">
-                <span className="text-xs font-semibold text-emerald-300">{stock.breakout_52w_day === 0 ? '🚀 오늘 52주 신고가 돌파!' : '어제 52주 신고가 돌파 — 추격 기회'}</span>
-                {stock.breakout_52w_vol && <span className="text-[9px] bg-emerald-900 text-emerald-200 border border-emerald-700 px-1.5 py-0.5 rounded">거래량 ✓</span>}
-              </div>
-              <p className="text-[10px] text-zinc-400" style={{ fontFamily: 'system-ui' }}>{stock.breakout_52w_detail}</p>
-            </div>
-          )}
-
-          {stock.pead_signal && (
-            <div className="mb-3 p-3 rounded-lg border border-sky-800 bg-sky-950/20">
-              <div className="flex items-center gap-2 mb-1">
-                <span className="text-[10px] text-zinc-500 uppercase tracking-widest">PEAD 어닝 드리프트</span>
-                <span className="text-[9px] bg-sky-900 text-sky-300 border border-sky-700 px-1.5 py-0.5 rounded">서프라이즈 +{stock.pead_surprise_pct}%</span>
-              </div>
-              <p className="text-[10px] text-zinc-500" style={{ fontFamily: 'system-ui' }}>{stock.pead_detail}</p>
-            </div>
-          )}
-
-          {stock.sector_warning && (
-            <div className="mb-3 p-2 rounded-lg border border-amber-800 bg-amber-950/20">
-              <p className="text-[10px] text-amber-400" style={{ fontFamily: 'system-ui' }}>⚠ {stock.sector_warning}</p>
-            </div>
-          )}
-
-          {stock.weekly_trend && (
-            <div className={`mb-3 p-3 rounded-lg border ${stock.weekly_is_entry ? 'border-emerald-600 bg-emerald-950/30' : stock.weekly_trend === 'UPTREND' ? 'border-emerald-900 bg-emerald-950/10' : stock.weekly_trend === 'DOWNTREND' ? 'border-red-900 bg-red-950/10' : 'border-zinc-800 bg-zinc-900/20'}`}>
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] text-zinc-500 uppercase tracking-widest">주봉 멀티 타임프레임</span>
-                  {stock.weekly_is_entry && <span className="text-[9px] bg-emerald-800 text-emerald-200 border border-emerald-600 px-1.5 py-0.5 rounded font-semibold">🎯 최고 타점</span>}
-                </div>
-                <span className={`text-xs font-semibold ${stock.weekly_trend === 'UPTREND' ? 'text-emerald-400' : stock.weekly_trend === 'DOWNTREND' ? 'text-red-400' : 'text-zinc-400'}`}>
-                  {stock.weekly_align_score ?? '-'}/10 {stock.weekly_trend === 'UPTREND' ? '▲ 주봉 상승' : stock.weekly_trend === 'DOWNTREND' ? '▼ 주봉 하락' : '— 횡보'}
-                </span>
-              </div>
-              <div className="grid grid-cols-3 gap-2 text-[10px] text-zinc-500">
-                <span>MA 정렬 <span className={stock.weekly_above_mas ? 'text-emerald-400' : 'text-red-400'}>{stock.weekly_above_mas ? '✓ 완성' : '✕ 미완성'}</span></span>
-                <span>주봉 RSI <span className="text-zinc-300">{stock.weekly_rsi ?? '-'}</span></span>
-                <span>눌림폭 <span className={stock.weekly_pullback && stock.weekly_pullback >= -8 && stock.weekly_pullback <= -2 ? 'text-emerald-400' : 'text-zinc-400'}>{stock.weekly_pullback ? `${stock.weekly_pullback}%` : '-'}</span></span>
-              </div>
-            </div>
-          )}
-
-          {stock.obv_trend !== undefined && (
-            <div className={`mb-3 p-3 rounded-lg border ${stock.obv_divergence ? 'border-red-800 bg-red-950/20' : stock.obv_trend === 'UP' ? 'border-emerald-900 bg-emerald-950/10' : 'border-zinc-800 bg-zinc-900/30'}`}>
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-[10px] text-zinc-500 uppercase tracking-widest">OBV 기관 매집 분석</span>
-                <span className={`text-xs font-semibold font-mono ${stock.obv_trend === 'UP' ? 'text-emerald-400' : stock.obv_trend === 'DOWN' ? 'text-red-400' : 'text-zinc-400'}`}>
-                  {stock.obv_trend === 'UP' ? '▲ 매집' : stock.obv_trend === 'DOWN' ? '▼ 분산' : '— 중립'}
-                </span>
-              </div>
-              <p className="text-[10px] text-zinc-500" style={{ fontFamily: 'system-ui' }}>{stock.obv_detail ?? ''}</p>
-            </div>
-          )}
-
-          {stock.short_pct !== undefined && stock.short_pct !== null && (
-            <div className={`mb-3 p-3 rounded-lg border ${stock.short_squeeze === 'HIGH' ? 'border-amber-800 bg-amber-950/20' : 'border-zinc-800 bg-zinc-900/20'}`}>
-              <div className="flex items-center justify-between mb-1">
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] text-zinc-500 uppercase tracking-widest">공매도 현황</span>
-                  {stock.short_squeeze === 'HIGH' && <span className="text-[9px] bg-amber-900 text-amber-300 border border-amber-700 px-1.5 py-0.5 rounded">숏스퀴즈 주의 ⚡</span>}
-                </div>
-                <span className={`text-xs font-mono ${stock.short_pct > 20 ? 'text-red-400' : stock.short_pct > 10 ? 'text-amber-400' : 'text-zinc-400'}`}>
-                  {stock.short_pct}% {stock.short_ratio && `/ ${stock.short_ratio}일`}
-                </span>
-              </div>
-              <p className="text-[10px] text-zinc-500" style={{ fontFamily: 'system-ui' }}>{stock.short_detail ?? ''}</p>
-            </div>
-          )}
-
-          {ppIs && (
-            <div className="mb-3 p-3 rounded-lg border border-violet-800 bg-violet-950/20">
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] text-zinc-500 uppercase tracking-widest">포켓 피벗</span>
-                  <span className="text-[9px] bg-violet-900 text-violet-200 border border-violet-700 px-1.5 py-0.5 rounded">
-                    {ppDaysAgo === 0 ? '오늘 감지' : '어제 감지'}
-                  </span>
-                  {ppAboveMA && <span className="text-[9px] text-violet-400">{ppAboveMA} 위</span>}
-                </div>
-                <span className="text-xs font-bold font-mono text-violet-300">거래량 {ppVolRatio}x</span>
-              </div>
-              <p className="text-[10px] text-zinc-500" style={{ fontFamily: 'system-ui' }}>{ppDetail}</p>
-              <p className="text-[10px] text-zinc-600 mt-1" style={{ fontFamily: 'system-ui' }}>Minervini 기법 — 하락일 최대 거래량 초과 + MA 위 = 기관 선취매 신호</p>
-            </div>
-          )}
-
-          {stock.rs_line !== undefined && (
-            <div className={`mb-3 p-3 rounded-lg border ${rsLineDivergence === 'BULLISH' ? 'border-emerald-600 bg-emerald-950/20' : rsLineDivergence === 'BEARISH' ? 'border-red-800 bg-red-950/20' : rsLineTrend === 'UP' ? 'border-emerald-900 bg-emerald-950/10' : 'border-zinc-800 bg-zinc-900/20'}`}>
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] text-zinc-500 uppercase tracking-widest">RS Line (상대강도선)</span>
-                  {rsLineDivergence === 'BULLISH' && <span className="text-[9px] bg-emerald-900 text-emerald-200 border border-emerald-600 px-1.5 py-0.5 rounded font-semibold">🏆 강세 다이버전스</span>}
-                  {rsLineDivergence === 'BEARISH' && <span className="text-[9px] bg-red-900 text-red-300 border border-red-700 px-1.5 py-0.5 rounded">⚠ 약세 다이버전스</span>}
-                </div>
-                <span className={`text-xs font-semibold font-mono ${rsLineTrend === 'UP' ? 'text-emerald-400' : rsLineTrend === 'DOWN' ? 'text-red-400' : 'text-zinc-400'}`}>
-                  3개월 {rsLine3m > 0 ? '+' : ''}{rsLine3m}%{rsLineTrend === 'UP' ? ' ▲' : rsLineTrend === 'DOWN' ? ' ▼' : ' —'}
-                </span>
-              </div>
-              <div className="flex gap-4 text-[10px] mb-2">
-                <span className={rsLineNewHigh ? 'text-emerald-400' : 'text-zinc-500'}>RS Line {rsLineNewHigh ? '✓ 신고점' : '— 신고점 아님'}</span>
-                <span className={stock.rs_line_spy_new_low ? 'text-amber-400' : 'text-zinc-500'}>SPY {stock.rs_line_spy_new_low ? '⚠ 신저점' : '— 정상'}</span>
-              </div>
-              <p className="text-[10px] text-zinc-500" style={{ fontFamily: 'system-ui' }}>{rsLineDetail}</p>
-            </div>
-          )}
-
-          {stock.vcp_score !== undefined && (
-            <div className={`mb-3 p-3 rounded-lg border ${stock.vcp_is_vcp ? 'border-emerald-800 bg-emerald-950/20' : 'border-zinc-800 bg-zinc-900/30'}`}>
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] text-zinc-500 uppercase tracking-widest">VCP 타점 분석</span>
-                  {stock.vcp_is_vcp && <span className="text-[9px] bg-emerald-900 text-emerald-300 border border-emerald-700 px-1.5 py-0.5 rounded">VCP 감지</span>}
-                  {stock.pivot_broken && stock.pivot_within_chase && <span className="text-[9px] bg-amber-900 text-amber-300 border border-amber-700 px-1.5 py-0.5 rounded">피봇 돌파 ✓</span>}
-                </div>
-                <span className={`text-sm font-semibold font-mono ${(stock.vcp_score ?? 0) >= 60 ? 'text-emerald-400' : (stock.vcp_score ?? 0) >= 40 ? 'text-amber-400' : 'text-zinc-500'}`}>{stock.vcp_score ?? 0}점</span>
-              </div>
-              <div className="h-1 bg-zinc-800 rounded-full overflow-hidden mb-2">
-                <div className="h-full rounded-full" style={{ width: `${stock.vcp_score ?? 0}%`, background: (stock.vcp_score ?? 0) >= 60 ? '#10b981' : (stock.vcp_score ?? 0) >= 40 ? '#f59e0b' : '#52525b' }} />
-              </div>
-              <div className="grid grid-cols-3 gap-2 text-[10px] text-zinc-500 mb-1">
-                <span>수렴 <span className="text-zinc-300">{stock.vcp_contraction_count ?? 0}회</span></span>
-                <span>베이스 <span className="text-zinc-300">{stock.vcp_base_weeks ?? 0}주</span></span>
-                <span>조정폭 <span className="text-zinc-300">{stock.vcp_last_pullback ?? 0}%</span></span>
-                <span>저거래량 <span className={stock.vcp_lowest_vol ? 'text-emerald-400' : 'text-red-400'}>{stock.vcp_lowest_vol ? '✓ 확인' : '✕ 미확인'}</span></span>
-                <span>피봇가 <span className="text-zinc-300">{stock.vcp_pivot ? `$${stock.vcp_pivot}` : '-'}</span></span>
-                <span>피봇거리 <span className={stock.pivot_within_chase ? 'text-emerald-400' : 'text-zinc-400'}>{stock.pivot_broken ? `+${stock.pivot_dist}%` : '미돌파'}</span></span>
-              </div>
-              <p className="text-[10px] text-zinc-600" style={{ fontFamily: 'system-ui' }}>{stock.vcp_detail ?? ''}</p>
-            </div>
-          )}
-
-          <p className="text-xs text-zinc-400 leading-relaxed mb-3" style={{ fontFamily: 'system-ui, sans-serif' }}>{stock.summary}</p>
-
-          {stock.caution && (
-            <div className="text-xs text-amber-400 bg-amber-950/30 border-l-2 border-amber-600 pl-3 py-2 rounded-r-md mb-3" style={{ fontFamily: 'system-ui' }}>⚡ {stock.caution}</div>
-          )}
-
-          {splitEntry1 && (
-            <div className="mb-4 p-3 rounded-lg border border-zinc-700 bg-zinc-900/40">
-              <div className="text-[10px] text-zinc-500 uppercase tracking-widest mb-3">분할 매수 / 매도 전략</div>
-              {splitAvgEntry && (
-                <div className="text-center mb-3 p-2 bg-zinc-800/50 rounded-lg">
-                  <span className="text-[10px] text-zinc-500">예상 평균 진입가</span>
-                  <span className="text-sm font-bold text-emerald-300 font-mono ml-2">${splitAvgEntry}</span>
-                </div>
-              )}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <div className="text-[10px] text-emerald-500 uppercase tracking-widest mb-2">분할 매수</div>
-                  <div className="flex flex-col gap-1.5">
-                    {[splitEntry1, splitEntry2, splitEntry3].map((e, i) => e && (
-                      <div key={i} className="flex items-center justify-between px-2 py-1.5 rounded border border-emerald-900/50 bg-emerald-950/20">
-                        <div>
-                          <span className="text-[9px] text-emerald-600 font-semibold">{i+1}차 {e.ratio}%</span>
-                          <p className="text-[9px] text-zinc-600 mt-0.5" style={{ fontFamily: 'system-ui' }}>{e.condition}</p>
-                        </div>
-                        <span className="text-xs font-bold font-mono text-emerald-300">{e.price}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-                <div>
-                  <div className="text-[10px] text-red-500 uppercase tracking-widest mb-2">분할 익절</div>
-                  <div className="flex flex-col gap-1.5">
-                    {[splitExit1, splitExit2, splitExit3].map((e, i) => e && (
-                      <div key={i} className="flex items-center justify-between px-2 py-1.5 rounded border border-red-900/50 bg-red-950/20">
-                        <div>
-                          <span className="text-[9px] text-red-500 font-semibold">{i+1}차 {e.ratio}%</span>
-                          <p className="text-[9px] text-zinc-600 mt-0.5">{e.gain}</p>
-                        </div>
-                        <span className="text-xs font-bold font-mono text-red-300">{e.price}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {trailInitial && (
-            <div className="mb-4 p-3 rounded-lg border border-amber-800/60 bg-amber-950/10">
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] text-zinc-500 uppercase tracking-widest">트레일링 스탑</span>
-                  <span className="text-[9px] bg-amber-950 text-amber-300 border border-amber-700 px-1.5 py-0.5 rounded">ATR × {trailMultiplier}</span>
-                </div>
-                <span className="text-[10px] text-zinc-500">주가 상승 시 자동 손절 상향</span>
-              </div>
-              <div className="flex flex-col gap-2 mb-2">
-                {[
-                  { label: '진입 시',   price: trailInitial,  pct: 0,   color: 'text-zinc-400',    bar: 'bg-zinc-700' },
-                  { label: '본전 손절', price: trailBreakEven, pct: 0.5, color: 'text-sky-400',     bar: 'bg-sky-900' },
-                  { label: '+10% 시',  price: trailStop10,   pct: 33,  color: 'text-amber-400',   bar: 'bg-amber-900' },
-                  { label: '+20% 시',  price: trailStop20,   pct: 66,  color: 'text-emerald-400', bar: 'bg-emerald-900' },
-                  { label: '+30% 시',  price: trailStop30,   pct: 100, color: 'text-emerald-300', bar: 'bg-emerald-800' },
-                ].map((item, i) => item.price && (
-                  <div key={i} className="flex items-center gap-2">
-                    <span className="text-[9px] text-zinc-600 w-16 shrink-0">{item.label}</span>
-                    <div className="flex-1 h-1 bg-zinc-800 rounded-full overflow-hidden">
-                      <div className={`h-full rounded-full ${item.bar}`} style={{ width: `${Math.min(100, 20 + item.pct * 0.8)}%` }} />
+                )}
+                {macroWarning && stock.signal.includes('BUY') && (
+                  <div className="mb-3 p-3 rounded-lg border border-red-800 bg-red-950/20">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-[10px] text-zinc-500 uppercase tracking-widest">매크로 이벤트 경고</span>
+                      <span className="text-[9px] bg-red-900 text-red-300 border border-red-700 px-1.5 py-0.5 rounded">D-{macroWarning.daysUntil}</span>
                     </div>
-                    <span className={`text-[10px] font-mono font-semibold ${item.color} w-16 text-right shrink-0`}>${item.price}</span>
+                    <p className="text-xs text-red-300 font-semibold" style={{ fontFamily: 'system-ui' }}>⚡ {macroWarning.title} ({macroWarning.date}) — 이벤트 전 신규 진입 자제</p>
                   </div>
-                ))}
-              </div>
-              <p className="text-[10px] text-zinc-600" style={{ fontFamily: 'system-ui' }}>주가가 오를수록 손절선도 상향 — 수익 반납 방지</p>
-            </div>
-          )}
+                )}
 
-          <div className="flex flex-wrap gap-2">
-            {stock.entry_zone    && <LvPill label="진입" val={stock.entry_zone}       c="text-emerald-300 border-emerald-800 bg-emerald-950/40" />}
-            {stock.key_support   && <LvPill label="지지" val={stock.key_support}      c="text-sky-300 border-sky-800 bg-sky-950/40" />}
-            {stock.key_resistance && <LvPill label="저항" val={stock.key_resistance}  c="text-purple-300 border-purple-800 bg-purple-950/40" />}
-            {stock.stop_loss     && <LvPill label="손절" val={stock.stop_loss}        c="text-red-300 border-red-800 bg-red-950/40" />}
+                {/* 모멘텀 강도 */}
+                <div className="mb-3">
+                  <div className="flex justify-between text-xs text-zinc-500 mb-1.5"><span>모멘텀 강도</span><span className="font-semibold" style={{ color: c.bar }}>{score} / 10</span></div>
+                  <div className="h-1.5 bg-zinc-800 rounded-full overflow-hidden"><div className="h-full rounded-full" style={{ width: `${score * 10}%`, background: c.bar }} /></div>
+                </div>
+
+                {/* RS / MA / 패턴 그리드 */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
+                  <Metric label="지수 RS"><span className={`text-sm font-medium ${rsClass(stock.rs_vs_index)}`}>{RS_KO[stock.rs_vs_index]}</span></Metric>
+                  <Metric label="섹터 RS"><span className={`text-sm font-medium ${rsClass(stock.rs_vs_sector)}`}>{RS_KO[stock.rs_vs_sector]}</span></Metric>
+                  <Metric label="이동평균"><span className={`text-sm font-medium ${stock.ma50_status === 'ABOVE' ? 'text-emerald-400' : stock.ma50_status === 'BELOW' ? 'text-red-400' : 'text-zinc-400'}`}>{MA_KO[stock.ma50_status]}</span></Metric>
+                  <Metric label="패턴"><span className="text-sm font-medium text-zinc-300">{PT_KO[stock.pattern]}</span></Metric>
+                </div>
+
+                {/* 섹터 */}
+                {(sector || industry) && (
+                  <div className="flex items-center gap-2 mb-3 px-3 py-2 rounded-lg border border-zinc-800 bg-zinc-900/30">
+                    <span className="text-[10px] text-zinc-600 uppercase tracking-widest shrink-0">섹터</span>
+                    {sector && <span className="text-xs text-zinc-300 font-medium">{sector}</span>}
+                    {sector && industry && <span className="text-zinc-700">·</span>}
+                    {industry && <span className="text-[11px] text-zinc-500">{industry}</span>}
+                  </div>
+                )}
+
+                {/* 지표 박스 */}
+                <div className="grid grid-cols-5 gap-2 mb-3 p-3 bg-zinc-900/50 rounded-lg">
+                  <IndBox label="RSI(14)" val={stock.rsi}              color={stock.rsi > 78 ? 'text-red-400' : stock.rsi < 35 ? 'text-sky-400' : 'text-emerald-400'} sub={stock.rsi > 78 ? '과열' : stock.rsi < 35 ? '침체' : '정상'} />
+                  <IndBox label="MACD"    val={stock.macd_histogram}   color={stock.macd_histogram > 0 ? 'text-emerald-400' : 'text-red-400'} sub={stock.macd_histogram > 0 ? '상승' : '하락'} />
+                  <IndBox label="거래량"  val={`${stock.volume_ratio}x`} color={stock.volume_ratio > 1.5 ? 'text-emerald-400' : stock.volume_ratio < 0.7 ? 'text-red-400' : 'text-zinc-400'} sub={stock.volume_ratio > 1.5 ? '강함' : '보통'} />
+                  <IndBox label="BB위치"  val={`${stock.bb_position}%`} color={stock.bb_position > 80 ? 'text-amber-400' : 'text-zinc-400'} sub={stock.bb_position > 80 ? '상단' : '중간'} />
+                  <IndBox label="ATR%"    val={`${stock.atr_pct}%`}    color="text-zinc-400" sub="변동성" />
+                </div>
+
+                {/* RSI 바 */}
+                <div className="mb-3">
+                  <div className="flex justify-between text-[10px] text-zinc-600 mb-1">
+                    <span>RSI</span>
+                    <span className="flex gap-3"><span className="text-sky-700">침체30</span><span className="text-emerald-700">정상45–75</span><span className="text-red-700">과열80</span></span>
+                  </div>
+                  <div className="relative h-1.5 bg-zinc-800 rounded-full">
+                    <div className="absolute h-full bg-sky-900/60 rounded-l-full" style={{ width: '30%' }} />
+                    <div className="absolute h-full bg-emerald-900/40" style={{ left: '45%', width: '30%' }} />
+                    <div className="absolute h-full bg-red-900/60 rounded-r-full" style={{ left: '80%', width: '20%' }} />
+                    <div className="absolute top-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full border-2 border-zinc-100 bg-zinc-900 -translate-x-1/2 transition-all" style={{ left: `${Math.min(99, stock.rsi)}%` }} />
+                  </div>
+                </div>
+
+                {/* 눌림목 */}
+                {pbIs && (
+                  <div className={`mb-3 p-3 rounded-lg border ${pbc.border} ${pbc.bg}`}>
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] text-zinc-500 uppercase tracking-widest">눌림목 분석</span>
+                        <span className={`text-[9px] px-1.5 py-0.5 rounded border ${pbc.badge}`}>{pbGrade === 'IDEAL' ? '🎯 이상적' : pbGrade === 'GOOD' ? '✓ 양호' : '△ 약함'}</span>
+                      </div>
+                      <span className={`text-xs font-bold font-mono ${pbc.text}`}>고점 대비 {Math.abs(pbPct)}% 조정</span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 text-[10px] mb-2">
+                      <div className="text-center"><div className="text-zinc-600 mb-0.5">근접 지지선</div><div className={`font-semibold ${pbc.text}`}>{pbSupport ?? '없음'}</div>{pbSupportPrice && <div className="text-zinc-600 font-mono">${pbSupportPrice}</div>}</div>
+                      <div className="text-center"><div className="text-zinc-600 mb-0.5">지지까지 거리</div><div className={`font-semibold ${pbDistToSupport <= 2 ? 'text-emerald-400' : 'text-zinc-400'}`}>{pbDistToSupport > 0 ? `+${pbDistToSupport}%` : '도달'}</div></div>
+                      <div className="text-center"><div className="text-zinc-600 mb-0.5">기준 고점</div><div className="text-zinc-300 font-mono">${pbHigh}</div></div>
+                    </div>
+                    <div className="flex flex-wrap gap-x-3 gap-y-1 text-[9px]">
+                      <span className={pbVolTrend === 'DECLINING' ? 'text-emerald-400' : pbVolTrend === 'RISING' ? 'text-red-400' : 'text-zinc-500'}>{pbVolTrend === 'DECLINING' ? '✓ 거래량 감소' : pbVolTrend === 'RISING' ? '✕ 거래량 증가' : '— 거래량 보합'}</span>
+                      <span className={pbRsiCooled ? 'text-emerald-400' : 'text-zinc-500'}>{pbRsiCooled ? '✓ RSI 냉각' : '— RSI 미냉각'}</span>
+                      <span className={pbSupport ? 'text-emerald-400' : 'text-zinc-500'}>{pbSupport ? `✓ MA 지지 확인 (${pbSupport})` : '— MA 지지 없음'}</span>
+                    </div>
+                    <p className="text-[10px] text-zinc-500 mt-2" style={{ fontFamily: 'system-ui' }}>{pbDetail}</p>
+                  </div>
+                )}
+
+                {/* R/R */}
+                {rrRatio !== null && (
+                  <div className={`mb-3 p-3 rounded-lg border ${rrc.border} ${rrc.bg}/20`}>
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] text-zinc-500 uppercase tracking-widest">리스크 / 리워드</span>
+                        <span className={`text-[9px] px-1.5 py-0.5 rounded border ${rrc.bg} ${rrc.text} ${rrc.border}`}>{rrGrade === 'EXCELLENT' ? '최상 🏆' : rrGrade === 'GOOD' ? '양호 ✓' : rrGrade === 'FAIR' ? '보통' : '불리 ✗'}</span>
+                      </div>
+                      <span className={`text-sm font-bold font-mono ${rrc.text}`}>1 : {rrRatio}</span>
+                    </div>
+                    <div className="h-1.5 bg-zinc-800 rounded-full overflow-hidden mb-2">
+                      <div className="h-full rounded-full transition-all" style={{ width: `${rrBarWidth}%`, background: rrc.bar }} />
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 text-[10px]">
+                      <div className="text-center"><div className="text-zinc-600 mb-0.5">리스크</div><div className="text-red-400 font-mono font-semibold">${rrRisk}</div></div>
+                      <div className="text-center"><div className="text-zinc-600 mb-0.5">비율</div><div className={`font-mono font-semibold ${rrc.text}`}>{rrLabel.split('(')[0].trim()}</div></div>
+                      <div className="text-center"><div className="text-zinc-600 mb-0.5">리워드</div><div className="text-emerald-400 font-mono font-semibold">${rrReward}</div></div>
+                    </div>
+                  </div>
+                )}
+
+                {/* 매도 신호 */}
+                {stock.sell_signals && stock.sell_signals.length > 0 && (
+                  <div className="mb-3 bg-red-950/20 border border-red-900/40 rounded-lg p-3">
+                    <div className="text-[10px] text-red-500 uppercase tracking-widest mb-2">매도 신호 ({stock.sell_signals.length}개)</div>
+                    <ul className="space-y-1.5">
+                      {stock.sell_signals.map((s: string, i: number) => (
+                        <li key={i} className="text-xs text-red-300 flex items-start gap-1.5" style={{ fontFamily: 'system-ui' }}>
+                          <span className="text-red-500 shrink-0 mt-0.5">•</span>{s}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* 홀딩 근거 */}
+                {stock.hold_signals && stock.hold_signals.length > 0 && (
+                  <div className="bg-emerald-950/20 border border-emerald-900/40 rounded-lg p-3">
+                    <div className="text-[10px] text-emerald-600 uppercase tracking-widest mb-2">홀딩 근거 ({stock.hold_signals.length}개)</div>
+                    <ul className="space-y-1.5">
+                      {stock.hold_signals.map((s: string, i: number) => (
+                        <li key={i} className="text-xs text-emerald-300 flex items-start gap-1.5" style={{ fontFamily: 'system-ui' }}>
+                          <span className="text-emerald-500 shrink-0 mt-0.5">✓</span>{s}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ════════════════════════════════════════
+                탭 2: 패턴/RS
+            ════════════════════════════════════════ */}
+            {tab === 'pattern' && (
+              <div>
+                {/* 52주 신고가 */}
+                {stock.breakout_52w && (
+                  <div className="mb-3 p-3 rounded-lg border border-emerald-600 bg-emerald-950/30">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-xs font-semibold text-emerald-300">{stock.breakout_52w_day === 0 ? '🚀 오늘 52주 신고가 돌파!' : '어제 52주 신고가 돌파 — 추격 기회'}</span>
+                      {stock.breakout_52w_vol && <span className="text-[9px] bg-emerald-900 text-emerald-200 border border-emerald-700 px-1.5 py-0.5 rounded">거래량 ✓</span>}
+                    </div>
+                    <p className="text-[10px] text-zinc-400" style={{ fontFamily: 'system-ui' }}>{stock.breakout_52w_detail}</p>
+                  </div>
+                )}
+
+                {/* PEAD */}
+                {stock.pead_signal && (
+                  <div className="mb-3 p-3 rounded-lg border border-sky-800 bg-sky-950/20">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-[10px] text-zinc-500 uppercase tracking-widest">PEAD 어닝 드리프트</span>
+                      <span className="text-[9px] bg-sky-900 text-sky-300 border border-sky-700 px-1.5 py-0.5 rounded">서프라이즈 +{stock.pead_surprise_pct}%</span>
+                    </div>
+                    <p className="text-[10px] text-zinc-500" style={{ fontFamily: 'system-ui' }}>{stock.pead_detail}</p>
+                  </div>
+                )}
+
+                {/* 섹터 경고 */}
+                {stock.sector_warning && (
+                  <div className="mb-3 p-2 rounded-lg border border-amber-800 bg-amber-950/20">
+                    <p className="text-[10px] text-amber-400" style={{ fontFamily: 'system-ui' }}>⚠ {stock.sector_warning}</p>
+                  </div>
+                )}
+
+                {/* 주봉 멀티 타임프레임 */}
+                {stock.weekly_trend && (
+                  <div className={`mb-3 p-3 rounded-lg border ${stock.weekly_is_entry ? 'border-emerald-600 bg-emerald-950/30' : stock.weekly_trend === 'UPTREND' ? 'border-emerald-900 bg-emerald-950/10' : stock.weekly_trend === 'DOWNTREND' ? 'border-red-900 bg-red-950/10' : 'border-zinc-800 bg-zinc-900/20'}`}>
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] text-zinc-500 uppercase tracking-widest">주봉 멀티 타임프레임</span>
+                        {stock.weekly_is_entry && <span className="text-[9px] bg-emerald-800 text-emerald-200 border border-emerald-600 px-1.5 py-0.5 rounded font-semibold">🎯 최고 타점</span>}
+                      </div>
+                      <span className={`text-xs font-semibold ${stock.weekly_trend === 'UPTREND' ? 'text-emerald-400' : stock.weekly_trend === 'DOWNTREND' ? 'text-red-400' : 'text-zinc-400'}`}>
+                        {stock.weekly_align_score ?? '-'}/10 {stock.weekly_trend === 'UPTREND' ? '▲ 주봉 상승' : stock.weekly_trend === 'DOWNTREND' ? '▼ 주봉 하락' : '— 횡보'}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 text-[10px] text-zinc-500">
+                      <span>MA 정렬 <span className={stock.weekly_above_mas ? 'text-emerald-400' : 'text-red-400'}>{stock.weekly_above_mas ? '✓ 완성' : '✕ 미완성'}</span></span>
+                      <span>주봉 RSI <span className="text-zinc-300">{stock.weekly_rsi ?? '-'}</span></span>
+                      <span>눌림폭 <span className={stock.weekly_pullback && stock.weekly_pullback >= -8 && stock.weekly_pullback <= -2 ? 'text-emerald-400' : 'text-zinc-400'}>{stock.weekly_pullback ? `${stock.weekly_pullback}%` : '-'}</span></span>
+                    </div>
+                  </div>
+                )}
+
+                {/* OBV */}
+                {stock.obv_trend !== undefined && (
+                  <div className={`mb-3 p-3 rounded-lg border ${stock.obv_divergence ? 'border-red-800 bg-red-950/20' : stock.obv_trend === 'UP' ? 'border-emerald-900 bg-emerald-950/10' : 'border-zinc-800 bg-zinc-900/30'}`}>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-[10px] text-zinc-500 uppercase tracking-widest">OBV 기관 매집 분석</span>
+                      <span className={`text-xs font-semibold font-mono ${stock.obv_trend === 'UP' ? 'text-emerald-400' : stock.obv_trend === 'DOWN' ? 'text-red-400' : 'text-zinc-400'}`}>
+                        {stock.obv_trend === 'UP' ? '▲ 매집' : stock.obv_trend === 'DOWN' ? '▼ 분산' : '— 중립'}
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-zinc-500" style={{ fontFamily: 'system-ui' }}>{stock.obv_detail ?? ''}</p>
+                  </div>
+                )}
+
+                {/* 공매도 */}
+                {stock.short_pct !== undefined && stock.short_pct !== null && (
+                  <div className={`mb-3 p-3 rounded-lg border ${stock.short_squeeze === 'HIGH' ? 'border-amber-800 bg-amber-950/20' : 'border-zinc-800 bg-zinc-900/20'}`}>
+                    <div className="flex items-center justify-between mb-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] text-zinc-500 uppercase tracking-widest">공매도 현황</span>
+                        {stock.short_squeeze === 'HIGH' && <span className="text-[9px] bg-amber-900 text-amber-300 border border-amber-700 px-1.5 py-0.5 rounded">숏스퀴즈 주의 ⚡</span>}
+                      </div>
+                      <span className={`text-xs font-mono ${stock.short_pct > 20 ? 'text-red-400' : stock.short_pct > 10 ? 'text-amber-400' : 'text-zinc-400'}`}>
+                        {stock.short_pct}% {stock.short_ratio && `/ ${stock.short_ratio}일`}
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-zinc-500" style={{ fontFamily: 'system-ui' }}>{stock.short_detail ?? ''}</p>
+                  </div>
+                )}
+
+                {/* 포켓 피벗 */}
+                {ppIs && (
+                  <div className="mb-3 p-3 rounded-lg border border-violet-800 bg-violet-950/20">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] text-zinc-500 uppercase tracking-widest">포켓 피벗</span>
+                        <span className="text-[9px] bg-violet-900 text-violet-200 border border-violet-700 px-1.5 py-0.5 rounded">{ppDaysAgo === 0 ? '오늘 감지' : '어제 감지'}</span>
+                        {ppAboveMA && <span className="text-[9px] text-violet-400">{ppAboveMA} 위</span>}
+                      </div>
+                      <span className="text-xs font-bold font-mono text-violet-300">거래량 {ppVolRatio}x</span>
+                    </div>
+                    <p className="text-[10px] text-zinc-500" style={{ fontFamily: 'system-ui' }}>{ppDetail}</p>
+                    <p className="text-[10px] text-zinc-600 mt-1" style={{ fontFamily: 'system-ui' }}>Minervini 기법 — 하락일 최대 거래량 초과 + MA 위 = 기관 선취매 신호</p>
+                  </div>
+                )}
+
+                {/* RS Line */}
+                {stock.rs_line !== undefined && (
+                  <div className={`mb-3 p-3 rounded-lg border ${rsLineDivergence === 'BULLISH' ? 'border-emerald-600 bg-emerald-950/20' : rsLineDivergence === 'BEARISH' ? 'border-red-800 bg-red-950/20' : rsLineTrend === 'UP' ? 'border-emerald-900 bg-emerald-950/10' : 'border-zinc-800 bg-zinc-900/20'}`}>
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] text-zinc-500 uppercase tracking-widest">RS Line (상대강도선)</span>
+                        {rsLineDivergence === 'BULLISH' && <span className="text-[9px] bg-emerald-900 text-emerald-200 border border-emerald-600 px-1.5 py-0.5 rounded font-semibold">🏆 강세 다이버전스</span>}
+                        {rsLineDivergence === 'BEARISH' && <span className="text-[9px] bg-red-900 text-red-300 border border-red-700 px-1.5 py-0.5 rounded">⚠ 약세 다이버전스</span>}
+                      </div>
+                      <span className={`text-xs font-semibold font-mono ${rsLineTrend === 'UP' ? 'text-emerald-400' : rsLineTrend === 'DOWN' ? 'text-red-400' : 'text-zinc-400'}`}>
+                        3개월 {rsLine3m > 0 ? '+' : ''}{rsLine3m}%{rsLineTrend === 'UP' ? ' ▲' : rsLineTrend === 'DOWN' ? ' ▼' : ' —'}
+                      </span>
+                    </div>
+                    <div className="flex gap-4 text-[10px] mb-2">
+                      <span className={rsLineNewHigh ? 'text-emerald-400' : 'text-zinc-500'}>RS Line {rsLineNewHigh ? '✓ 신고점' : '— 신고점 아님'}</span>
+                      <span className={stock.rs_line_spy_new_low ? 'text-amber-400' : 'text-zinc-500'}>SPY {stock.rs_line_spy_new_low ? '⚠ 신저점' : '— 정상'}</span>
+                    </div>
+                    <p className="text-[10px] text-zinc-500" style={{ fontFamily: 'system-ui' }}>{rsLineDetail}</p>
+                  </div>
+                )}
+
+                {/* VCP */}
+                {stock.vcp_score !== undefined && (
+                  <div className={`p-3 rounded-lg border ${stock.vcp_is_vcp ? 'border-emerald-800 bg-emerald-950/20' : 'border-zinc-800 bg-zinc-900/30'}`}>
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] text-zinc-500 uppercase tracking-widest">VCP 타점 분석</span>
+                        {stock.vcp_is_vcp && <span className="text-[9px] bg-emerald-900 text-emerald-300 border border-emerald-700 px-1.5 py-0.5 rounded">VCP 감지</span>}
+                        {stock.pivot_broken && stock.pivot_within_chase && <span className="text-[9px] bg-amber-900 text-amber-300 border border-amber-700 px-1.5 py-0.5 rounded">피봇 돌파 ✓</span>}
+                      </div>
+                      <span className={`text-sm font-semibold font-mono ${(stock.vcp_score ?? 0) >= 60 ? 'text-emerald-400' : (stock.vcp_score ?? 0) >= 40 ? 'text-amber-400' : 'text-zinc-500'}`}>{stock.vcp_score ?? 0}점</span>
+                    </div>
+                    <div className="h-1 bg-zinc-800 rounded-full overflow-hidden mb-2">
+                      <div className="h-full rounded-full" style={{ width: `${stock.vcp_score ?? 0}%`, background: (stock.vcp_score ?? 0) >= 60 ? '#10b981' : (stock.vcp_score ?? 0) >= 40 ? '#f59e0b' : '#52525b' }} />
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 text-[10px] text-zinc-500 mb-1">
+                      <span>수렴 <span className="text-zinc-300">{stock.vcp_contraction_count ?? 0}회</span></span>
+                      <span>베이스 <span className="text-zinc-300">{stock.vcp_base_weeks ?? 0}주</span></span>
+                      <span>조정폭 <span className="text-zinc-300">{stock.vcp_last_pullback ?? 0}%</span></span>
+                      <span>저거래량 <span className={stock.vcp_lowest_vol ? 'text-emerald-400' : 'text-red-400'}>{stock.vcp_lowest_vol ? '✓ 확인' : '✕ 미확인'}</span></span>
+                      <span>피봇가 <span className="text-zinc-300">{stock.vcp_pivot ? `$${stock.vcp_pivot}` : '-'}</span></span>
+                      <span>피봇거리 <span className={stock.pivot_within_chase ? 'text-emerald-400' : 'text-zinc-400'}>{stock.pivot_broken ? `+${stock.pivot_dist}%` : '미돌파'}</span></span>
+                    </div>
+                    <p className="text-[10px] text-zinc-600" style={{ fontFamily: 'system-ui' }}>{stock.vcp_detail ?? ''}</p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ════════════════════════════════════════
+                탭 3: 매매전략
+            ════════════════════════════════════════ */}
+            {tab === 'strategy' && (
+              <div>
+                {/* 요약 */}
+                <p className="text-xs text-zinc-400 leading-relaxed mb-3" style={{ fontFamily: 'system-ui, sans-serif' }}>{stock.summary}</p>
+                {stock.caution && (
+                  <div className="text-xs text-amber-400 bg-amber-950/30 border-l-2 border-amber-600 pl-3 py-2 rounded-r-md mb-3" style={{ fontFamily: 'system-ui' }}>⚡ {stock.caution}</div>
+                )}
+
+                {/* 진입/지지/저항/손절 */}
+                <div className="flex flex-wrap gap-2 mb-4">
+                  {stock.entry_zone     && <LvPill label="진입" val={stock.entry_zone}      c="text-emerald-300 border-emerald-800 bg-emerald-950/40" />}
+                  {stock.key_support    && <LvPill label="지지" val={stock.key_support}     c="text-sky-300 border-sky-800 bg-sky-950/40" />}
+                  {stock.key_resistance && <LvPill label="저항" val={stock.key_resistance}  c="text-purple-300 border-purple-800 bg-purple-950/40" />}
+                  {stock.stop_loss      && <LvPill label="손절" val={stock.stop_loss}       c="text-red-300 border-red-800 bg-red-950/40" />}
+                </div>
+
+                {/* 분할 매수/매도 */}
+                {splitEntry1 && (
+                  <div className="mb-4 p-3 rounded-lg border border-zinc-700 bg-zinc-900/40">
+                    <div className="text-[10px] text-zinc-500 uppercase tracking-widest mb-3">분할 매수 / 매도 전략</div>
+                    {splitAvgEntry && (
+                      <div className="text-center mb-3 p-2 bg-zinc-800/50 rounded-lg">
+                        <span className="text-[10px] text-zinc-500">예상 평균 진입가</span>
+                        <span className="text-sm font-bold text-emerald-300 font-mono ml-2">${splitAvgEntry}</span>
+                      </div>
+                    )}
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <div className="text-[10px] text-emerald-500 uppercase tracking-widest mb-2">분할 매수</div>
+                        <div className="flex flex-col gap-1.5">
+                          {[splitEntry1, splitEntry2, splitEntry3].map((e, i) => e && (
+                            <div key={i} className="flex items-center justify-between px-2 py-1.5 rounded border border-emerald-900/50 bg-emerald-950/20">
+                              <div>
+                                <span className="text-[9px] text-emerald-600 font-semibold">{i + 1}차 {e.ratio}%</span>
+                                <p className="text-[9px] text-zinc-600 mt-0.5" style={{ fontFamily: 'system-ui' }}>{e.condition}</p>
+                              </div>
+                              <span className="text-xs font-bold font-mono text-emerald-300">{e.price}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-[10px] text-red-500 uppercase tracking-widest mb-2">분할 익절</div>
+                        <div className="flex flex-col gap-1.5">
+                          {[splitExit1, splitExit2, splitExit3].map((e, i) => e && (
+                            <div key={i} className="flex items-center justify-between px-2 py-1.5 rounded border border-red-900/50 bg-red-950/20">
+                              <div>
+                                <span className="text-[9px] text-red-500 font-semibold">{i + 1}차 {e.ratio}%</span>
+                                <p className="text-[9px] text-zinc-600 mt-0.5">{e.gain}</p>
+                              </div>
+                              <span className="text-xs font-bold font-mono text-red-300">{e.price}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* 트레일링 스탑 */}
+                {trailInitial && (
+                  <div className="p-3 rounded-lg border border-amber-800/60 bg-amber-950/10">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] text-zinc-500 uppercase tracking-widest">트레일링 스탑</span>
+                        <span className="text-[9px] bg-amber-950 text-amber-300 border border-amber-700 px-1.5 py-0.5 rounded">ATR × {trailMultiplier}</span>
+                      </div>
+                      <span className="text-[10px] text-zinc-500">주가 상승 시 자동 손절 상향</span>
+                    </div>
+                    <div className="flex flex-col gap-2 mb-2">
+                      {[
+                        { label: '진입 시',   price: trailInitial,   pct: 0,   color: 'text-zinc-400',    bar: 'bg-zinc-700' },
+                        { label: '본전 손절', price: trailBreakEven, pct: 0.5, color: 'text-sky-400',     bar: 'bg-sky-900' },
+                        { label: '+10% 시',  price: trailStop10,    pct: 33,  color: 'text-amber-400',   bar: 'bg-amber-900' },
+                        { label: '+20% 시',  price: trailStop20,    pct: 66,  color: 'text-emerald-400', bar: 'bg-emerald-900' },
+                        { label: '+30% 시',  price: trailStop30,    pct: 100, color: 'text-emerald-300', bar: 'bg-emerald-800' },
+                      ].map((item, i) => item.price && (
+                        <div key={i} className="flex items-center gap-2">
+                          <span className="text-[9px] text-zinc-600 w-16 shrink-0">{item.label}</span>
+                          <div className="flex-1 h-1 bg-zinc-800 rounded-full overflow-hidden">
+                            <div className={`h-full rounded-full ${item.bar}`} style={{ width: `${Math.min(100, 20 + item.pct * 0.8)}%` }} />
+                          </div>
+                          <span className={`text-[10px] font-mono font-semibold ${item.color} w-16 text-right shrink-0`}>${item.price}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <p className="text-[10px] text-zinc-600" style={{ fontFamily: 'system-ui' }}>주가가 오를수록 손절선도 상향 — 수익 반납 방지</p>
+                  </div>
+                )}
+              </div>
+            )}
+
           </div>
         </div>
       )}
