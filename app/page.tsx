@@ -20,7 +20,7 @@ type FilterType = 'ALL' | 'BREAKOUT' | 'SETUP' | 'WATCH' | 'HOLD' | 'SELL' | 'ST
 type SortType = 'SCORE' | 'TICKER' | 'SIGNAL';
 type TabType = 'scanner' | 'portfolio' | 'sectors' | 'backtest';
 
-// ── 섹터 맵 ───────────────────────────────────────────────────────────────────
+// ── 섹터 맵 (기본 하드코딩 리스트) ──────────────────────────────────────────────────
 const SECTOR_MAP: Record<string, string> = {
   NVDA:'반도체', AMD:'반도체', AVGO:'반도체', MU:'반도체', INTC:'반도체',
   ARM:'반도체', MRVL:'반도체', TSM:'반도체', QCOM:'반도체', AMAT:'반도체',
@@ -99,6 +99,21 @@ const SECTOR_MAP: Record<string, string> = {
   FCX:'산업재·소재', NEM:'산업재·소재', AA:'산업재·소재',
 };
 
+// ── Yahoo Finance 영문 섹터 → 한국어 매핑 (추가) ──────────────────────
+const YF_SECTOR_MAP: Record<string, string> = {
+  'Technology': 'AI·소프트웨어',
+  'Healthcare': '헬스케어·제약',
+  'Financial Services': '금융·핀테크',
+  'Consumer Cyclical': '소비재·유통',
+  'Consumer Defensive': '소비재·유통',
+  'Communication Services': '소비재·미디어',
+  'Energy': '전통에너지',
+  'Industrials': '산업재·소재',
+  'Basic Materials': '산업재·소재',
+  'Utilities': '원자력·전력',
+  'Real Estate': '기타',
+};
+
 const SECTOR_ORDER = [
   '반도체', 'AI·소프트웨어', '빅테크·하드웨어', '방산·항공우주',
   '원자력·전력', '친환경에너지', '전기차·배터리', '전통에너지',
@@ -106,8 +121,19 @@ const SECTOR_ORDER = [
   '소비재·미디어', '소비재·유통', '산업재·소재', '기타',
 ];
 
+// ── getSector 함수 (사진의 로직 적용) ──────────────────────────────────
 function getSector(s: StockAnalysis): string {
-  return s.sector || SECTOR_MAP[s.ticker.toUpperCase()] || '기타';
+  // 1순위: 하드코딩 맵 (티커별 정밀 분류)
+  const ticker = s.ticker.toUpperCase();
+  if (SECTOR_MAP[ticker]) return SECTOR_MAP[ticker];
+
+  // 2순위: YF 영문 섹터 → 한국어 변환
+  if (s.sector && YF_SECTOR_MAP[s.sector]) return YF_SECTOR_MAP[s.sector];
+
+  // 3순위: YF 섹터가 매핑 안 된 경우 그대로 표시
+  if (s.sector) return s.sector;
+
+  return '기타';
 }
 
 function todayKey() { return new Date().toISOString().slice(0, 10); }
@@ -322,24 +348,6 @@ export default function Home() {
     try { localStorage.removeItem(CACHE_KEY); localStorage.removeItem(WATCHLIST_KEY); localStorage.removeItem('mt_earnings_v1'); } catch {}
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  async function loadFromDB() {
-    try {
-      const res = await fetch(`/api/db?type=analysis&date=${todayKey()}`);
-      if (res.ok) {
-        const data = await res.json();
-        if (data && !data.empty && data.stocks?.length > 0) {
-          setAllStocks(data.stocks);
-          setMarketCtx(data.market_context ?? '');
-          setAnalyzedAt(data.analyzed_at ?? new Date().toISOString());
-          setStatus(`> DB 로드 완료 — ${data.stocks.length}개 종목`);
-          return true;
-        }
-      }
-    } catch {}
-    return false;
-  }
-
   async function saveWatchlistToDB(wl: string[]) {
     try {
       await fetch('/api/db', { method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -360,7 +368,6 @@ export default function Home() {
     .sort((a, b) => {
       if (sort === 'SCORE') return Number(b.momentum_score) - Number(a.momentum_score);
       if (sort === 'TICKER') return a.ticker.localeCompare(b.ticker);
-      // 신호순: BREAKOUT > SETUP > WATCH > HOLD > SELL > STRONG_SELL
       const o = { BREAKOUT: 0, SETUP: 1, WATCH: 2, HOLD: 3, SELL: 4, STRONG_SELL: 5 } as Record<string, number>;
       return (o[a.signal] ?? 9) - (o[b.signal] ?? 9);
     });
@@ -503,7 +510,6 @@ export default function Home() {
                 </div>
 
                 <div className="mb-3 sticky top-[100px] z-10 bg-bg-base py-2">
-                  {/* ── 신호 필터 (4단계) ── */}
                   <div className="flex gap-1 overflow-x-auto mb-2" style={{ scrollbarWidth: 'none' }}>
                     {([
                       ['ALL',         `전체(${allStocks.length})`],
@@ -521,7 +527,6 @@ export default function Home() {
                       </button>
                     ))}
                   </div>
-                  {/* ── 정렬 + 전체 접기 ── */}
                   <div className="flex gap-1 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
                     {(['SCORE','SIGNAL','TICKER'] as SortType[]).map(s => (
                       <button key={s} onClick={() => setSort(s)}
@@ -550,7 +555,6 @@ export default function Home() {
                   </div>
                 </div>
 
-                {/* ── 섹터별 그룹 렌더링 ── */}
                 {(() => {
                   const grouped = new Map<string, StockAnalysis[]>();
                   for (const s of displayed) {
