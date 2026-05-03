@@ -12,12 +12,13 @@ import BacktestPanel from '@/components/BacktestPanel';
 const DEFAULT_TICKERS = ['PLTR'];
 const CACHE_KEY = 'mt_analysis_v4';
 const WATCHLIST_KEY = 'mt_watchlist_v3';
+const FAVORITES_KEY = 'mt_favorites_v1';
 const MAX_TICKERS = 1000;
 const BATCH_SIZE = 50;
 
 type FilterType = 'ALL' | 'BREAKOUT' | 'SETUP' | 'WATCH' | 'HOLD' | 'SELL' | 'STRONG_SELL';
 type SortType = 'SCORE' | 'TICKER' | 'SIGNAL';
-type TabType = 'scanner' | 'portfolio' | 'sectors' | 'backtest';
+type TabType = 'scanner' | 'favorites' | 'portfolio' | 'sectors' | 'backtest';
 
 const SECTOR_MAP: Record<string, string> = {
   // ── 반도체 ──────────────────────────────────────────────────────────────
@@ -214,6 +215,86 @@ function chunk<T>(arr: T[], size: number): T[][] {
   return out;
 }
 
+function SectorGroup({
+  stocks, filter, isCompact, collapsedSectors, toggleSector,
+  earningsMap, removeFromResults, setDrawerTicker,
+  favorites, toggleFavorite,
+}: {
+  stocks: StockAnalysis[];
+  filter: FilterType;
+  isCompact: boolean;
+  collapsedSectors: Set<string>;
+  toggleSector: (name: string) => void;
+  earningsMap: Record<string, { earningsDate: string | null; daysUntil: number | null; epsEstimate: number | null; revenueEstimate: string | null; lastEPS: number | null }>;
+  removeFromResults: (ticker: string) => void;
+  setDrawerTicker: (ticker: string) => void;
+  favorites: Set<string>;
+  toggleFavorite: (ticker: string) => void;
+}) {
+  const grouped = new Map<string, StockAnalysis[]>();
+  for (const s of stocks) {
+    const sec = getSector(s);
+    if (!grouped.has(sec)) grouped.set(sec, []);
+    grouped.get(sec)!.push(s);
+  }
+  const orderedSectors = [...grouped.keys()].sort((a, b) => {
+    const ai = SECTOR_ORDER.indexOf(a);
+    const bi = SECTOR_ORDER.indexOf(b);
+    return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
+  });
+
+  if (orderedSectors.length === 0) {
+    return <p className="text-sm text-zinc-600 py-6 text-center">해당 조건의 종목이 없습니다.</p>;
+  }
+
+  return (
+    <div className="flex flex-col gap-6">
+      {orderedSectors.map(sector => {
+        const sectorStocks = grouped.get(sector)!;
+        const collapsed = collapsedSectors.has(sector);
+        const breakoutCnt = sectorStocks.filter(s => s.signal === 'BREAKOUT').length;
+        const setupCnt    = sectorStocks.filter(s => s.signal === 'SETUP').length;
+        const watchCnt    = sectorStocks.filter(s => s.signal === 'WATCH').length;
+        const avgScore    = Math.round(sectorStocks.reduce((acc, s) => acc + Number(s.momentum_score), 0) / sectorStocks.length);
+
+        return (
+          <div key={sector}>
+            <button onClick={() => toggleSector(sector)}
+              className="w-full flex items-center gap-2 mb-2 group text-left">
+              <span className="text-[11px] font-bold text-zinc-200 tracking-widest uppercase shrink-0">{sector}</span>
+              <span className="text-[10px] text-zinc-600 font-mono shrink-0">{sectorStocks.length}종목</span>
+              {breakoutCnt > 0 && <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-950 border border-emerald-700 text-emerald-400 font-mono shrink-0">즉시진입 {breakoutCnt}</span>}
+              {setupCnt > 0 && <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-950 border border-blue-800 text-blue-400 font-mono shrink-0">진입대기 {setupCnt}</span>}
+              {watchCnt > 0 && <span className="text-[10px] px-1.5 py-0.5 rounded bg-yellow-950 border border-yellow-800 text-yellow-500 font-mono shrink-0">관심 {watchCnt}</span>}
+              <span className="text-[10px] text-zinc-700 font-mono shrink-0">avg {avgScore}점</span>
+              <div className="flex-1 h-px bg-zinc-800 group-hover:bg-zinc-700 transition-colors" />
+              <span className="text-zinc-600 text-xs group-hover:text-zinc-400 transition-colors shrink-0">{collapsed ? '▶' : '▼'}</span>
+            </button>
+
+            {!collapsed && (
+              <div className={isCompact ? 'flex flex-col gap-1.5' : 'grid grid-cols-1 xl:grid-cols-2 gap-4'}>
+                {sectorStocks.map((s, i) => (
+                  <StockCard
+                    key={s.ticker}
+                    stock={s}
+                    highlight={i === 0 && filter !== 'SELL' && filter !== 'STRONG_SELL'}
+                    onRemove={removeFromResults}
+                    earnings={earningsMap[s.ticker]}
+                    compact={isCompact}
+                    onOpenDrawer={setDrawerTicker}
+                    isFavorite={favorites.has(s.ticker)}
+                    onToggleFavorite={toggleFavorite}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function Home() {
   const [activeTab, setActiveTab] = useState<TabType>('scanner');
   const [watchlist, setWatchlist] = useState<string[]>([]);
@@ -234,6 +315,7 @@ export default function Home() {
   const [drawerTicker, setDrawerTicker] = useState<string | null>(null);
   const [earningsMap, setEarningsMap] = useState<Record<string, { earningsDate: string | null; daysUntil: number | null; epsEstimate: number | null; revenueEstimate: string | null; lastEPS: number | null }>>({});
   const [collapsedSectors, setCollapsedSectors] = useState<Set<string>>(new Set());
+  const [favorites, setFavorites] = useState<Set<string>>(new Set());
   const fileRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef(false);
 
@@ -245,6 +327,15 @@ export default function Home() {
     });
   }
 
+  function toggleFavorite(ticker: string) {
+    setFavorites(prev => {
+      const next = new Set(prev);
+      next.has(ticker) ? next.delete(ticker) : next.add(ticker);
+      try { localStorage.setItem(FAVORITES_KEY, JSON.stringify([...next])); } catch {}
+      return next;
+    });
+  }
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') setDrawerTicker(null); };
     window.addEventListener('keydown', handler);
@@ -252,6 +343,11 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    try {
+      const fav = localStorage.getItem(FAVORITES_KEY);
+      if (fav) setFavorites(new Set(JSON.parse(fav)));
+    } catch {}
+
     fetch('/api/db?type=watchlist').then(r => r.json()).then(d => {
       if (d.tickers?.length > 0) setWatchlist(d.tickers);
       else { try { const wl = localStorage.getItem(WATCHLIST_KEY); if (wl) setWatchlist(JSON.parse(wl)); } catch {} }
@@ -291,10 +387,6 @@ export default function Home() {
     setWatchlist(w => w.filter(x => x !== ticker));
     if (drawerTicker === ticker) setDrawerTicker(null);
     try {
-      const ec = localStorage.getItem('mt_earnings_v1');
-      if (ec) { const ep = JSON.parse(ec); if (ep.date === todayKey()) setEarningsMap(ep.data ?? {}); }
-    } catch {}
-    try {
       const c = localStorage.getItem(CACHE_KEY);
       if (c) {
         const p = JSON.parse(c);
@@ -322,63 +414,43 @@ export default function Home() {
   const runAnalysis = useCallback(async () => {
     if (watchlist.length === 0 || loading) return;
     abortRef.current = false;
-
     const analyzedSet = new Set(allStocks.map(s => s.ticker));
     const tickersToAnalyze = watchlist.filter(t => !analyzedSet.has(t));
-
-    if (tickersToAnalyze.length === 0) {
-      setStatus('> 추가된 새 종목이 없습니다. 초기화(↺) 후 재분석하세요.');
-      return;
-    }
-
+    if (tickersToAnalyze.length === 0) { setStatus('> 추가된 새 종목이 없습니다. 초기화(↺) 후 재분석하세요.'); return; }
     setLoading(true); setError(''); setSearch('');
     const batches = chunk(tickersToAnalyze, BATCH_SIZE);
     setProgress({ done: 0, total: tickersToAnalyze.length });
-
     let accumulated: StockAnalysis[] = [...allStocks];
     let firstCtx = marketCtx || '';
-
     for (let i = 0; i < batches.length; i++) {
       if (abortRef.current) break;
       setStatus(`> 배치 ${i+1}/${batches.length} 처리 중...`);
       try {
-        const res = await fetch('/api/analyze', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ tickers: batches[i] }),
-        });
+        const res = await fetch('/api/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tickers: batches[i] }) });
         if (res.ok) {
           const data: AnalysisResult = await res.json();
           accumulated = [...accumulated, ...(data.stocks ?? [])];
           if (!firstCtx && data.market_context) firstCtx = data.market_context;
-          setAllStocks([...accumulated]);
-          setMarketCtx(firstCtx);
+          setAllStocks([...accumulated]); setMarketCtx(firstCtx);
         }
-      } catch { /* skip failed batch */ }
+      } catch {}
       setProgress({ done: Math.min(tickersToAnalyze.length, (i+1) * BATCH_SIZE), total: tickersToAnalyze.length });
     }
-
     const ts = new Date().toISOString();
     setAnalyzedAt(ts);
     setStatus(`> 완료 — ${accumulated.length}개 종목 · 실적 조회 중...`);
-
     try { localStorage.setItem(CACHE_KEY, JSON.stringify({ date: todayKey(), stocks: accumulated, market_context: firstCtx, analyzed_at: ts })); } catch {}
     await saveAnalysisToDB(accumulated, firstCtx, ts);
-
     try {
       const tBatches = chunk(tickersToAnalyze, 20);
       const eMap: Record<string, { earningsDate: string | null; daysUntil: number | null; epsEstimate: number | null; revenueEstimate: string | null; lastEPS: number | null }> = { ...earningsMap };
       for (const tb of tBatches) {
         const er = await fetch('/api/earnings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tickers: tb }) });
-        if (er.ok) {
-          const ed = await er.json();
-          (ed.earnings ?? []).forEach((e: { ticker: string; earningsDate: string | null; daysUntil: number | null; epsEstimate: number | null; revenueEstimate: string | null; lastEPS: number | null }) => { eMap[e.ticker] = e; });
-        }
+        if (er.ok) { const ed = await er.json(); (ed.earnings ?? []).forEach((e: { ticker: string; earningsDate: string | null; daysUntil: number | null; epsEstimate: number | null; revenueEstimate: string | null; lastEPS: number | null }) => { eMap[e.ticker] = e; }); }
       }
       setEarningsMap(eMap);
       try { localStorage.setItem('mt_earnings_v1', JSON.stringify({ date: todayKey(), data: eMap })); } catch {}
     } catch {}
-
     setStatus(`> 완료 — ${accumulated.length}개 | ${new Date().toLocaleTimeString('ko-KR')}`);
     setLoading(false);
   }, [watchlist, loading, allStocks, marketCtx, earningsMap]);
@@ -396,17 +468,11 @@ export default function Home() {
   }
 
   async function saveWatchlistToDB(wl: string[]) {
-    try {
-      await fetch('/api/db', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type: 'watchlist', tickers: wl }) });
-    } catch {}
+    try { await fetch('/api/db', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'watchlist', tickers: wl }) }); } catch {}
   }
 
   async function saveAnalysisToDB(stocks: StockAnalysis[], ctx: string, ts: string) {
-    try {
-      await fetch('/api/db', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type: 'analysis', stocks, market_context: ctx, date: todayKey(), analyzed_at: ts }) });
-    } catch {}
+    try { await fetch('/api/db', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'analysis', stocks, market_context: ctx, date: todayKey(), analyzed_at: ts }) }); } catch {}
   }
 
   const displayed = [...allStocks]
@@ -419,26 +485,30 @@ export default function Home() {
       return (o[a.signal] ?? 9) - (o[b.signal] ?? 9);
     });
 
+  const favoriteStocks = allStocks.filter(s => favorites.has(s.ticker));
   const holdCnt = allStocks.filter(s => s.signal === 'HOLD').length;
   const pct = progress.total > 0 ? Math.round((progress.done / progress.total) * 100) : 0;
   const today = new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'short' });
-
   const analyzedSet = new Set(allStocks.map(s => s.ticker));
   const newTickerCount = watchlist.filter(t => !analyzedSet.has(t)).length;
 
   const analyzeButtonLabel = loading
     ? <span className="flex items-center gap-1"><span className="blink">▋</span>분석 중...</span>
-    : newTickerCount > 0
-      ? `+${newTickerCount}개 분석 →`
-      : allStocks.length > 0
-        ? '✓ 완료'
-        : '분석 →';
+    : newTickerCount > 0 ? `+${newTickerCount}개 분석 →`
+    : allStocks.length > 0 ? '✓ 완료' : '분석 →';
 
   const drawerStock = drawerTicker ? allStocks.find(s => s.ticker === drawerTicker) ?? null : null;
+
+  const sectorGroupProps = {
+    filter, isCompact, collapsedSectors, toggleSector,
+    earningsMap, removeFromResults, setDrawerTicker,
+    favorites, toggleFavorite,
+  };
 
   return (
     <div className="min-h-screen bg-bg-base">
       <div className="max-w-[1400px] mx-auto px-3 sm:px-6 py-4 sm:py-8">
+
         <header className="mb-3 sticky top-0 z-20 bg-bg-base pt-1 pb-2">
           <div className="flex items-center justify-between gap-2 pb-3 border-b border-border mb-3">
             <div className="min-w-0">
@@ -446,12 +516,8 @@ export default function Home() {
               <p className="text-xs text-zinc-600 mt-0.5">{today}</p>
             </div>
             <div className="flex gap-1.5 shrink-0">
-              <button onClick={resetAll}
-                className="px-3 py-2 text-xs font-semibold rounded-lg border border-zinc-700 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 transition-all whitespace-nowrap">↺</button>
-              {loading && (
-                <button onClick={stopAnalysis}
-                  className="px-3 py-2 text-xs font-semibold rounded-lg border border-red-800 text-red-400 hover:bg-red-950 transition-all whitespace-nowrap">중단</button>
-              )}
+              <button onClick={resetAll} className="px-3 py-2 text-xs font-semibold rounded-lg border border-zinc-700 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 transition-all whitespace-nowrap">↺</button>
+              {loading && <button onClick={stopAnalysis} className="px-3 py-2 text-xs font-semibold rounded-lg border border-red-800 text-red-400 hover:bg-red-950 transition-all whitespace-nowrap">중단</button>}
               {activeTab === 'scanner' && (
                 <button onClick={runAnalysis} disabled={loading || watchlist.length === 0}
                   className={`px-3 sm:px-5 py-2 text-xs sm:text-sm font-semibold rounded-lg border transition-all whitespace-nowrap
@@ -466,14 +532,18 @@ export default function Home() {
           <div className="flex gap-1 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
             {([
               ['scanner',   '모멘텀 스캐너'],
+              ['favorites', `즐겨찾기${favorites.size > 0 ? ` (${favorites.size})` : ''}`],
               ['portfolio', '내 포트폴리오'],
               ['sectors',   '섹터 히트맵'],
               ['backtest',  '백테스트'],
             ] as [TabType, string][]).map(([tab, label]) => (
               <button key={tab} onClick={() => setActiveTab(tab)}
                 className={`px-3 py-2 text-xs sm:text-sm font-medium rounded-lg border transition-colors whitespace-nowrap shrink-0
-                  ${activeTab === tab ? 'bg-zinc-700 border-zinc-600 text-zinc-100' : 'bg-transparent border-zinc-800 text-zinc-500 hover:text-zinc-300'}`}>
-                {label}
+                  ${activeTab === tab
+                    ? tab === 'favorites' ? 'bg-yellow-900/60 border-yellow-700 text-yellow-300'
+                    : 'bg-zinc-700 border-zinc-600 text-zinc-100'
+                    : 'bg-transparent border-zinc-800 text-zinc-500 hover:text-zinc-300'}`}>
+                {tab === 'favorites' ? `★ ${label}` : label}
               </button>
             ))}
           </div>
@@ -483,6 +553,16 @@ export default function Home() {
         {activeTab === 'sectors'   && <SectorHeatmap />}
         {activeTab === 'backtest'  && <BacktestPanel />}
 
+        {activeTab === 'favorites' && (
+          favoriteStocks.length === 0 ? (
+            <div className="text-center py-20">
+              <div className="text-5xl mb-4 text-zinc-800">☆</div>
+              <p className="text-zinc-600 text-sm mb-1">즐겨찾기한 종목이 없습니다.</p>
+              <p className="text-zinc-700 text-xs">스캐너 카드 우측 상단 ☆ 버튼을 눌러 추가하세요.</p>
+            </div>
+          ) : <SectorGroup stocks={favoriteStocks} {...sectorGroupProps} />
+        )}
+
         {activeTab === 'scanner' && (
           <>
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 mb-3">
@@ -490,24 +570,18 @@ export default function Home() {
               <WatchlistManager watchlist={watchlist} onAdd={addTicker} onRemove={removeTicker} maxTickers={MAX_TICKERS} />
               {marketCtx ? (
                 <div className="border border-zinc-800 rounded-xl bg-zinc-900/60 overflow-hidden">
-                  <button onClick={() => setCtxOpen(o => !o)}
-                    className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-zinc-800/30 transition-colors">
+                  <button onClick={() => setCtxOpen(o => !o)} className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-zinc-800/30 transition-colors">
                     <div className="flex items-center gap-3 min-w-0">
                       <span className="text-[10px] text-zinc-600 uppercase tracking-widest shrink-0">시장 컨텍스트</span>
                       {!ctxOpen && <p className="text-xs text-zinc-500 truncate" style={{ fontFamily: 'system-ui, sans-serif' }}>{marketCtx.slice(0, 60)}...</p>}
                     </div>
                     <span className="text-zinc-600 text-xs shrink-0 ml-2">{ctxOpen ? '▲' : '▼'}</span>
                   </button>
-                  {ctxOpen && (
-                    <div className="px-4 pb-4 border-t border-zinc-800/50 pt-3">
-                      <p className="text-xs text-zinc-400 leading-relaxed" style={{ fontFamily: 'system-ui, sans-serif' }}>{marketCtx}</p>
-                    </div>
-                  )}
+                  {ctxOpen && <div className="px-4 pb-4 border-t border-zinc-800/50 pt-3"><p className="text-xs text-zinc-400 leading-relaxed" style={{ fontFamily: 'system-ui, sans-serif' }}>{marketCtx}</p></div>}
                 </div>
               ) : <div />}
               <div className="border border-zinc-800 rounded-xl bg-zinc-900/40 overflow-hidden">
-                <button onClick={() => setXlsxOpen(o => !o)}
-                  className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-zinc-800/40 transition-colors">
+                <button onClick={() => setXlsxOpen(o => !o)} className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-zinc-800/40 transition-colors">
                   <span className="text-[10px] text-zinc-500 uppercase tracking-widest">엑셀 일괄 업로드</span>
                   <span className="text-zinc-600 text-xs">{xlsxOpen ? '▲' : '▼'}</span>
                 </button>
@@ -515,13 +589,9 @@ export default function Home() {
                   <div className="px-4 pb-4 border-t border-zinc-800/50 pt-3">
                     <div className="flex flex-wrap items-center gap-2">
                       <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleFile} className="hidden" />
-                      <button onClick={() => fileRef.current?.click()}
-                        className="text-sm px-4 py-2 bg-zinc-800 border border-zinc-700 text-zinc-200 rounded-lg hover:bg-zinc-700 transition-colors">파일 선택</button>
-                      <button onClick={() => { setWatchlist(DEFAULT_TICKERS); setXlsxMsg(''); }}
-                        className="text-xs px-3 py-2 border border-zinc-800 text-zinc-500 rounded-lg hover:text-zinc-300 transition-colors">초기화</button>
-                      {xlsxMsg && (
-                        <span className={`text-xs ${xlsxMsg.startsWith('✓') ? 'text-emerald-400' : 'text-zinc-400'}`}>{xlsxMsg}</span>
-                      )}
+                      <button onClick={() => fileRef.current?.click()} className="text-sm px-4 py-2 bg-zinc-800 border border-zinc-700 text-zinc-200 rounded-lg hover:bg-zinc-700 transition-colors">파일 선택</button>
+                      <button onClick={() => { setWatchlist(DEFAULT_TICKERS); setXlsxMsg(''); }} className="text-xs px-3 py-2 border border-zinc-800 text-zinc-500 rounded-lg hover:text-zinc-300 transition-colors">초기화</button>
+                      {xlsxMsg && <span className={`text-xs ${xlsxMsg.startsWith('✓') ? 'text-emerald-400' : 'text-zinc-400'}`}>{xlsxMsg}</span>}
                     </div>
                     <p className="text-[10px] text-zinc-700 mt-2">어느 셀에나 티커가 있으면 자동 추출. 최대 {MAX_TICKERS.toLocaleString()}개.</p>
                   </div>
@@ -538,8 +608,7 @@ export default function Home() {
                 <div className="h-1.5 bg-zinc-800 rounded-full overflow-hidden mb-2">
                   <div className="h-full bg-emerald-500 rounded-full transition-all duration-500" style={{ width: `${pct}%` }} />
                 </div>
-                <button onClick={stopAnalysis}
-                  className="w-full text-xs py-1.5 rounded-lg border border-red-800 text-red-400 hover:bg-red-950 transition-colors">중단</button>
+                <button onClick={stopAnalysis} className="w-full text-xs py-1.5 rounded-lg border border-red-800 text-red-400 hover:bg-red-950 transition-colors">중단</button>
               </div>
             )}
 
@@ -548,8 +617,7 @@ export default function Home() {
             {allStocks.length > 0 && (
               <>
                 <div className="relative mb-3">
-                  <input type="text" value={search} onChange={e => setSearch(e.target.value)}
-                    placeholder="티커 검색 (예: AMD)"
+                  <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="티커 검색 (예: AMD)"
                     className="w-full bg-zinc-900 border border-zinc-700 text-zinc-100 text-sm px-4 py-2.5 pl-9 rounded-lg placeholder:text-zinc-600 focus:outline-none focus:border-zinc-500 font-mono" />
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-600 text-sm">⌕</span>
                   {search && <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300 text-xs">✕</button>}
@@ -589,11 +657,8 @@ export default function Home() {
                     <button
                       onClick={() => {
                         const sectorNames = [...new Set(displayed.map(s => getSector(s)))];
-                        if (collapsedSectors.size < sectorNames.length) {
-                          setCollapsedSectors(new Set(sectorNames));
-                        } else {
-                          setCollapsedSectors(new Set());
-                        }
+                        if (collapsedSectors.size < sectorNames.length) setCollapsedSectors(new Set(sectorNames));
+                        else setCollapsedSectors(new Set());
                       }}
                       className="text-xs px-3 py-1.5 rounded-lg border transition-colors whitespace-nowrap shrink-0 bg-transparent border-zinc-800 text-zinc-500 hover:text-zinc-300">
                       {collapsedSectors.size > 0 ? '▶ 전체 펼치기' : '▼ 전체 접기'}
@@ -601,88 +666,9 @@ export default function Home() {
                   </div>
                 </div>
 
-                {(() => {
-                  const grouped = new Map<string, StockAnalysis[]>();
-                  for (const s of displayed) {
-                    const sec = getSector(s);
-                    if (!grouped.has(sec)) grouped.set(sec, []);
-                    grouped.get(sec)!.push(s);
-                  }
-                  const orderedSectors = [...grouped.keys()].sort((a, b) => {
-                    const ai = SECTOR_ORDER.indexOf(a);
-                    const bi = SECTOR_ORDER.indexOf(b);
-                    return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
-                  });
+                <SectorGroup stocks={displayed} {...sectorGroupProps} />
 
-                  if (orderedSectors.length === 0) {
-                    return <p className="text-sm text-zinc-600 py-6 text-center">해당 조건의 종목이 없습니다.</p>;
-                  }
-
-                  return (
-                    <div className="flex flex-col gap-6">
-                      {orderedSectors.map(sector => {
-                        const stocks = grouped.get(sector)!;
-                        const collapsed = collapsedSectors.has(sector);
-                        const breakoutCnt = stocks.filter(s => s.signal === 'BREAKOUT').length;
-                        const setupCnt    = stocks.filter(s => s.signal === 'SETUP').length;
-                        const watchCnt    = stocks.filter(s => s.signal === 'WATCH').length;
-                        const avgScore    = Math.round(stocks.reduce((acc, s) => acc + Number(s.momentum_score), 0) / stocks.length);
-
-                        return (
-                          <div key={sector}>
-                            <button onClick={() => toggleSector(sector)}
-                              className="w-full flex items-center gap-2 mb-2 group text-left">
-                              <span className="text-[11px] font-bold text-zinc-200 tracking-widest uppercase shrink-0">{sector}</span>
-                              <span className="text-[10px] text-zinc-600 font-mono shrink-0">{stocks.length}종목</span>
-                              {breakoutCnt > 0 && (
-                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-950 border border-emerald-700 text-emerald-400 font-mono shrink-0">
-                                  즉시진입 {breakoutCnt}
-                                </span>
-                              )}
-                              {setupCnt > 0 && (
-                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-950 border border-blue-800 text-blue-400 font-mono shrink-0">
-                                  진입대기 {setupCnt}
-                                </span>
-                              )}
-                              {watchCnt > 0 && (
-                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-yellow-950 border border-yellow-800 text-yellow-500 font-mono shrink-0">
-                                  관심 {watchCnt}
-                                </span>
-                              )}
-                              <span className="text-[10px] text-zinc-700 font-mono shrink-0">avg {avgScore}점</span>
-                              <div className="flex-1 h-px bg-zinc-800 group-hover:bg-zinc-700 transition-colors" />
-                              <span className="text-zinc-600 text-xs group-hover:text-zinc-400 transition-colors shrink-0">
-                                {collapsed ? '▶' : '▼'}
-                              </span>
-                            </button>
-
-                            {!collapsed && (
-                              <div className={isCompact ? 'flex flex-col gap-1.5' : 'grid grid-cols-1 xl:grid-cols-2 gap-4'}>
-                                {stocks.map((s, i) => (
-                                  <StockCard
-                                    key={s.ticker}
-                                    stock={s}
-                                    highlight={i === 0 && filter !== 'SELL' && filter !== 'STRONG_SELL'}
-                                    onRemove={removeFromResults}
-                                    earnings={earningsMap[s.ticker]}
-                                    compact={isCompact}
-                                    onOpenDrawer={setDrawerTicker}
-                                  />
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  );
-                })()}
-
-                {analyzedAt && (
-                  <div className="text-[10px] text-zinc-700 text-center mt-8">
-                    마지막 분석: {new Date(analyzedAt).toLocaleString('ko-KR')}
-                  </div>
-                )}
+                {analyzedAt && <div className="text-[10px] text-zinc-700 text-center mt-8">마지막 분석: {new Date(analyzedAt).toLocaleString('ko-KR')}</div>}
               </>
             )}
 
@@ -713,10 +699,8 @@ export default function Home() {
                 <span className="text-xs text-zinc-500">상세 분석</span>
               </div>
               <div className="flex items-center gap-2">
-                <a href={`/stock/${drawerStock.ticker}`}
-                  className="text-xs px-3 py-1.5 rounded-lg border border-zinc-700 text-zinc-400 hover:bg-zinc-800 transition-colors">전체 →</a>
-                <button onClick={() => setDrawerTicker(null)}
-                  className="w-8 h-8 flex items-center justify-center rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200 transition-colors text-sm">✕</button>
+                <a href={`/stock/${drawerStock.ticker}`} className="text-xs px-3 py-1.5 rounded-lg border border-zinc-700 text-zinc-400 hover:bg-zinc-800 transition-colors">전체 →</a>
+                <button onClick={() => setDrawerTicker(null)} className="w-8 h-8 flex items-center justify-center rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200 transition-colors text-sm">✕</button>
               </div>
             </div>
             <div className="p-4">
@@ -726,6 +710,8 @@ export default function Home() {
                 onRemove={removeFromResults}
                 earnings={earningsMap[drawerStock.ticker]}
                 forceOpen={true}
+                isFavorite={favorites.has(drawerStock.ticker)}
+                onToggleFavorite={toggleFavorite}
               />
             </div>
           </div>
