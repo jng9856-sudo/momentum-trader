@@ -30,7 +30,7 @@ const SECTOR_MAP: Record<string, string> = {
   SMCI:'반도체', COHU:'반도체', ICHR:'반도체', FORM:'반도체', MKSI:'반도체',
   SITM:'반도체', ALGM:'반도체', DIOD:'반도체', MTSI:'반도체', POWI:'반도체',
   ATOM:'반도체', AXTI:'반도체', SIMO:'반도체', TSEM:'반도체',
-  NVTS:'반도체', CRDO:'반도체',
+  NVTS:'반도체', CRDO:'반도체', SNDK:'반도체',
 
   // ── AI·소프트웨어 ────────────────────────────────────────────────────────
   MSFT:'AI·소프트웨어', GOOGL:'AI·소프트웨어', GOOG:'AI·소프트웨어',
