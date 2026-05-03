@@ -3,22 +3,22 @@ import { StockAnalysis } from '@/types/stock';
 import { useRouter } from 'next/navigation';
 import { useState, useEffect } from 'react';
 
+// BREAKOUT(즉시진입) > SETUP(진입대기) 순서
 function sigScore(s: string) {
-  return s === 'STRONG_BUY' ? 5 : s === 'BUY' ? 4 : 3;
+  return s === 'BREAKOUT' ? 5 : s === 'SETUP' ? 4 : 3;
 }
 
 interface RtPrice { price: number; changePct: number; isRealtime?: boolean; }
 
 export default function TopPicks({ stocks, onOpenDrawer }: {
   stocks: StockAnalysis[];
-  // ✅ 수정 8: Drawer 연동 prop
   onOpenDrawer?: (ticker: string) => void;
 }) {
   const router = useRouter();
   const [rtPrices, setRtPrices] = useState<Record<string, RtPrice & { isRealtime?: boolean }>>({});
 
   const picks = [...stocks]
-    .filter(s => s.signal === 'STRONG_BUY' || s.signal === 'BUY')
+    .filter(s => s.signal === 'BREAKOUT' || s.signal === 'SETUP')
     .sort((a, b) => {
       const sigDiff = sigScore(b.signal) - sigScore(a.signal);
       if (sigDiff !== 0) return sigDiff;
@@ -54,7 +54,7 @@ export default function TopPicks({ stocks, onOpenDrawer }: {
 
   if (picks.length === 0) return (
     <div className="mb-6 p-4 border border-zinc-800 rounded-xl bg-zinc-900/30 text-center">
-      <p className="text-sm text-zinc-500">현재 매수 추천 종목 없음 — 시장 관망 구간</p>
+      <p className="text-sm text-zinc-500">현재 진입 추천 종목 없음 — 시장 관망 구간</p>
     </div>
   );
 
@@ -63,7 +63,7 @@ export default function TopPicks({ stocks, onOpenDrawer }: {
       {/* 헤더 */}
       <div className="flex items-center gap-3 mb-4">
         <div>
-          <div className="text-sm font-semibold text-zinc-100">오늘의 매수 추천</div>
+          <div className="text-sm font-semibold text-zinc-100">오늘의 진입 추천</div>
           <div className="text-[10px] text-zinc-600">모멘텀 점수 + RS 랭킹 + 신고가 돌파 기준 자동 선정</div>
         </div>
         <span className="text-[10px] text-emerald-700 bg-emerald-950 border border-emerald-800 px-2 py-0.5 rounded-full">
@@ -71,35 +71,34 @@ export default function TopPicks({ stocks, onOpenDrawer }: {
         </span>
       </div>
 
-      {/* ✅ 수정 3 + 수정 8: 카드 그리드 확장 + Drawer 연동 */}
+      {/* 카드 그리드 */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3">
         {picks.map((s, i) => {
-          const rt = rtPrices[s.ticker];
-          const score = Math.min(10, Math.max(1, Number(s.momentum_score)));
-          const isStrong = s.signal === 'STRONG_BUY';
-          const isBreakout = s.breakout_52w;
+          const rt         = rtPrices[s.ticker];
+          const score      = Math.min(10, Math.max(1, Number(s.momentum_score)));
+          const isBreakout = s.signal === 'BREAKOUT';
+          const is52w      = s.breakout_52w;
 
           return (
             <button
               key={s.ticker}
               onClick={() => {
-                // ✅ Drawer가 있으면 drawer로, 없으면 페이지 이동
                 if (onOpenDrawer) onOpenDrawer(s.ticker);
                 else router.push(`/stock/${s.ticker}`);
               }}
               className={`relative rounded-xl border p-4 bg-bg-card text-left transition-all hover:scale-[1.01] hover:border-zinc-600 active:scale-[0.99]
-                ${i === 0 && isStrong ? 'border-emerald-500/70 shadow-[0_0_24px_rgba(16,185,129,0.12)]' :
-                  isBreakout ? 'border-amber-600/60' : 'border-emerald-800/50'}`}
+                ${i === 0 && isBreakout ? 'border-emerald-500/70 shadow-[0_0_24px_rgba(16,185,129,0.12)]' :
+                  is52w ? 'border-amber-600/60' : 'border-emerald-800/50'}`}
             >
-              {/* 순위 배지 */}
+              {/* 배지 */}
               <div className="absolute top-2 right-2 flex gap-1">
-                {isBreakout && (
+                {is52w && (
                   <span className="text-[9px] bg-amber-900 text-amber-300 border border-amber-700 px-1.5 py-0.5 rounded">🚀 신고가</span>
                 )}
-                {isStrong ? (
-                  <span className="text-[9px] bg-emerald-900 text-emerald-200 border border-emerald-700 px-1.5 py-0.5 rounded font-semibold">즉시매수</span>
+                {isBreakout ? (
+                  <span className="text-[9px] bg-emerald-900 text-emerald-200 border border-emerald-700 px-1.5 py-0.5 rounded font-semibold">즉시진입</span>
                 ) : (
-                  <span className="text-[9px] bg-zinc-800 text-zinc-400 border border-zinc-700 px-1.5 py-0.5 rounded">매수</span>
+                  <span className="text-[9px] bg-blue-950 text-blue-300 border border-blue-800 px-1.5 py-0.5 rounded">진입대기</span>
                 )}
               </div>
 
