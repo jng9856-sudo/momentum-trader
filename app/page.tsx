@@ -47,6 +47,11 @@ const SECTOR_MAP: Record<string, string> = {
   RNG:'AI·소프트웨어', ZM:'AI·소프트웨어', NICE:'AI·소프트웨어',
   CYBR:'AI·소프트웨어', TENB:'AI·소프트웨어', QLYS:'AI·소프트웨어',
   VRNS:'AI·소프트웨어', SAIL:'AI·소프트웨어',
+  // ── AI·소프트웨어 ETF ──
+  ARKK:'AI·소프트웨어', ARKW:'AI·소프트웨어',
+  // ── 양자컴퓨팅 ──
+  IONQ:'AI·소프트웨어', RGTI:'AI·소프트웨어', QUBT:'AI·소프트웨어',
+  QBTS:'AI·소프트웨어', IQM:'AI·소프트웨어',
   AAPL:'빅테크·하드웨어', AMZN:'빅테크·하드웨어', ORCL:'빅테크·하드웨어',
   IBM:'빅테크·하드웨어', HPQ:'빅테크·하드웨어', DELL:'빅테크·하드웨어',
   HPE:'빅테크·하드웨어', WDC:'빅테크·하드웨어', STX:'빅테크·하드웨어',
@@ -58,6 +63,10 @@ const SECTOR_MAP: Record<string, string> = {
   TDG:'방산·항공우주', LDOS:'방산·항공우주', KTOS:'방산·항공우주',
   CACI:'방산·항공우주', SAIC:'방산·항공우주', AXON:'방산·항공우주',
   DRS:'방산·항공우주', AVAV:'방산·항공우주', RKLB:'방산·항공우주',
+  // ── 방산·항공우주 ETF + 우주 관련 ──
+  ARKX:'방산·항공우주', ITA:'방산·항공우주', XAR:'방산·항공우주',
+  PL:'방산·항공우주', SPCE:'방산·항공우주', RDW:'방산·항공우주',
+  ASTS:'방산·항공우주', AST:'방산·항공우주',
   SMR:'원자력·전력', OKLO:'원자력·전력', LEU:'원자력·전력',
   CCJ:'원자력·전력', UEC:'원자력·전력', NNE:'원자력·전력',
   BWXT:'원자력·전력', TLN:'원자력·전력', VST:'원자력·전력',
@@ -82,6 +91,8 @@ const SECTOR_MAP: Record<string, string> = {
   CRSP:'바이오테크', EDIT:'바이오테크', NTLA:'바이오테크',
   RXRX:'바이오테크', VERA:'바이오테크', ILMN:'바이오테크',
   IONS:'바이오테크', ALNY:'바이오테크', INCY:'바이오테크',
+  // ── 바이오테크 ETF ──
+  ARKG:'바이오테크', IBB:'바이오테크', XBI:'바이오테크',
   JPM:'금융·핀테크', BAC:'금융·핀테크', GS:'금융·핀테크',
   MS:'금융·핀테크', WFC:'금융·핀테크', V:'금융·핀테크',
   MA:'금융·핀테크', PYPL:'금융·핀테크', SQ:'금융·핀테크',
@@ -89,6 +100,8 @@ const SECTOR_MAP: Record<string, string> = {
   HOOD:'금융·핀테크', COIN:'금융·핀테크', MARA:'금융·핀테크',
   RIOT:'금융·핀테크', MSTR:'금융·핀테크', BLK:'금융·핀테크',
   C:'금융·핀테크', AXP:'금융·핀테크', COF:'금융·핀테크',
+  // ── 금융·핀테크 ETF ──
+  ARKF:'금융·핀테크', FINX:'금융·핀테크',
   NFLX:'소비재·미디어', DIS:'소비재·미디어', SPOT:'소비재·미디어',
   TTD:'소비재·미디어', RBLX:'소비재·미디어', EA:'소비재·미디어',
   HD:'소비재·유통', LOW:'소비재·유통', WMT:'소비재·유통',
