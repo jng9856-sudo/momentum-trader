@@ -15,13 +15,13 @@ const WATCHLIST_KEY = 'mt_watchlist_v3';
 const MAX_TICKERS = 1000;
 const BATCH_SIZE = 50;
 
-type FilterType = 'ALL' | 'STRONG_BUY' | 'BUY' | 'HOLD' | 'SELL' | 'STRONG_SELL';
+// ── 신호 4단계: BREAKOUT(즉시진입) / SETUP(진입대기) / WATCH(관심등록) / HOLD / SELL / STRONG_SELL
+type FilterType = 'ALL' | 'BREAKOUT' | 'SETUP' | 'WATCH' | 'HOLD' | 'SELL' | 'STRONG_SELL';
 type SortType = 'SCORE' | 'TICKER' | 'SIGNAL';
 type TabType = 'scanner' | 'portfolio' | 'sectors' | 'backtest';
 
-// ── 섹터 맵 ──────────────────────────────────────────────────────────────────
+// ── 섹터 맵 ───────────────────────────────────────────────────────────────────
 const SECTOR_MAP: Record<string, string> = {
-  // 반도체
   NVDA:'반도체', AMD:'반도체', AVGO:'반도체', MU:'반도체', INTC:'반도체',
   ARM:'반도체', MRVL:'반도체', TSM:'반도체', QCOM:'반도체', AMAT:'반도체',
   LRCX:'반도체', KLAC:'반도체', ASML:'반도체', ON:'반도체', SWKS:'반도체',
@@ -30,7 +30,6 @@ const SECTOR_MAP: Record<string, string> = {
   WOLF:'반도체', CRUS:'반도체', RMBS:'반도체', ACLS:'반도체', ONTO:'반도체',
   SMCI:'반도체', COHU:'반도체', ICHR:'반도체', FORM:'반도체', MKSI:'반도체',
   SITM:'반도체', ALGM:'반도체', DIOD:'반도체', MTSI:'반도체', POWI:'반도체',
-  // AI·소프트웨어·클라우드·사이버보안
   MSFT:'AI·소프트웨어', GOOGL:'AI·소프트웨어', GOOG:'AI·소프트웨어',
   META:'AI·소프트웨어', CRM:'AI·소프트웨어', SNOW:'AI·소프트웨어',
   DDOG:'AI·소프트웨어', ZS:'AI·소프트웨어', CRWD:'AI·소프트웨어',
@@ -46,66 +45,43 @@ const SECTOR_MAP: Record<string, string> = {
   PAYC:'AI·소프트웨어', APPF:'AI·소프트웨어', DOCU:'AI·소프트웨어',
   TWLO:'AI·소프트웨어', ESTC:'AI·소프트웨어', DOMO:'AI·소프트웨어',
   RNG:'AI·소프트웨어', ZM:'AI·소프트웨어', NICE:'AI·소프트웨어',
-  CYBR:'AI·소프트웨어', RPM:'AI·소프트웨어', TENB:'AI·소프트웨어',
-  QLYS:'AI·소프트웨어', VRNS:'AI·소프트웨어', SAIL:'AI·소프트웨어',
-  // 빅테크·하드웨어·인터넷
+  CYBR:'AI·소프트웨어', TENB:'AI·소프트웨어', QLYS:'AI·소프트웨어',
+  VRNS:'AI·소프트웨어', SAIL:'AI·소프트웨어',
   AAPL:'빅테크·하드웨어', AMZN:'빅테크·하드웨어', ORCL:'빅테크·하드웨어',
   IBM:'빅테크·하드웨어', HPQ:'빅테크·하드웨어', DELL:'빅테크·하드웨어',
   HPE:'빅테크·하드웨어', WDC:'빅테크·하드웨어', STX:'빅테크·하드웨어',
   NTAP:'빅테크·하드웨어', PSTG:'빅테크·하드웨어', ANET:'빅테크·하드웨어',
   CSCO:'빅테크·하드웨어', JNPR:'빅테크·하드웨어', FFIV:'빅테크·하드웨어',
-  AKAM:'빅테크·하드웨어', CDW:'빅테크·하드웨어', NTDOY:'빅테크·하드웨어',
-  // 방산·항공우주
+  AKAM:'빅테크·하드웨어', CDW:'빅테크·하드웨어',
   LMT:'방산·항공우주', RTX:'방산·항공우주', NOC:'방산·항공우주',
   GD:'방산·항공우주', BA:'방산·항공우주', HII:'방산·항공우주',
   TDG:'방산·항공우주', LDOS:'방산·항공우주', KTOS:'방산·항공우주',
   CACI:'방산·항공우주', SAIC:'방산·항공우주', AXON:'방산·항공우주',
-  DRS:'방산·항공우주', AVAV:'방산·항공우주', ACHR:'방산·항공우주',
-  RDW:'방산·항공우주', SPCE:'방산·항공우주', RKLB:'방산·항공우주',
-  // 원자력·전력인프라
+  DRS:'방산·항공우주', AVAV:'방산·항공우주', RKLB:'방산·항공우주',
   SMR:'원자력·전력', OKLO:'원자력·전력', LEU:'원자력·전력',
   CCJ:'원자력·전력', UEC:'원자력·전력', NNE:'원자력·전력',
   BWXT:'원자력·전력', TLN:'원자력·전력', VST:'원자력·전력',
-  CEG:'원자력·전력', ETR:'원자력·전력', AEE:'원자력·전력',
-  PCG:'원자력·전력', EXC:'원자력·전력', PPL:'원자력·전력',
-  // 친환경에너지·수소
+  CEG:'원자력·전력', ETR:'원자력·전력', EXC:'원자력·전력',
   PLUG:'친환경에너지', BE:'친환경에너지', FCEL:'친환경에너지',
   ENPH:'친환경에너지', SEDG:'친환경에너지', FSLR:'친환경에너지',
-  RUN:'친환경에너지', ARRY:'친환경에너지', NOVA:'친환경에너지',
-  CWEN:'친환경에너지', NEE:'친환경에너지', AES:'친환경에너지',
-  HASI:'친환경에너지', CLNE:'친환경에너지', HYLN:'친환경에너지',
-  // 전기차·배터리
+  RUN:'친환경에너지', ARRY:'친환경에너지', NEE:'친환경에너지',
   TSLA:'전기차·배터리', RIVN:'전기차·배터리', LCID:'전기차·배터리',
   NIO:'전기차·배터리', XPEV:'전기차·배터리', LI:'전기차·배터리',
-  CHPT:'전기차·배터리', BLNK:'전기차·배터리', EVGO:'전기차·배터리',
-  QS:'전기차·배터리', FSR:'전기차·배터리', GOEV:'전기차·배터리',
-  // 전통에너지
+  CHPT:'전기차·배터리', BLNK:'전기차·배터리', QS:'전기차·배터리',
   XOM:'전통에너지', CVX:'전통에너지', SLB:'전통에너지', COP:'전통에너지',
   OXY:'전통에너지', HAL:'전통에너지', BKR:'전통에너지', PSX:'전통에너지',
-  MPC:'전통에너지', VLO:'전통에너지', DVN:'전통에너지', FANG:'전통에너지',
-  PXD:'전통에너지', APA:'전통에너지', MRO:'전통에너지', HES:'전통에너지',
-  EOG:'전통에너지', LNG:'전통에너지', CQP:'전통에너지', KMI:'전통에너지',
-  // 헬스케어·제약
+  MPC:'전통에너지', VLO:'전통에너지', DVN:'전통에너지', EOG:'전통에너지',
+  LNG:'전통에너지', MRO:'전통에너지', APA:'전통에너지', HES:'전통에너지',
   LLY:'헬스케어·제약', JNJ:'헬스케어·제약', UNH:'헬스케어·제약',
   PFE:'헬스케어·제약', MRK:'헬스케어·제약', ABBV:'헬스케어·제약',
   BMY:'헬스케어·제약', AMGN:'헬스케어·제약', GILD:'헬스케어·제약',
-  BIIB:'헬스케어·제약', REGN:'헬스케어·제약', VRTX:'헬스케어·제약',
-  NVO:'헬스케어·제약', AZN:'헬스케어·제약', RHHBY:'헬스케어·제약',
+  REGN:'헬스케어·제약', VRTX:'헬스케어·제약', NVO:'헬스케어·제약',
   ABT:'헬스케어·제약', MDT:'헬스케어·제약', SYK:'헬스케어·제약',
-  BSX:'헬스케어·제약', ISRG:'헬스케어·제약', EW:'헬스케어·제약',
-  ZBH:'헬스케어·제약', BAX:'헬스케어·제약', BDX:'헬스케어·제약',
-  TMO:'헬스케어·제약', DHR:'헬스케어·제약', A:'헬스케어·제약',
-  IQV:'헬스케어·제약', CRL:'헬스케어·제약', MEDP:'헬스케어·제약',
-  // 바이오테크
+  BSX:'헬스케어·제약', ISRG:'헬스케어·제약', TMO:'헬스케어·제약',
   MRNA:'바이오테크', BNTX:'바이오테크', BEAM:'바이오테크',
   CRSP:'바이오테크', EDIT:'바이오테크', NTLA:'바이오테크',
-  RXRX:'바이오테크', VERA:'바이오테크', ROIV:'바이오테크',
-  EXAS:'바이오테크', PACB:'바이오테크', ILMN:'바이오테크',
+  RXRX:'바이오테크', VERA:'바이오테크', ILMN:'바이오테크',
   IONS:'바이오테크', ALNY:'바이오테크', INCY:'바이오테크',
-  SGEN:'바이오테크', HALO:'바이오테크', EXEL:'바이오테크',
-  ARGX:'바이오테크', RARE:'바이오테크', FOLD:'바이오테크',
-  ARWR:'바이오테크', RCUS:'바이오테크', KYMR:'바이오테크',
-  // 금융·핀테크·암호화폐
   JPM:'금융·핀테크', BAC:'금융·핀테크', GS:'금융·핀테크',
   MS:'금융·핀테크', WFC:'금융·핀테크', V:'금융·핀테크',
   MA:'금융·핀테크', PYPL:'금융·핀테크', SQ:'금융·핀테크',
@@ -113,49 +89,26 @@ const SECTOR_MAP: Record<string, string> = {
   HOOD:'금융·핀테크', COIN:'금융·핀테크', MARA:'금융·핀테크',
   RIOT:'금융·핀테크', MSTR:'금융·핀테크', BLK:'금융·핀테크',
   C:'금융·핀테크', AXP:'금융·핀테크', COF:'금융·핀테크',
-  DFS:'금융·핀테크', ALLY:'금융·핀테크', LC:'금융·핀테크',
-  // 소비재·미디어·엔터
-  NFLX:'소비재·미디어', DIS:'소비재·미디어', PARA:'소비재·미디어',
-  CMCSA:'소비재·미디어', SPOT:'소비재·미디어', TTD:'소비재·미디어',
-  RBLX:'소비재·미디어', U:'소비재·미디어', EA:'소비재·미디어',
-  TTWO:'소비재·미디어', ATVI:'소비재·미디어', LYV:'소비재·미디어',
-  // 소비재·유통·리테일
-  HD:'소비재·유통', LOW:'소비재·유통', TGT:'소비재·유통',
-  WMT:'소비재·유통', COST:'소비재·유통', NKE:'소비재·유통',
-  SBUX:'소비재·유통', MCD:'소비재·유통', YUM:'소비재·유통',
-  CMG:'소비재·유통', DKNG:'소비재·유통', DASH:'소비재·유통',
-  ABNB:'소비재·유통', UBER:'소비재·유통', LYFT:'소비재·유통',
-  // 산업재·소재
+  NFLX:'소비재·미디어', DIS:'소비재·미디어', SPOT:'소비재·미디어',
+  TTD:'소비재·미디어', RBLX:'소비재·미디어', EA:'소비재·미디어',
+  HD:'소비재·유통', LOW:'소비재·유통', WMT:'소비재·유통',
+  COST:'소비재·유통', NKE:'소비재·유통', SBUX:'소비재·유통',
+  MCD:'소비재·유통', UBER:'소비재·유통', ABNB:'소비재·유통',
   GE:'산업재·소재', HON:'산업재·소재', CAT:'산업재·소재',
   DE:'산업재·소재', ETN:'산업재·소재', EMR:'산업재·소재',
-  ROK:'산업재·소재', PH:'산업재·소재', XYL:'산업재·소재',
-  GNRC:'산업재·소재', CARR:'산업재·소재', OTIS:'산업재·소재',
   FCX:'산업재·소재', NEM:'산업재·소재', AA:'산업재·소재',
-  CLF:'산업재·소재', X:'산업재·소재', NUE:'산업재·소재',
 };
 
 const SECTOR_ORDER = [
-  '반도체',
-  'AI·소프트웨어',
-  '빅테크·하드웨어',
-  '방산·항공우주',
-  '원자력·전력',
-  '친환경에너지',
-  '전기차·배터리',
-  '전통에너지',
-  '헬스케어·제약',
-  '바이오테크',
-  '금융·핀테크',
-  '소비재·미디어',
-  '소비재·유통',
-  '산업재·소재',
-  '기타',
+  '반도체', 'AI·소프트웨어', '빅테크·하드웨어', '방산·항공우주',
+  '원자력·전력', '친환경에너지', '전기차·배터리', '전통에너지',
+  '헬스케어·제약', '바이오테크', '금융·핀테크',
+  '소비재·미디어', '소비재·유통', '산업재·소재', '기타',
 ];
 
 function getSector(s: StockAnalysis): string {
   return s.sector || SECTOR_MAP[s.ticker.toUpperCase()] || '기타';
 }
-// ─────────────────────────────────────────────────────────────────────────────
 
 function todayKey() { return new Date().toISOString().slice(0, 10); }
 
@@ -207,9 +160,7 @@ export default function Home() {
   const [isCompact, setIsCompact] = useState(false);
   const [drawerTicker, setDrawerTicker] = useState<string | null>(null);
   const [earningsMap, setEarningsMap] = useState<Record<string, { earningsDate: string | null; daysUntil: number | null; epsEstimate: number | null; revenueEstimate: string | null; lastEPS: number | null }>>({});
-  // ── 섹터 접기/펼치기 ────────────────────────────────────────────────────────
   const [collapsedSectors, setCollapsedSectors] = useState<Set<string>>(new Set());
-  // ─────────────────────────────────────────────────────────────────────────────
   const fileRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef(false);
 
@@ -409,8 +360,9 @@ export default function Home() {
     .sort((a, b) => {
       if (sort === 'SCORE') return Number(b.momentum_score) - Number(a.momentum_score);
       if (sort === 'TICKER') return a.ticker.localeCompare(b.ticker);
-      const o = { STRONG_BUY: 0, BUY: 1, HOLD: 2, SELL: 3, STRONG_SELL: 4 } as Record<string, number>;
-      return (o[a.signal] ?? 5) - (o[b.signal] ?? 5);
+      // 신호순: BREAKOUT > SETUP > WATCH > HOLD > SELL > STRONG_SELL
+      const o = { BREAKOUT: 0, SETUP: 1, WATCH: 2, HOLD: 3, SELL: 4, STRONG_SELL: 5 } as Record<string, number>;
+      return (o[a.signal] ?? 9) - (o[b.signal] ?? 9);
     });
 
   const holdCnt = allStocks.filter(s => s.signal === 'HOLD').length;
@@ -434,7 +386,6 @@ export default function Home() {
     <div className="min-h-screen bg-bg-base">
       <div className="max-w-[1400px] mx-auto px-3 sm:px-6 py-4 sm:py-8">
 
-        {/* ── Header ── */}
         <header className="mb-3 sticky top-0 z-20 bg-bg-base pt-1 pb-2">
           <div className="flex items-center justify-between gap-2 pb-3 border-b border-border mb-3">
             <div className="min-w-0">
@@ -443,30 +394,22 @@ export default function Home() {
             </div>
             <div className="flex gap-1.5 shrink-0">
               <button onClick={resetAll}
-                className="px-3 py-2 text-xs font-semibold rounded-lg border border-zinc-700 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 transition-all whitespace-nowrap">
-                ↺
-              </button>
+                className="px-3 py-2 text-xs font-semibold rounded-lg border border-zinc-700 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 transition-all whitespace-nowrap">↺</button>
               {loading && (
                 <button onClick={stopAnalysis}
-                  className="px-3 py-2 text-xs font-semibold rounded-lg border border-red-800 text-red-400 hover:bg-red-950 transition-all whitespace-nowrap">
-                  중단
-                </button>
+                  className="px-3 py-2 text-xs font-semibold rounded-lg border border-red-800 text-red-400 hover:bg-red-950 transition-all whitespace-nowrap">중단</button>
               )}
               {activeTab === 'scanner' && (
                 <button onClick={runAnalysis} disabled={loading || watchlist.length === 0}
                   className={`px-3 sm:px-5 py-2 text-xs sm:text-sm font-semibold rounded-lg border transition-all whitespace-nowrap
-                    ${loading
-                      ? 'bg-zinc-900 border-zinc-700 text-zinc-500 cursor-not-allowed'
-                      : newTickerCount > 0
-                        ? 'bg-emerald-500 border-emerald-400 text-black hover:bg-emerald-400 active:scale-95'
-                        : 'bg-zinc-800 border-zinc-700 text-zinc-400 cursor-not-allowed'}`}>
+                    ${loading ? 'bg-zinc-900 border-zinc-700 text-zinc-500 cursor-not-allowed'
+                      : newTickerCount > 0 ? 'bg-emerald-500 border-emerald-400 text-black hover:bg-emerald-400 active:scale-95'
+                      : 'bg-zinc-800 border-zinc-700 text-zinc-400 cursor-not-allowed'}`}>
                   {analyzeButtonLabel}
                 </button>
               )}
             </div>
           </div>
-
-          {/* 탭 */}
           <div className="flex gap-1 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
             {([
               ['scanner',   '모멘텀 스캐너'],
@@ -476,9 +419,7 @@ export default function Home() {
             ] as [TabType, string][]).map(([tab, label]) => (
               <button key={tab} onClick={() => setActiveTab(tab)}
                 className={`px-3 py-2 text-xs sm:text-sm font-medium rounded-lg border transition-colors whitespace-nowrap shrink-0
-                  ${activeTab === tab
-                    ? 'bg-zinc-700 border-zinc-600 text-zinc-100'
-                    : 'bg-transparent border-zinc-800 text-zinc-500 hover:text-zinc-300'}`}>
+                  ${activeTab === tab ? 'bg-zinc-700 border-zinc-600 text-zinc-100' : 'bg-transparent border-zinc-800 text-zinc-500 hover:text-zinc-300'}`}>
                 {label}
               </button>
             ))}
@@ -491,16 +432,9 @@ export default function Home() {
 
         {activeTab === 'scanner' && (
           <>
-            {/* ── 2x2 그리드 ── */}
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 mb-3">
-
-              {/* 시장상태 */}
               <MarketStatus />
-
-              {/* 관심종목 */}
               <WatchlistManager watchlist={watchlist} onAdd={addTicker} onRemove={removeTicker} maxTickers={MAX_TICKERS} />
-
-              {/* 시장 컨텍스트 */}
               {marketCtx ? (
                 <div className="border border-zinc-800 rounded-xl bg-zinc-900/60 overflow-hidden">
                   <button onClick={() => setCtxOpen(o => !o)}
@@ -518,8 +452,6 @@ export default function Home() {
                   )}
                 </div>
               ) : <div />}
-
-              {/* 엑셀 업로드 */}
               <div className="border border-zinc-800 rounded-xl bg-zinc-900/40 overflow-hidden">
                 <button onClick={() => setXlsxOpen(o => !o)}
                   className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-zinc-800/40 transition-colors">
@@ -531,13 +463,9 @@ export default function Home() {
                     <div className="flex flex-wrap items-center gap-2">
                       <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleFile} className="hidden" />
                       <button onClick={() => fileRef.current?.click()}
-                        className="text-sm px-4 py-2 bg-zinc-800 border border-zinc-700 text-zinc-200 rounded-lg hover:bg-zinc-700 transition-colors">
-                        파일 선택
-                      </button>
+                        className="text-sm px-4 py-2 bg-zinc-800 border border-zinc-700 text-zinc-200 rounded-lg hover:bg-zinc-700 transition-colors">파일 선택</button>
                       <button onClick={() => { setWatchlist(DEFAULT_TICKERS); setXlsxMsg(''); }}
-                        className="text-xs px-3 py-2 border border-zinc-800 text-zinc-500 rounded-lg hover:text-zinc-300 transition-colors">
-                        초기화
-                      </button>
+                        className="text-xs px-3 py-2 border border-zinc-800 text-zinc-500 rounded-lg hover:text-zinc-300 transition-colors">초기화</button>
                       {xlsxMsg && (
                         <span className={`text-xs ${xlsxMsg.startsWith('✓') ? 'text-emerald-400' : 'text-zinc-400'}`}>{xlsxMsg}</span>
                       )}
@@ -548,7 +476,6 @@ export default function Home() {
               </div>
             </div>
 
-            {/* 진행률 토스트 */}
             {loading && progress.total > 0 && (
               <div className="fixed bottom-6 right-4 z-50 w-64 bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl p-3">
                 <div className="flex items-center justify-between mb-2">
@@ -565,10 +492,8 @@ export default function Home() {
 
             {error && <div className="mb-3 p-3 bg-red-950 border border-red-800 rounded-xl text-sm text-red-300">오류: {error}</div>}
 
-            {/* ── 분석 결과 ── */}
             {allStocks.length > 0 && (
               <>
-                {/* 검색 */}
                 <div className="relative mb-3">
                   <input type="text" value={search} onChange={e => setSearch(e.target.value)}
                     placeholder="티커 검색 (예: AMD)"
@@ -577,14 +502,14 @@ export default function Home() {
                   {search && <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300 text-xs">✕</button>}
                 </div>
 
-                {/* 필터/정렬 */}
                 <div className="mb-3 sticky top-[100px] z-10 bg-bg-base py-2">
-                  {/* 필터 */}
+                  {/* ── 신호 필터 (4단계) ── */}
                   <div className="flex gap-1 overflow-x-auto mb-2" style={{ scrollbarWidth: 'none' }}>
                     {([
                       ['ALL',         `전체(${allStocks.length})`],
-                      ['STRONG_BUY',  `즉시매수(${allStocks.filter(s => s.signal==='STRONG_BUY').length})`],
-                      ['BUY',         `매수(${allStocks.filter(s => s.signal==='BUY').length})`],
+                      ['BREAKOUT',    `즉시진입(${allStocks.filter(s => s.signal==='BREAKOUT').length})`],
+                      ['SETUP',       `진입대기(${allStocks.filter(s => s.signal==='SETUP').length})`],
+                      ['WATCH',       `관심등록(${allStocks.filter(s => s.signal==='WATCH').length})`],
                       ['HOLD',        `관망(${holdCnt})`],
                       ['SELL',        `매도(${allStocks.filter(s => s.signal==='SELL').length})`],
                       ['STRONG_SELL', `즉시매도(${allStocks.filter(s => s.signal==='STRONG_SELL').length})`],
@@ -596,7 +521,7 @@ export default function Home() {
                       </button>
                     ))}
                   </div>
-                  {/* 정렬 + 전체 펼치기/접기 */}
+                  {/* ── 정렬 + 전체 접기 ── */}
                   <div className="flex gap-1 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
                     {(['SCORE','SIGNAL','TICKER'] as SortType[]).map(s => (
                       <button key={s} onClick={() => setSort(s)}
@@ -610,10 +535,8 @@ export default function Home() {
                         ${isCompact ? 'bg-zinc-700 border-zinc-600 text-zinc-100' : 'bg-transparent border-zinc-800 text-zinc-500 hover:text-zinc-300'}`}>
                       {isCompact ? '■ 컴팩트' : '☰ 컴팩트'}
                     </button>
-                    {/* 전체 접기/펼치기 */}
                     <button
                       onClick={() => {
-                        // 현재 열려있는 섹터가 하나라도 있으면 전체 접기, 아니면 전체 펼치기
                         const sectorNames = [...new Set(displayed.map(s => getSector(s)))];
                         if (collapsedSectors.size < sectorNames.length) {
                           setCollapsedSectors(new Set(sectorNames));
@@ -650,43 +573,39 @@ export default function Home() {
                       {orderedSectors.map(sector => {
                         const stocks = grouped.get(sector)!;
                         const collapsed = collapsedSectors.has(sector);
-                        const strongBuyCnt = stocks.filter(s => s.signal === 'STRONG_BUY').length;
-                        const buyCnt      = stocks.filter(s => s.signal === 'BUY').length;
+                        const breakoutCnt = stocks.filter(s => s.signal === 'BREAKOUT').length;
+                        const setupCnt    = stocks.filter(s => s.signal === 'SETUP').length;
+                        const watchCnt    = stocks.filter(s => s.signal === 'WATCH').length;
                         const avgScore    = Math.round(stocks.reduce((acc, s) => acc + Number(s.momentum_score), 0) / stocks.length);
 
                         return (
                           <div key={sector}>
-                            {/* 섹터 헤더 */}
-                            <button
-                              onClick={() => toggleSector(sector)}
-                              className="w-full flex items-center gap-2 mb-2 group text-left"
-                            >
-                              <span className="text-[11px] font-bold text-zinc-200 tracking-widest uppercase shrink-0">
-                                {sector}
-                              </span>
-                              <span className="text-[10px] text-zinc-600 font-mono shrink-0">
-                                {stocks.length}종목
-                              </span>
-                              {strongBuyCnt > 0 && (
-                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-950 border border-emerald-800 text-emerald-400 font-mono shrink-0">
-                                  즉시매수 {strongBuyCnt}
+                            <button onClick={() => toggleSector(sector)}
+                              className="w-full flex items-center gap-2 mb-2 group text-left">
+                              <span className="text-[11px] font-bold text-zinc-200 tracking-widest uppercase shrink-0">{sector}</span>
+                              <span className="text-[10px] text-zinc-600 font-mono shrink-0">{stocks.length}종목</span>
+                              {breakoutCnt > 0 && (
+                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-950 border border-emerald-700 text-emerald-400 font-mono shrink-0">
+                                  즉시진입 {breakoutCnt}
                                 </span>
                               )}
-                              {buyCnt > 0 && (
+                              {setupCnt > 0 && (
                                 <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-950 border border-blue-800 text-blue-400 font-mono shrink-0">
-                                  매수 {buyCnt}
+                                  진입대기 {setupCnt}
                                 </span>
                               )}
-                              <span className="text-[10px] text-zinc-700 font-mono shrink-0">
-                                avg {avgScore}점
-                              </span>
+                              {watchCnt > 0 && (
+                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-yellow-950 border border-yellow-800 text-yellow-500 font-mono shrink-0">
+                                  관심 {watchCnt}
+                                </span>
+                              )}
+                              <span className="text-[10px] text-zinc-700 font-mono shrink-0">avg {avgScore}점</span>
                               <div className="flex-1 h-px bg-zinc-800 group-hover:bg-zinc-700 transition-colors" />
                               <span className="text-zinc-600 text-xs group-hover:text-zinc-400 transition-colors shrink-0">
                                 {collapsed ? '▶' : '▼'}
                               </span>
                             </button>
 
-                            {/* 카드 그리드 */}
                             {!collapsed && (
                               <div className={isCompact ? 'flex flex-col gap-1.5' : 'grid grid-cols-1 xl:grid-cols-2 gap-4'}>
                                 {stocks.map((s, i) => (
@@ -717,7 +636,6 @@ export default function Home() {
               </>
             )}
 
-            {/* 빈 상태 */}
             {allStocks.length === 0 && !loading && !error && (
               <div className="text-center py-20">
                 <div className="text-5xl mb-4 text-zinc-800">◈</div>
@@ -735,7 +653,6 @@ export default function Home() {
         </footer>
       </div>
 
-      {/* 사이드 Drawer */}
       {drawerStock && (
         <>
           <div className="fixed inset-0 z-30 bg-black/60 backdrop-blur-sm" onClick={() => setDrawerTicker(null)} />
@@ -747,13 +664,9 @@ export default function Home() {
               </div>
               <div className="flex items-center gap-2">
                 <a href={`/stock/${drawerStock.ticker}`}
-                  className="text-xs px-3 py-1.5 rounded-lg border border-zinc-700 text-zinc-400 hover:bg-zinc-800 transition-colors">
-                  전체 →
-                </a>
+                  className="text-xs px-3 py-1.5 rounded-lg border border-zinc-700 text-zinc-400 hover:bg-zinc-800 transition-colors">전체 →</a>
                 <button onClick={() => setDrawerTicker(null)}
-                  className="w-8 h-8 flex items-center justify-center rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200 transition-colors text-sm">
-                  ✕
-                </button>
+                  className="w-8 h-8 flex items-center justify-center rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200 transition-colors text-sm">✕</button>
               </div>
             </div>
             <div className="p-4">
