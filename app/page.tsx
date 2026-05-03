@@ -19,6 +19,144 @@ type FilterType = 'ALL' | 'STRONG_BUY' | 'BUY' | 'HOLD' | 'SELL' | 'STRONG_SELL'
 type SortType = 'SCORE' | 'TICKER' | 'SIGNAL';
 type TabType = 'scanner' | 'portfolio' | 'sectors' | 'backtest';
 
+// ── 섹터 맵 ──────────────────────────────────────────────────────────────────
+const SECTOR_MAP: Record<string, string> = {
+  // 반도체
+  NVDA:'반도체', AMD:'반도체', AVGO:'반도체', MU:'반도체', INTC:'반도체',
+  ARM:'반도체', MRVL:'반도체', TSM:'반도체', QCOM:'반도체', AMAT:'반도체',
+  LRCX:'반도체', KLAC:'반도체', ASML:'반도체', ON:'반도체', SWKS:'반도체',
+  MCHP:'반도체', TXN:'반도체', ADI:'반도체', MPWR:'반도체', SLAB:'반도체',
+  AMBA:'반도체', NXPI:'반도체', STM:'반도체', UMC:'반도체', GFS:'반도체',
+  WOLF:'반도체', CRUS:'반도체', RMBS:'반도체', ACLS:'반도체', ONTO:'반도체',
+  SMCI:'반도체', COHU:'반도체', ICHR:'반도체', FORM:'반도체', MKSI:'반도체',
+  SITM:'반도체', ALGM:'반도체', DIOD:'반도체', MTSI:'반도체', POWI:'반도체',
+  // AI·소프트웨어·클라우드·사이버보안
+  MSFT:'AI·소프트웨어', GOOGL:'AI·소프트웨어', GOOG:'AI·소프트웨어',
+  META:'AI·소프트웨어', CRM:'AI·소프트웨어', SNOW:'AI·소프트웨어',
+  DDOG:'AI·소프트웨어', ZS:'AI·소프트웨어', CRWD:'AI·소프트웨어',
+  PANW:'AI·소프트웨어', FTNT:'AI·소프트웨어', NET:'AI·소프트웨어',
+  OKTA:'AI·소프트웨어', HUBS:'AI·소프트웨어', WDAY:'AI·소프트웨어',
+  NOW:'AI·소프트웨어', ADBE:'AI·소프트웨어', INTU:'AI·소프트웨어',
+  TEAM:'AI·소프트웨어', PATH:'AI·소프트웨어', AI:'AI·소프트웨어',
+  PLTR:'AI·소프트웨어', GTLB:'AI·소프트웨어', MDB:'AI·소프트웨어',
+  CFLT:'AI·소프트웨어', S:'AI·소프트웨어', BILL:'AI·소프트웨어',
+  SHOP:'AI·소프트웨어', TOST:'AI·소프트웨어', APP:'AI·소프트웨어',
+  SMAR:'AI·소프트웨어', ASAN:'AI·소프트웨어', ZI:'AI·소프트웨어',
+  VEEV:'AI·소프트웨어', CDAY:'AI·소프트웨어', PCTY:'AI·소프트웨어',
+  PAYC:'AI·소프트웨어', APPF:'AI·소프트웨어', DOCU:'AI·소프트웨어',
+  TWLO:'AI·소프트웨어', ESTC:'AI·소프트웨어', DOMO:'AI·소프트웨어',
+  RNG:'AI·소프트웨어', ZM:'AI·소프트웨어', NICE:'AI·소프트웨어',
+  CYBR:'AI·소프트웨어', RPM:'AI·소프트웨어', TENB:'AI·소프트웨어',
+  QLYS:'AI·소프트웨어', VRNS:'AI·소프트웨어', SAIL:'AI·소프트웨어',
+  // 빅테크·하드웨어·인터넷
+  AAPL:'빅테크·하드웨어', AMZN:'빅테크·하드웨어', ORCL:'빅테크·하드웨어',
+  IBM:'빅테크·하드웨어', HPQ:'빅테크·하드웨어', DELL:'빅테크·하드웨어',
+  HPE:'빅테크·하드웨어', WDC:'빅테크·하드웨어', STX:'빅테크·하드웨어',
+  NTAP:'빅테크·하드웨어', PSTG:'빅테크·하드웨어', ANET:'빅테크·하드웨어',
+  CSCO:'빅테크·하드웨어', JNPR:'빅테크·하드웨어', FFIV:'빅테크·하드웨어',
+  AKAM:'빅테크·하드웨어', CDW:'빅테크·하드웨어', NTDOY:'빅테크·하드웨어',
+  // 방산·항공우주
+  LMT:'방산·항공우주', RTX:'방산·항공우주', NOC:'방산·항공우주',
+  GD:'방산·항공우주', BA:'방산·항공우주', HII:'방산·항공우주',
+  TDG:'방산·항공우주', LDOS:'방산·항공우주', KTOS:'방산·항공우주',
+  CACI:'방산·항공우주', SAIC:'방산·항공우주', AXON:'방산·항공우주',
+  DRS:'방산·항공우주', AVAV:'방산·항공우주', ACHR:'방산·항공우주',
+  RDW:'방산·항공우주', SPCE:'방산·항공우주', RKLB:'방산·항공우주',
+  // 원자력·전력인프라
+  SMR:'원자력·전력', OKLO:'원자력·전력', LEU:'원자력·전력',
+  CCJ:'원자력·전력', UEC:'원자력·전력', NNE:'원자력·전력',
+  BWXT:'원자력·전력', TLN:'원자력·전력', VST:'원자력·전력',
+  CEG:'원자력·전력', ETR:'원자력·전력', AEE:'원자력·전력',
+  PCG:'원자력·전력', EXC:'원자력·전력', PPL:'원자력·전력',
+  // 친환경에너지·수소
+  PLUG:'친환경에너지', BE:'친환경에너지', FCEL:'친환경에너지',
+  ENPH:'친환경에너지', SEDG:'친환경에너지', FSLR:'친환경에너지',
+  RUN:'친환경에너지', ARRY:'친환경에너지', NOVA:'친환경에너지',
+  CWEN:'친환경에너지', NEE:'친환경에너지', AES:'친환경에너지',
+  HASI:'친환경에너지', CLNE:'친환경에너지', HYLN:'친환경에너지',
+  // 전기차·배터리
+  TSLA:'전기차·배터리', RIVN:'전기차·배터리', LCID:'전기차·배터리',
+  NIO:'전기차·배터리', XPEV:'전기차·배터리', LI:'전기차·배터리',
+  CHPT:'전기차·배터리', BLNK:'전기차·배터리', EVGO:'전기차·배터리',
+  QS:'전기차·배터리', FSR:'전기차·배터리', GOEV:'전기차·배터리',
+  // 전통에너지
+  XOM:'전통에너지', CVX:'전통에너지', SLB:'전통에너지', COP:'전통에너지',
+  OXY:'전통에너지', HAL:'전통에너지', BKR:'전통에너지', PSX:'전통에너지',
+  MPC:'전통에너지', VLO:'전통에너지', DVN:'전통에너지', FANG:'전통에너지',
+  PXD:'전통에너지', APA:'전통에너지', MRO:'전통에너지', HES:'전통에너지',
+  EOG:'전통에너지', LNG:'전통에너지', CQP:'전통에너지', KMI:'전통에너지',
+  // 헬스케어·제약
+  LLY:'헬스케어·제약', JNJ:'헬스케어·제약', UNH:'헬스케어·제약',
+  PFE:'헬스케어·제약', MRK:'헬스케어·제약', ABBV:'헬스케어·제약',
+  BMY:'헬스케어·제약', AMGN:'헬스케어·제약', GILD:'헬스케어·제약',
+  BIIB:'헬스케어·제약', REGN:'헬스케어·제약', VRTX:'헬스케어·제약',
+  NVO:'헬스케어·제약', AZN:'헬스케어·제약', RHHBY:'헬스케어·제약',
+  ABT:'헬스케어·제약', MDT:'헬스케어·제약', SYK:'헬스케어·제약',
+  BSX:'헬스케어·제약', ISRG:'헬스케어·제약', EW:'헬스케어·제약',
+  ZBH:'헬스케어·제약', BAX:'헬스케어·제약', BDX:'헬스케어·제약',
+  TMO:'헬스케어·제약', DHR:'헬스케어·제약', A:'헬스케어·제약',
+  IQV:'헬스케어·제약', CRL:'헬스케어·제약', MEDP:'헬스케어·제약',
+  // 바이오테크
+  MRNA:'바이오테크', BNTX:'바이오테크', BEAM:'바이오테크',
+  CRSP:'바이오테크', EDIT:'바이오테크', NTLA:'바이오테크',
+  RXRX:'바이오테크', VERA:'바이오테크', ROIV:'바이오테크',
+  EXAS:'바이오테크', PACB:'바이오테크', ILMN:'바이오테크',
+  IONS:'바이오테크', ALNY:'바이오테크', INCY:'바이오테크',
+  SGEN:'바이오테크', HALO:'바이오테크', EXEL:'바이오테크',
+  ARGX:'바이오테크', RARE:'바이오테크', FOLD:'바이오테크',
+  ARWR:'바이오테크', RCUS:'바이오테크', KYMR:'바이오테크',
+  // 금융·핀테크·암호화폐
+  JPM:'금융·핀테크', BAC:'금융·핀테크', GS:'금융·핀테크',
+  MS:'금융·핀테크', WFC:'금융·핀테크', V:'금융·핀테크',
+  MA:'금융·핀테크', PYPL:'금융·핀테크', SQ:'금융·핀테크',
+  AFRM:'금융·핀테크', SOFI:'금융·핀테크', NU:'금융·핀테크',
+  HOOD:'금융·핀테크', COIN:'금융·핀테크', MARA:'금융·핀테크',
+  RIOT:'금융·핀테크', MSTR:'금융·핀테크', BLK:'금융·핀테크',
+  C:'금융·핀테크', AXP:'금융·핀테크', COF:'금융·핀테크',
+  DFS:'금융·핀테크', ALLY:'금융·핀테크', LC:'금융·핀테크',
+  // 소비재·미디어·엔터
+  NFLX:'소비재·미디어', DIS:'소비재·미디어', PARA:'소비재·미디어',
+  CMCSA:'소비재·미디어', SPOT:'소비재·미디어', TTD:'소비재·미디어',
+  RBLX:'소비재·미디어', U:'소비재·미디어', EA:'소비재·미디어',
+  TTWO:'소비재·미디어', ATVI:'소비재·미디어', LYV:'소비재·미디어',
+  // 소비재·유통·리테일
+  HD:'소비재·유통', LOW:'소비재·유통', TGT:'소비재·유통',
+  WMT:'소비재·유통', COST:'소비재·유통', NKE:'소비재·유통',
+  SBUX:'소비재·유통', MCD:'소비재·유통', YUM:'소비재·유통',
+  CMG:'소비재·유통', DKNG:'소비재·유통', DASH:'소비재·유통',
+  ABNB:'소비재·유통', UBER:'소비재·유통', LYFT:'소비재·유통',
+  // 산업재·소재
+  GE:'산업재·소재', HON:'산업재·소재', CAT:'산업재·소재',
+  DE:'산업재·소재', ETN:'산업재·소재', EMR:'산업재·소재',
+  ROK:'산업재·소재', PH:'산업재·소재', XYL:'산업재·소재',
+  GNRC:'산업재·소재', CARR:'산업재·소재', OTIS:'산업재·소재',
+  FCX:'산업재·소재', NEM:'산업재·소재', AA:'산업재·소재',
+  CLF:'산업재·소재', X:'산업재·소재', NUE:'산업재·소재',
+};
+
+const SECTOR_ORDER = [
+  '반도체',
+  'AI·소프트웨어',
+  '빅테크·하드웨어',
+  '방산·항공우주',
+  '원자력·전력',
+  '친환경에너지',
+  '전기차·배터리',
+  '전통에너지',
+  '헬스케어·제약',
+  '바이오테크',
+  '금융·핀테크',
+  '소비재·미디어',
+  '소비재·유통',
+  '산업재·소재',
+  '기타',
+];
+
+function getSector(s: StockAnalysis): string {
+  return s.sector || SECTOR_MAP[s.ticker.toUpperCase()] || '기타';
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 function todayKey() { return new Date().toISOString().slice(0, 10); }
 
 function isTicker(val: string): boolean {
@@ -69,8 +207,19 @@ export default function Home() {
   const [isCompact, setIsCompact] = useState(false);
   const [drawerTicker, setDrawerTicker] = useState<string | null>(null);
   const [earningsMap, setEarningsMap] = useState<Record<string, { earningsDate: string | null; daysUntil: number | null; epsEstimate: number | null; revenueEstimate: string | null; lastEPS: number | null }>>({});
+  // ── 섹터 접기/펼치기 ────────────────────────────────────────────────────────
+  const [collapsedSectors, setCollapsedSectors] = useState<Set<string>>(new Set());
+  // ─────────────────────────────────────────────────────────────────────────────
   const fileRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef(false);
+
+  function toggleSector(name: string) {
+    setCollapsedSectors(prev => {
+      const next = new Set(prev);
+      next.has(name) ? next.delete(name) : next.add(name);
+      return next;
+    });
+  }
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') setDrawerTicker(null); };
@@ -218,6 +367,7 @@ export default function Home() {
     setStatus(''); setError(''); setSearch(''); setFilter('ALL'); setSort('SCORE');
     setWatchlist([]); setXlsxMsg(''); setXlsxOpen(false); setCtxOpen(false);
     setIsCompact(false); setDrawerTicker(null); setEarningsMap({});
+    setCollapsedSectors(new Set());
     try { localStorage.removeItem(CACHE_KEY); localStorage.removeItem(WATCHLIST_KEY); localStorage.removeItem('mt_earnings_v1'); } catch {}
   }
 
@@ -270,7 +420,6 @@ export default function Home() {
   const analyzedSet = new Set(allStocks.map(s => s.ticker));
   const newTickerCount = watchlist.filter(t => !analyzedSet.has(t)).length;
 
-  // ✅ 모바일: 버튼 텍스트 짧게
   const analyzeButtonLabel = loading
     ? <span className="flex items-center gap-1"><span className="blink">▋</span>분석 중...</span>
     : newTickerCount > 0
@@ -283,18 +432,15 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-bg-base">
-      {/* ✅ 모바일: px 줄임 */}
       <div className="max-w-[1400px] mx-auto px-3 sm:px-6 py-4 sm:py-8">
 
-        {/* ── Header: sticky ── */}
-        {/* ✅ 모바일: 여백 축소 */}
+        {/* ── Header ── */}
         <header className="mb-3 sticky top-0 z-20 bg-bg-base pt-1 pb-2">
           <div className="flex items-center justify-between gap-2 pb-3 border-b border-border mb-3">
             <div className="min-w-0">
               <h1 className="text-base sm:text-lg font-semibold tracking-tight text-zinc-100 whitespace-nowrap">MOMENTUM SIGNAL</h1>
               <p className="text-xs text-zinc-600 mt-0.5">{today}</p>
             </div>
-            {/* ✅ 버튼들 한 줄 유지 */}
             <div className="flex gap-1.5 shrink-0">
               <button onClick={resetAll}
                 className="px-3 py-2 text-xs font-semibold rounded-lg border border-zinc-700 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 transition-all whitespace-nowrap">
@@ -320,7 +466,7 @@ export default function Home() {
             </div>
           </div>
 
-          {/* ✅ 탭: 가로 스크롤, 줄바꿈 없음 */}
+          {/* 탭 */}
           <div className="flex gap-1 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
             {([
               ['scanner',   '모멘텀 스캐너'],
@@ -431,7 +577,7 @@ export default function Home() {
                   {search && <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300 text-xs">✕</button>}
                 </div>
 
-                {/* ✅ 필터/정렬: 가로 스크롤 */}
+                {/* 필터/정렬 */}
                 <div className="mb-3 sticky top-[100px] z-10 bg-bg-base py-2">
                   {/* 필터 */}
                   <div className="flex gap-1 overflow-x-auto mb-2" style={{ scrollbarWidth: 'none' }}>
@@ -450,7 +596,7 @@ export default function Home() {
                       </button>
                     ))}
                   </div>
-                  {/* 정렬 */}
+                  {/* 정렬 + 전체 펼치기/접기 */}
                   <div className="flex gap-1 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
                     {(['SCORE','SIGNAL','TICKER'] as SortType[]).map(s => (
                       <button key={s} onClick={() => setSort(s)}
@@ -464,25 +610,104 @@ export default function Home() {
                         ${isCompact ? 'bg-zinc-700 border-zinc-600 text-zinc-100' : 'bg-transparent border-zinc-800 text-zinc-500 hover:text-zinc-300'}`}>
                       {isCompact ? '■ 컴팩트' : '☰ 컴팩트'}
                     </button>
+                    {/* 전체 접기/펼치기 */}
+                    <button
+                      onClick={() => {
+                        // 현재 열려있는 섹터가 하나라도 있으면 전체 접기, 아니면 전체 펼치기
+                        const sectorNames = [...new Set(displayed.map(s => getSector(s)))];
+                        if (collapsedSectors.size < sectorNames.length) {
+                          setCollapsedSectors(new Set(sectorNames));
+                        } else {
+                          setCollapsedSectors(new Set());
+                        }
+                      }}
+                      className="text-xs px-3 py-1.5 rounded-lg border transition-colors whitespace-nowrap shrink-0 bg-transparent border-zinc-800 text-zinc-500 hover:text-zinc-300">
+                      {collapsedSectors.size > 0 ? '▶ 전체 펼치기' : '▼ 전체 접기'}
+                    </button>
                   </div>
                 </div>
 
-                <div className={isCompact ? 'flex flex-col gap-1.5' : 'grid grid-cols-1 xl:grid-cols-2 gap-4'}>
-                  {displayed.map((s, i) => (
-                    <StockCard
-                      key={s.ticker}
-                      stock={s}
-                      highlight={i===0 && filter!=='SELL' && filter!=='STRONG_SELL'}
-                      onRemove={removeFromResults}
-                      earnings={earningsMap[s.ticker]}
-                      compact={isCompact}
-                      onOpenDrawer={setDrawerTicker}
-                    />
-                  ))}
-                  {displayed.length === 0 && (
-                    <p className="text-sm text-zinc-600 py-6 text-center col-span-2">해당 조건의 종목이 없습니다.</p>
-                  )}
-                </div>
+                {/* ── 섹터별 그룹 렌더링 ── */}
+                {(() => {
+                  const grouped = new Map<string, StockAnalysis[]>();
+                  for (const s of displayed) {
+                    const sec = getSector(s);
+                    if (!grouped.has(sec)) grouped.set(sec, []);
+                    grouped.get(sec)!.push(s);
+                  }
+                  const orderedSectors = [...grouped.keys()].sort((a, b) => {
+                    const ai = SECTOR_ORDER.indexOf(a);
+                    const bi = SECTOR_ORDER.indexOf(b);
+                    return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
+                  });
+
+                  if (orderedSectors.length === 0) {
+                    return <p className="text-sm text-zinc-600 py-6 text-center">해당 조건의 종목이 없습니다.</p>;
+                  }
+
+                  return (
+                    <div className="flex flex-col gap-6">
+                      {orderedSectors.map(sector => {
+                        const stocks = grouped.get(sector)!;
+                        const collapsed = collapsedSectors.has(sector);
+                        const strongBuyCnt = stocks.filter(s => s.signal === 'STRONG_BUY').length;
+                        const buyCnt      = stocks.filter(s => s.signal === 'BUY').length;
+                        const avgScore    = Math.round(stocks.reduce((acc, s) => acc + Number(s.momentum_score), 0) / stocks.length);
+
+                        return (
+                          <div key={sector}>
+                            {/* 섹터 헤더 */}
+                            <button
+                              onClick={() => toggleSector(sector)}
+                              className="w-full flex items-center gap-2 mb-2 group text-left"
+                            >
+                              <span className="text-[11px] font-bold text-zinc-200 tracking-widest uppercase shrink-0">
+                                {sector}
+                              </span>
+                              <span className="text-[10px] text-zinc-600 font-mono shrink-0">
+                                {stocks.length}종목
+                              </span>
+                              {strongBuyCnt > 0 && (
+                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-950 border border-emerald-800 text-emerald-400 font-mono shrink-0">
+                                  즉시매수 {strongBuyCnt}
+                                </span>
+                              )}
+                              {buyCnt > 0 && (
+                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-950 border border-blue-800 text-blue-400 font-mono shrink-0">
+                                  매수 {buyCnt}
+                                </span>
+                              )}
+                              <span className="text-[10px] text-zinc-700 font-mono shrink-0">
+                                avg {avgScore}점
+                              </span>
+                              <div className="flex-1 h-px bg-zinc-800 group-hover:bg-zinc-700 transition-colors" />
+                              <span className="text-zinc-600 text-xs group-hover:text-zinc-400 transition-colors shrink-0">
+                                {collapsed ? '▶' : '▼'}
+                              </span>
+                            </button>
+
+                            {/* 카드 그리드 */}
+                            {!collapsed && (
+                              <div className={isCompact ? 'flex flex-col gap-1.5' : 'grid grid-cols-1 xl:grid-cols-2 gap-4'}>
+                                {stocks.map((s, i) => (
+                                  <StockCard
+                                    key={s.ticker}
+                                    stock={s}
+                                    highlight={i === 0 && filter !== 'SELL' && filter !== 'STRONG_SELL'}
+                                    onRemove={removeFromResults}
+                                    earnings={earningsMap[s.ticker]}
+                                    compact={isCompact}
+                                    onOpenDrawer={setDrawerTicker}
+                                  />
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
 
                 {analyzedAt && (
                   <div className="text-[10px] text-zinc-700 text-center mt-8">
