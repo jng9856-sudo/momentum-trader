@@ -22,11 +22,7 @@ export const INDUSTRY_TO_SECTOR: Record<string, string> = {
   'Oil & Gas':               '에너지',
 };
 
-export function classifySector(industry: string | null | undefined): string {
-  if (!industry) return '기타';
-  return INDUSTRY_TO_SECTOR[industry] ?? '기타';
-}
-// ETF는 industry가 null이라 ticker로 직접 처리
+// ETF는 Finnhub에서 industry가 null로 내려오므로 ticker로 직접 처리
 const ETF_TICKER_MAP: Record<string, string> = {
   'ARKX': '우주·항공',
   'ARKG': '바이오·헬스케어',
@@ -41,10 +37,11 @@ const ETF_TICKER_MAP: Record<string, string> = {
 
 export function classifySector(
   industry: string | null | undefined,
-  ticker?: string   // ← ticker 파라미터 추가
+  ticker?: string
 ): string {
-  // ETF 티커 먼저 확인
+  // 1순위: ETF 티커 직접 매핑
   if (ticker && ETF_TICKER_MAP[ticker]) return ETF_TICKER_MAP[ticker];
+  // 2순위: industry 문자열 매핑
   if (!industry) return '기타';
   return INDUSTRY_TO_SECTOR[industry] ?? '기타';
 }
