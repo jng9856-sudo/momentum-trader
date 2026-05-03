@@ -12,12 +12,13 @@ interface ChartData {
   trend:      string;
 }
 
-type CategoryKey = 'breakout' | 'strong_buy' | 'buy' | 'high_rs';
+// ── 신호 4단계에 맞춰 카테고리 정의 ─────────────────────────────────────────
+type CategoryKey = 'breakout' | 'setup' | 'watch' | 'high_rs';
 const CATEGORIES: { key: CategoryKey; label: string; desc: string }[] = [
-  { key: 'breakout',   label: '52주 신고가',   desc: '최근 돌파 종목' },
-  { key: 'strong_buy', label: '즉시매수',      desc: 'STRONG_BUY 신호' },
-  { key: 'buy',        label: '매수',          desc: 'BUY 신호 + RS 상위' },
-  { key: 'high_rs',    label: 'RS 90%↑',       desc: '상대강도 최상위' },
+  { key: 'breakout', label: '52주 신고가',  desc: '최근 돌파 종목' },
+  { key: 'setup',    label: '즉시진입·진입대기', desc: 'BREAKOUT + SETUP 신호' },
+  { key: 'watch',    label: '관심등록',     desc: 'WATCH 신호 + RS 상위' },
+  { key: 'high_rs',  label: 'RS 90%↑',     desc: '상대강도 최상위' },
 ];
 
 type RangeKey = '1mo' | '3mo' | '6mo';
@@ -66,21 +67,25 @@ function MiniSparkline({ closes, ema10, ema20, trend }: { closes: number[]; ema1
 function filterTickers(stocks: StockAnalysis[], category: CategoryKey): string[] {
   switch (category) {
     case 'breakout':
+      // 52주 신고가 돌파 종목
       return stocks
         .filter(s => s.breakout_52w)
         .sort((a, b) => Number(b.momentum_score) - Number(a.momentum_score))
         .slice(0, 18).map(s => s.ticker);
-    case 'strong_buy':
+    case 'setup':
+      // BREAKOUT(즉시진입) + SETUP(진입대기) 신호
       return stocks
-        .filter(s => s.signal === 'STRONG_BUY')
+        .filter(s => s.signal === 'BREAKOUT' || s.signal === 'SETUP')
         .sort((a, b) => Number(b.momentum_score) - Number(a.momentum_score))
         .slice(0, 18).map(s => s.ticker);
-    case 'buy':
+    case 'watch':
+      // WATCH(관심등록) 신호 — RS 상위 순 정렬
       return stocks
-        .filter(s => s.signal === 'BUY' || s.signal === 'STRONG_BUY')
-        .sort((a, b) => Number(b.momentum_score) - Number(a.momentum_score))
+        .filter(s => s.signal === 'WATCH')
+        .sort((a, b) => (b.rs_rank ?? 0) - (a.rs_rank ?? 0))
         .slice(0, 18).map(s => s.ticker);
     case 'high_rs':
+      // RS 랭킹 90% 이상
       return stocks
         .filter(s => (s.rs_rank ?? 0) >= 90)
         .sort((a, b) => (b.rs_rank ?? 0) - (a.rs_rank ?? 0))
@@ -131,7 +136,6 @@ export default function MiniChartGrid({ stocks }: { stocks: StockAnalysis[] }) {
           <div className="text-[10px] text-zinc-500 mt-0.5">{catInfo.desc} · EMA10 <span className="text-red-400">빨강</span> · EMA20 <span className="text-emerald-400">초록</span></div>
         </div>
         <div className="flex gap-1 flex-wrap">
-          {/* 종목당 열 수 */}
           <div className="flex border border-zinc-800 rounded-lg overflow-hidden mr-1">
             {([4, 6] as const).map(n => (
               <button key={n} onClick={() => setPerRow(n)}
@@ -140,7 +144,6 @@ export default function MiniChartGrid({ stocks }: { stocks: StockAnalysis[] }) {
               </button>
             ))}
           </div>
-          {/* 기간 */}
           {RANGES.map(r => (
             <button key={r.key} onClick={() => setRange(r.key)}
               className={`text-xs px-2.5 py-1 rounded-lg border transition-colors ${range === r.key ? 'bg-zinc-700 border-zinc-600 text-zinc-100' : 'bg-transparent border-zinc-800 text-zinc-500 hover:text-zinc-300'}`}>
@@ -178,13 +181,12 @@ export default function MiniChartGrid({ stocks }: { stocks: StockAnalysis[] }) {
 
       {/* 차트 그리드 */}
       {!loading && charts.length > 0 && (
-        <div className={`grid gap-2`} style={{ gridTemplateColumns: `repeat(${perRow}, minmax(0, 1fr))` }}>
+        <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${perRow}, minmax(0, 1fr))` }}>
           {charts.map(chart => {
             const stock = stocks.find(s => s.ticker === chart.ticker);
             const trendInfo = TREND_TEXT[chart.trend] ?? TREND_TEXT.down;
             return (
               <div key={chart.ticker} className="border border-zinc-800 rounded-lg overflow-hidden bg-zinc-900/60 hover:border-zinc-600 transition-colors">
-                {/* 종목 헤더 */}
                 <div className="px-2 pt-2 pb-1">
                   <div className="flex items-center justify-between gap-1">
                     <span className="text-xs font-bold text-zinc-100 font-mono">{chart.ticker}</span>
@@ -196,20 +198,16 @@ export default function MiniChartGrid({ stocks }: { stocks: StockAnalysis[] }) {
                     <div className="flex items-center gap-1 mt-0.5">
                       {stock.breakout_52w && <span className="text-[8px] bg-emerald-950 text-emerald-300 border border-emerald-800 px-1 rounded">신고가</span>}
                       {stock.pocket_pivot && <span className="text-[8px] bg-violet-950 text-violet-300 border border-violet-800 px-1 rounded">피벗</span>}
-                      {(stock.rs_rank ?? 0) >= 90 && <span className="text-[8px] bg-amber-950 text-amber-300 border border-amber-800 px-1 rounded">RS{stock.rs_rank}%</span>}
+                      {/* 신호 뱃지: BREAKOUT / SETUP 표시 */}
+                      {stock.signal === 'BREAKOUT' && <span className="text-[8px] bg-emerald-950 text-emerald-400 border border-emerald-700 px-1 rounded">즉시진입</span>}
+                      {stock.signal === 'SETUP'    && <span className="text-[8px] bg-blue-950 text-blue-400 border border-blue-800 px-1 rounded">진입대기</span>}
+                      {(stock.rs_rank ?? 0) >= 90  && <span className="text-[8px] bg-amber-950 text-amber-300 border border-amber-800 px-1 rounded">RS{stock.rs_rank}%</span>}
                     </div>
                   )}
                 </div>
-                {/* 차트 */}
                 <div style={{ width: '100%', overflow: 'hidden' }}>
-                  <MiniSparkline
-                    closes={chart.closes}
-                    ema10={chart.ema10}
-                    ema20={chart.ema20}
-                    trend={chart.trend}
-                  />
+                  <MiniSparkline closes={chart.closes} ema10={chart.ema10} ema20={chart.ema20} trend={chart.trend} />
                 </div>
-                {/* 추세 레이블 */}
                 <div className="px-2 py-1.5">
                   <div className="text-[9px] leading-tight" style={{ color: trendInfo.color }}>
                     {trendInfo.label}
@@ -232,4 +230,3 @@ export default function MiniChartGrid({ stocks }: { stocks: StockAnalysis[] }) {
     </div>
   );
 }
-
