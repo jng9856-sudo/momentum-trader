@@ -1,4 +1,4 @@
-export type SignalType     = 'STRONG_BUY' | 'BUY' | 'HOLD' | 'SELL' | 'STRONG_SELL';
+export type SignalType     = 'BREAKOUT' | 'SETUP' | 'WATCH' | 'HOLD' | 'SELL' | 'STRONG_SELL';
 export type ConfidenceType = 'HIGH' | 'MEDIUM' | 'LOW';
 export type StrengthType   = 'STRONG' | 'NEUTRAL' | 'WEAK';
 export type MA50Type       = 'ABOVE' | 'AT' | 'BELOW';
