@@ -76,4 +76,38 @@ export async function getMultipleQuotes(tickers: string[]): Promise<Record<strin
   }
   return map;
 }
+// ETF 전용 하드코딩 맵 (Finnhub이 null 반환하는 종목들)
+const ETF_INDUSTRY_MAP: Record<string, string> = {
+  ARKX: 'ETF-Space',
+  ARKG: 'ETF-Genomics',
+  ARKK: 'ETF-Innovation',
+  ARKW: 'ETF-Internet',
+  ARKF: 'ETF-Fintech',
+  ARKO: 'ETF-Autonomous',
+  PL:   'Space-Data',      // Planet Labs (ETF 아니지만 분류 어려움)
+  IONQ: 'Quantum Computing',
+  MSTR: 'Crypto-Finance',
+};
 
+export async function getProfile(ticker: string) {
+  // ETF 맵 먼저 확인 → Finnhub 호출 불필요
+  if (ETF_INDUSTRY_MAP[ticker]) {
+    return {
+      name: ticker,
+      exchange: 'NASDAQ',
+      industry: ETF_INDUSTRY_MAP[ticker],  // 직접 주입
+      marketCap: 0
+    };
+  }
+
+  // 기존 Finnhub 호출
+  const res = await fetch(`${BASE}/stock/profile2?symbol=${ticker}&token=${FINNHUB_KEY}`, ...);
+  const d = await res.json();
+
+  return {
+    name:      d.name     ?? ticker,
+    exchange:  d.exchange ?? '',
+    industry:  d.finnhubIndustry || 'Unknown',  // null 방어
+    marketCap: d.marketCapitalization ?? 0
+  };
+}
