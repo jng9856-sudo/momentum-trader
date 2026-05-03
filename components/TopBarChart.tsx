@@ -3,7 +3,7 @@ import { StockAnalysis } from '@/types/stock';
 
 export default function TopBarChart({ stocks }: { stocks: StockAnalysis[] }) {
   const top = [...stocks]
-    .filter(s => s.signal === 'STRONG_BUY' || s.signal === 'BUY')
+    .filter(s => s.signal === 'BREAKOUT' || s.signal === 'SETUP')
     .sort((a, b) => Number(b.momentum_score) - Number(a.momentum_score))
     .slice(0, 10);
 
@@ -12,17 +12,15 @@ export default function TopBarChart({ stocks }: { stocks: StockAnalysis[] }) {
   return (
     <div className="mb-4 p-3 border border-zinc-800 rounded-xl bg-zinc-900/40">
       <div className="flex items-center justify-between mb-2">
-        <span className="text-[10px] text-zinc-500 uppercase tracking-widest">매수 신호 Top 10 — 모멘텀 점수순</span>
+        <span className="text-[10px] text-zinc-500 uppercase tracking-widest">진입 신호 Top 10 — 모멘텀 점수순</span>
         <span className="text-[10px] text-emerald-700 bg-emerald-950 border border-emerald-800 px-2 py-0.5 rounded-full">{top.length}개</span>
       </div>
-
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-x-6 gap-y-1">
         {top.map((s, i) => {
-          const score    = Math.min(10, Math.max(0, Number(s.momentum_score)));
-          const pct      = (score / 10) * 100;
-          const isStrong = s.signal === 'STRONG_BUY';
-          const barColor = isStrong ? '#10b981' : '#34d399';
-
+          const score      = Math.min(10, Math.max(0, Number(s.momentum_score)));
+          const pct        = (score / 10) * 100;
+          const isBreakout = s.signal === 'BREAKOUT';
+          const barColor   = isBreakout ? '#10b981' : '#34d399';
           return (
             <div key={s.ticker} className="flex items-center gap-2 h-6">
               <span className="text-[9px] text-zinc-600 font-mono w-3 shrink-0 text-right">{i + 1}</span>
@@ -37,8 +35,8 @@ export default function TopBarChart({ stocks }: { stocks: StockAnalysis[] }) {
                   RS{s.rs_rank}%
                 </span>
               )}
-              <span className={`text-[9px] px-1.5 py-0.5 rounded border shrink-0 w-12 text-center ${isStrong ? 'bg-emerald-900 text-emerald-200 border-emerald-700' : 'bg-emerald-950 text-emerald-400 border-emerald-800'}`}>
-                {isStrong ? '즉시매수' : '매수'}
+              <span className={`text-[9px] px-1.5 py-0.5 rounded border shrink-0 w-14 text-center ${isBreakout ? 'bg-emerald-900 text-emerald-200 border-emerald-700' : 'bg-blue-950 text-blue-300 border-blue-800'}`}>
+                {isBreakout ? '즉시진입' : '진입대기'}
               </span>
               {s.entry_zone && (
                 <span className="text-[9px] text-zinc-500 font-mono hidden 2xl:inline shrink-0 w-28 truncate">
