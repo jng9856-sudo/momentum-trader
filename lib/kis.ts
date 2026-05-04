@@ -8,21 +8,47 @@ const BASE_URL       = 'https://openapi.koreainvestment.com:9443';
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
-// ── Access Token 발급 (24시간 유효) ──────────────────────────────────────────
-// Vercel 서버리스는 인스턴스가 매 요청마다 초기화되므로
-// 메모리 캐시만으로는 토큰이 계속 재발급됨 → Supabase에 영속 저장
+// ── 거래소 코드 매핑 ──────────────────────────────────────────────────────────
+const NYSE_TICKERS = new Set([
+  'TSM', 'V', 'MA', 'JPM', 'WMT', 'JNJ', 'PG', 'CVX', 'XOM', 'BAC',
+  'DIS', 'KO', 'PFE', 'MRK', 'ABT', 'IBM', 'GS', 'MS', 'CAT', 'HON',
+  'MMM', 'GE', 'F', 'GM', 'BA', 'UNH', 'HD', 'MCD', 'NKE', 'T',
+]);
+const AMEX_TICKERS = new Set(['SPY', 'QQQ', 'IWM', 'DIA', 'GLD', 'SLV', 'USO']);
 
+function getExchangeCode(ticker: string): 'NAS' | 'NYS' | 'AMS' {
+  if (NYSE_TICKERS.has(ticker)) return 'NYS';
+  if (AMEX_TICKERS.has(ticker)) return 'AMS';
+  return 'NAS';
+}
+
+// ── 현재 미국 장 세션 판단 (KST 기준) ────────────────────────────────────────
+export function getUSMarketSession(): 'REGULAR' | 'PRE' | 'AFTER' | 'CLOSED' {
+  const nowKST  = new Date(Date.now() + 9 * 60 * 60 * 1000);
+  const h       = nowKST.getUTCHours();
+  const m       = nowKST.getUTCMinutes();
+  const timeMin = h * 60 + m;
+
+  // 정규장:  KST 23:30 ~ 익일 06:00  (EDT 09:30~16:00)
+  // 프리장:  KST 18:00 ~ 23:30       (EDT 04:00~09:30)
+  // 애프터:  KST 06:00 ~ 10:00       (EDT 16:00~20:00)
+  // 장마감:  KST 10:00 ~ 18:00
+  if (timeMin >= 23 * 60 + 30 || timeMin < 6 * 60)       return 'REGULAR';
+  if (timeMin >= 18 * 60 && timeMin < 23 * 60 + 30)      return 'PRE';
+  if (timeMin >= 6 * 60  && timeMin < 10 * 60)            return 'AFTER';
+  return 'CLOSED';
+}
+
+// ── Access Token 발급 (24시간 유효) ──────────────────────────────────────────
 let cachedToken: { token: string; expiresAt: number } | null = null;
 
 async function getAccessToken(): Promise<string | null> {
   if (!KIS_APP_KEY || !KIS_APP_SECRET) return null;
 
-  // 1. 메모리 캐시 먼저 확인 (같은 인스턴스 내 재요청 최적화)
   if (cachedToken && Date.now() < cachedToken.expiresAt) {
     return cachedToken.token;
   }
 
-  // 2. Supabase에서 저장된 토큰 확인 (인스턴스 간 공유)
   try {
     const dbRes = await fetch(
       `${SUPABASE_URL}/rest/v1/kis_token?id=eq.singleton&select=token,expires_at`,
@@ -36,14 +62,12 @@ async function getAccessToken(): Promise<string | null> {
     if (dbRes.ok) {
       const rows = await dbRes.json();
       if (rows?.[0] && rows[0].expires_at > Date.now()) {
-        // DB 토큰 유효 → 메모리에도 세팅 후 반환
         cachedToken = { token: rows[0].token, expiresAt: rows[0].expires_at };
         return cachedToken.token;
       }
     }
-  } catch { /* DB 조회 실패 시 새로 발급으로 fallback */ }
+  } catch { /* fallback */ }
 
-  // 3. 만료됐거나 없으면 KIS에서 새로 발급
   try {
     const res = await fetch(`${BASE_URL}/oauth2/tokenP`, {
       method: 'POST',
@@ -56,13 +80,10 @@ async function getAccessToken(): Promise<string | null> {
     });
     if (!res.ok) return null;
 
-    const data = await res.json();
-    const expiresAt = Date.now() + 23 * 60 * 60 * 1000; // 23시간
+    const data       = await res.json();
+    const expiresAt  = Date.now() + 23 * 60 * 60 * 1000;
+    cachedToken      = { token: data.access_token, expiresAt };
 
-    // 메모리 캐시 업데이트
-    cachedToken = { token: data.access_token, expiresAt };
-
-    // Supabase에 upsert 저장 (다음 인스턴스에서 재사용)
     await fetch(`${SUPABASE_URL}/rest/v1/kis_token`, {
       method: 'POST',
       headers: {
@@ -84,22 +105,29 @@ async function getAccessToken(): Promise<string | null> {
 
 // ── 미국 주식 실시간 현재가 ────────────────────────────────────────────────────
 export async function getUSStockPrice(ticker: string): Promise<{
-  ticker:    string;
-  price:     number;
-  change:    number;
-  changePct: number;
-  high:      number;
-  low:       number;
-  open:      number;
-  volume:    number;
-  isRealtime: boolean;
+  ticker:       string;
+  price:        number;
+  change:       number;
+  changePct:    number;
+  high:         number;
+  low:          number;
+  open:         number;
+  volume:       number;
+  isRealtime:   boolean;
+  // 시간외 필드 추가
+  marketSession: 'REGULAR' | 'PRE' | 'AFTER' | 'CLOSED';
+  extPrice:     number | null;
+  extChange:    number | null;
+  extChangePct: number | null;
 } | null> {
   const token = await getAccessToken();
   if (!token) return null;
 
+  const excd = getExchangeCode(ticker);
+
   try {
     const res = await fetch(
-      `${BASE_URL}/uapi/overseas-price/v1/quotations/price?AUTH=&EXCD=NAS&SYMB=${ticker}`,
+      `${BASE_URL}/uapi/overseas-price/v1/quotations/price?AUTH=&EXCD=${excd}&SYMB=${ticker}`,
       {
         headers: {
           'content-type':  'application/json',
@@ -118,18 +146,39 @@ export async function getUSStockPrice(ticker: string): Promise<{
 
     const price     = parseFloat(o.last ?? o.base ?? '0');
     const prevClose = parseFloat(o.base ?? '0');
-    const change    = price - prevClose;
-    const changePct = prevClose > 0 ? (change / prevClose) * 100 : 0;
+
+    // 시간외 가격 필드
+    const extPrice    = parseFloat(o.t_xprc ?? '0');
+    const extDif      = parseFloat(o.t_xdif ?? '0');
+    const extRat      = parseFloat(o.t_xrat ?? '0');
+    const hasExtPrice = extPrice > 0;
+
+    const marketSession = getUSMarketSession();
+
+    // 프리/애프터 중 시간외 데이터 있으면 등락 수치를 시간외 기준으로 표시
+    const effectiveChange =
+      hasExtPrice && marketSession !== 'REGULAR'
+        ? extDif
+        : price - prevClose;
+    const effectiveChangePct =
+      hasExtPrice && marketSession !== 'REGULAR'
+        ? extRat
+        : prevClose > 0 ? (effectiveChange / prevClose) * 100 : 0;
 
     return {
-      ticker, price,
-      change:    Math.round(change * 100) / 100,
-      changePct: Math.round(changePct * 100) / 100,
-      high:      parseFloat(o.high ?? '0'),
-      low:       parseFloat(o.low  ?? '0'),
-      open:      parseFloat(o.open ?? '0'),
-      volume:    parseInt(o.tvol   ?? '0'),
-      isRealtime: true,
+      ticker,
+      price,
+      change:       Math.round(effectiveChange * 100) / 100,
+      changePct:    Math.round(effectiveChangePct * 100) / 100,
+      high:         parseFloat(o.high ?? '0'),
+      low:          parseFloat(o.low  ?? '0'),
+      open:         parseFloat(o.open ?? '0'),
+      volume:       parseInt(o.tvol   ?? '0'),
+      isRealtime:   true,
+      marketSession,
+      extPrice:     hasExtPrice ? extPrice : null,
+      extChange:    hasExtPrice ? Math.round(extDif * 100) / 100 : null,
+      extChangePct: hasExtPrice ? Math.round(extRat * 100) / 100 : null,
     };
   } catch { return null; }
 }
@@ -169,17 +218,16 @@ export async function getKRStockPrice(code: string): Promise<{
     const o = data.output;
     if (!o) return null;
 
-    const price     = parseInt(o.stck_prpr ?? '0');
-    const change    = parseInt(o.prdy_vrss ?? '0');
-    const changePct = parseFloat(o.prdy_ctrt ?? '0');
-
     return {
-      code, name: o.hts_kor_isnm ?? code,
-      price, change, changePct,
-      high:   parseInt(o.stck_hgpr ?? '0'),
-      low:    parseInt(o.stck_lwpr ?? '0'),
-      open:   parseInt(o.stck_oprc ?? '0'),
-      volume: parseInt(o.acml_vol  ?? '0'),
+      code,
+      name:      o.hts_kor_isnm ?? code,
+      price:     parseInt(o.stck_prpr ?? '0'),
+      change:    parseInt(o.prdy_vrss ?? '0'),
+      changePct: parseFloat(o.prdy_ctrt ?? '0'),
+      high:      parseInt(o.stck_hgpr ?? '0'),
+      low:       parseInt(o.stck_lwpr ?? '0'),
+      open:      parseInt(o.stck_oprc ?? '0'),
+      volume:    parseInt(o.acml_vol  ?? '0'),
       isRealtime: true,
     };
   } catch { return null; }
@@ -195,9 +243,8 @@ export async function getMultipleUSPrices(tickers: string[]) {
   return map;
 }
 
-// ── 거래소 코드 변환 (Yahoo .KS → KIS 코드) ──────────────────────────────────
+// ── 거래소 코드 변환 ──────────────────────────────────────────────────────────
 export function toKISCode(yahooTicker: string): string {
-  // 005930.KS → 005930
   return yahooTicker.replace(/\.(KS|KQ)$/, '');
 }
 
