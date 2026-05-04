@@ -65,20 +65,15 @@ const SORT_OPTIONS: { key: SortType; label: string }[] = [
 ];
 
 // ── 실시간 가격 기반 action 재판단 ──────────────────────────────────────────
-// 지표(RSI/MACD/ADX)는 분석 시 계산된 값 유지, 실시간 가격으로 MA 이탈/손절 재평가
 function deriveRealtimeAction(r: HoldingResult, livePrice: number): string {
   const { ma10, ma20, ma50, ma120 } = r.mas;
   const { rsi, macd } = r.indicators;
   const macdContracting = r.divergences.macd.contracting;
   const pnlPct = ((livePrice - r.avgPrice) / r.avgPrice) * 100;
 
-  // 실시간 가격 기준 MA 위치 재계산
   const liveAbove = [ma10, ma20, ma50, ma120].filter(m => m > 0 && livePrice > m).length;
 
-  // 손절가 도달 → 즉시매도
   if (r.stopLoss.recommended.price && livePrice <= r.stopLoss.recommended.price) return '즉시매도';
-
-  // 구조적 붕괴 → 즉시매도
   if (ma50 > 0 && livePrice < ma50 && macd < 0 && liveAbove <= 1) return '즉시매도';
 
   const highSigs     = r.sellSignals.filter(s => s.severity === 'high').length;
@@ -91,7 +86,7 @@ function deriveRealtimeAction(r: HoldingResult, livePrice: number): string {
   const strongUptrend = macdPositive && allMAsAligned;
 
   if (highSigs >= 2 && totalSigs >= 3) return '매도';
-  if (ma50 > 0 && livePrice < ma50) return '매도검토'; // 실시간 MA50 이탈
+  if (ma50 > 0 && livePrice < ma50) return '매도검토';
   if (pnlPct > 20 && rsi > 78 && !macdPositive) return '부분익절';
   if (strongUptrend && highSigs === 0 && medSigs <= 1) return '홀딩';
   if (highSigs >= 1 || (medSigs >= 2 && !strongUptrend)) return '매도검토';
@@ -120,9 +115,9 @@ function UpsideBar({ score, label }: { score: number; label: string }) {
 
 function DivergenceRow({ divs }: { divs: HoldingResult['divergences'] }) {
   const items = [
-    { label: 'RSI 다이버전스',  active: divs.rsi.bearish,    detail: divs.rsi.detail,    bull: divs.rsi.bullish },
-    { label: '거래량 다이버전스', active: divs.volume.bearish, detail: divs.volume.detail, bull: false },
-    { label: 'MACD 수축',       active: divs.macd.contracting, detail: divs.macd.detail, bull: false },
+    { label: 'RSI 다이버전스',   active: divs.rsi.bearish,     detail: divs.rsi.detail,    bull: divs.rsi.bullish },
+    { label: '거래량 다이버전스', active: divs.volume.bearish,  detail: divs.volume.detail, bull: false },
+    { label: 'MACD 수축',        active: divs.macd.contracting, detail: divs.macd.detail,  bull: false },
   ];
   return (
     <div className="mb-4 p-3 bg-zinc-900/50 rounded-lg">
@@ -151,14 +146,32 @@ function HoldingCard({ result: r, onRemove, earnings }: {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [holdingTab, setHoldingTab] = useState<'signal' | 'strategy'>('signal');
-  const [rtPrice, setRtPrice] = useState<{ price: number; changePct: number; isRealtime?: boolean } | null>(null);
 
-  // 30초마다 실시간 가격 갱신
+  // ── [수정 1] rtPrice 타입에 시간외 필드 추가 ──────────────────────────────
+  const [rtPrice, setRtPrice] = useState<{
+    price:         number;
+    changePct:     number;
+    isRealtime?:   boolean;
+    marketSession?: 'REGULAR' | 'PRE' | 'AFTER' | 'CLOSED';
+    extPrice?:     number | null;
+    extChangePct?: number | null;
+  } | null>(null);
+
+  // ── [수정 2] fetch에서 시간외 필드도 수신 ────────────────────────────────
   useEffect(() => {
     const fetchPrice = () =>
       fetch(`/api/realtime?tickers=${r.ticker}`)
         .then(res => res.json())
-        .then(d => { if (d.price && d.price > 0) setRtPrice({ price: d.price, changePct: d.changePct ?? 0, isRealtime: d.isRealtime }); })
+        .then(d => {
+          if (d.price && d.price > 0) setRtPrice({
+            price:         d.price,
+            changePct:     d.changePct     ?? 0,
+            isRealtime:    d.isRealtime,
+            marketSession: d.marketSession,
+            extPrice:      d.extPrice      ?? null,
+            extChangePct:  d.extChangePct  ?? null,
+          });
+        })
         .catch(() => {});
     fetchPrice();
     const iv = setInterval(fetchPrice, 30000);
@@ -167,8 +180,7 @@ function HoldingCard({ result: r, onRemove, earnings }: {
 
   const displayPrice = rtPrice ? rtPrice.price : r.currentPrice;
 
-  // ✅ 실시간 가격으로 action 재판단
-  const liveAction = deriveRealtimeAction(r, displayPrice);
+  const liveAction    = deriveRealtimeAction(r, displayPrice);
   const actionChanged = liveAction !== r.action;
 
   const rtPnlPct = rtPrice
@@ -180,7 +192,6 @@ function HoldingCard({ result: r, onRemove, earnings }: {
 
   const pnlPos = rtPnlPct >= 0;
 
-  // 실시간 action 기준으로 테두리 색상
   const borderColor =
     liveAction === '즉시매도' ? 'border-l-red-400' :
     liveAction === '매도'     ? 'border-l-red-700' :
@@ -188,6 +199,29 @@ function HoldingCard({ result: r, onRemove, earnings }: {
     liveAction === '홀딩'     ? 'border-l-emerald-600' : 'border-l-zinc-600';
 
   const upsideColor = r.upside.score >= 70 ? 'text-emerald-400' : r.upside.score >= 50 ? 'text-amber-400' : r.upside.score >= 30 ? 'text-orange-400' : 'text-red-400';
+
+  // ── [수정 3] 시간외 가격 뱃지 ────────────────────────────────────────────
+  const ExtPriceBadge = () => {
+    if (!rtPrice?.extPrice) return null;
+    const isPre   = rtPrice.marketSession === 'PRE';
+    const isAfter = rtPrice.marketSession === 'AFTER';
+    if (!isPre && !isAfter) return null;
+    return (
+      <span className={`flex items-center gap-1 px-1.5 py-0.5 rounded border ${isPre ? 'bg-sky-950 border-sky-800' : 'bg-violet-950 border-violet-800'}`}>
+        <span className={`text-[9px] font-semibold ${isPre ? 'text-sky-400' : 'text-violet-400'}`}>
+          {isPre ? '프리' : '애프터'}
+        </span>
+        <span className={`text-[9px] font-mono ${isPre ? 'text-sky-300' : 'text-violet-300'}`}>
+          ${rtPrice.extPrice.toLocaleString()}
+        </span>
+        {rtPrice.extChangePct != null && (
+          <span className={`text-[9px] font-mono ${rtPrice.extChangePct >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+            {rtPrice.extChangePct >= 0 ? '+' : ''}{rtPrice.extChangePct.toFixed(2)}%
+          </span>
+        )}
+      </span>
+    );
+  };
 
   return (
     <div className={`border border-zinc-800 border-l-4 ${borderColor} rounded-xl bg-bg-card`}>
@@ -201,12 +235,10 @@ function HoldingCard({ result: r, onRemove, earnings }: {
             {r.ticker} ↗
           </button>
 
-          {/* ✅ 실시간 action 배지 */}
           <span className={`text-xs font-semibold px-2.5 py-1 rounded-md border ${ACTION_STYLE[liveAction] ?? 'bg-zinc-900 text-zinc-400 border-zinc-700'}`}>
             {liveAction}
           </span>
 
-          {/* 분석 당시와 다를 때 이전 값 작게 표기 */}
           {actionChanged && (
             <span className="text-[9px] text-zinc-600">(분석시: {r.action})</span>
           )}
@@ -219,7 +251,7 @@ function HoldingCard({ result: r, onRemove, earnings }: {
 
         <div className="flex items-center gap-3 shrink-0 ml-2">
           <div className="text-right">
-            <div className="flex items-center gap-1.5 justify-end">
+            <div className="flex items-center gap-1.5 justify-end flex-wrap">
               <span className="text-sm font-semibold text-zinc-100 font-mono">${displayPrice.toLocaleString()}</span>
               {rtPrice && (
                 <>
@@ -229,6 +261,8 @@ function HoldingCard({ result: r, onRemove, earnings }: {
                   <span className={`text-[9px] px-1 py-0.5 rounded ${rtPrice.isRealtime !== false ? 'text-emerald-700 bg-emerald-950 border border-emerald-900 animate-pulse' : 'text-zinc-600 bg-zinc-900 border border-zinc-800'}`}>
                     {rtPrice.isRealtime !== false ? '실시간' : '15분'}
                   </span>
+                  {/* 시간외 가격 뱃지 */}
+                  <ExtPriceBadge />
                 </>
               )}
             </div>
@@ -261,10 +295,9 @@ function HoldingCard({ result: r, onRemove, earnings }: {
         </div>
       )}
 
-      {/* ── 펼친 상세 — 탭 구조 ── */}
+      {/* ── 펼친 상세 ── */}
       {open && (
         <div className="border-t border-zinc-900">
-          {/* 탭 네비게이션 */}
           <div className="flex border-b border-zinc-800">
             {([['signal', '신호'], ['strategy', '매매전략']] as const).map(([key, label]) => (
               <button key={key}
@@ -282,13 +315,11 @@ function HoldingCard({ result: r, onRemove, earnings }: {
 
           <div className="px-4 pb-4 pt-3">
 
-            {/* ── 탭 1: 신호 ── */}
             {holdingTab === 'signal' && (
               <div>
                 {earnings && <div className="mb-3"><EarningsBadge info={earnings} /></div>}
                 <UpsideBar score={r.upside.score} label={r.upside.label} />
 
-                {/* 지표 박스 */}
                 <div className="grid grid-cols-4 sm:grid-cols-7 gap-2 mb-3 p-3 bg-zinc-900/50 rounded-lg">
                   {[
                     { label: 'RSI',   val: r.indicators.rsi,   color: r.indicators.rsi > 78 ? 'text-red-400' : r.indicators.rsi < 35 ? 'text-sky-400' : 'text-emerald-400' },
@@ -306,10 +337,8 @@ function HoldingCard({ result: r, onRemove, earnings }: {
                   ))}
                 </div>
 
-                {/* 다이버전스 */}
                 <DivergenceRow divs={r.divergences} />
 
-                {/* 매도 신호 */}
                 {r.sellSignals.length > 0 && (
                   <div className="mb-3 bg-red-950/20 border border-red-900/40 rounded-lg p-3">
                     <div className="text-[10px] text-red-500 uppercase tracking-widest mb-2">매도 신호 ({r.sellSignals.length}개)</div>
@@ -324,7 +353,6 @@ function HoldingCard({ result: r, onRemove, earnings }: {
                   </div>
                 )}
 
-                {/* 홀딩 근거 */}
                 {r.holdSignals.length > 0 && (
                   <div className="bg-emerald-950/20 border border-emerald-900/40 rounded-lg p-3">
                     <div className="text-[10px] text-emerald-600 uppercase tracking-widest mb-2">홀딩 근거 ({r.holdSignals.length}개)</div>
@@ -340,10 +368,8 @@ function HoldingCard({ result: r, onRemove, earnings }: {
               </div>
             )}
 
-            {/* ── 탭 2: 매매전략 ── */}
             {holdingTab === 'strategy' && (
               <div>
-                {/* 손절 구간 */}
                 <div className="mb-3 p-3 bg-zinc-900/50 rounded-lg">
                   <div className="text-[10px] text-zinc-600 uppercase tracking-widest mb-2">손절 구간</div>
                   <div className="flex flex-wrap gap-2 mb-2">
@@ -356,7 +382,6 @@ function HoldingCard({ result: r, onRemove, earnings }: {
                   </p>
                 </div>
 
-                {/* 트레일링 스탑 */}
                 {r.trailing && (
                   <div className="mb-3 p-3 bg-zinc-900/50 rounded-lg border border-amber-900/40">
                     <div className="text-[10px] text-zinc-600 uppercase tracking-widest mb-2">트레일링 스탑</div>
@@ -373,7 +398,6 @@ function HoldingCard({ result: r, onRemove, earnings }: {
                   </div>
                 )}
 
-                {/* 매도 목표가 */}
                 {r.fibTargets && (
                   <div className="p-3 bg-zinc-900/50 rounded-lg">
                     <div className="flex items-center justify-between mb-2">
@@ -397,7 +421,6 @@ function HoldingCard({ result: r, onRemove, earnings }: {
                 )}
               </div>
             )}
-
           </div>
         </div>
       )}
@@ -461,7 +484,6 @@ export default function PortfolioTab() {
   const rtMap        = usePortfolioRtPrices(results);
   const analyzeRef   = useRef<(() => Promise<void>) | undefined>(undefined);
 
-  // ── 분석 함수 ──────────────────────────────────────────────────────────────
   async function analyze() {
     if (holdings.length === 0 || loading) return;
     setLoading(true); setError(''); setResults([]);
@@ -478,19 +500,18 @@ export default function PortfolioTab() {
       setAnalyzedAt(data.analyzed_at);
       setStatus(`> 분석 완료 — ${data.holdings.length}개 종목 | ${new Date().toLocaleTimeString('ko-KR')}`);
       try { localStorage.setItem(PORTFOLIO_CACHE, JSON.stringify({ results: data.holdings, analyzed_at: data.analyzed_at })); } catch {}
-      // ✅ Supabase 저장 (위젯 연동용)
-try {
-  await fetch('/api/db', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      type: 'portfolio',
-      holdings: holdings,
-      results: data.holdings,
-      analyzed_at: data.analyzed_at,
-    }),
-  });
-} catch {}
+      try {
+        await fetch('/api/db', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            type: 'portfolio',
+            holdings: holdings,
+            results: data.holdings,
+            analyzed_at: data.analyzed_at,
+          }),
+        });
+      } catch {}
       try {
         const er = await fetch('/api/earnings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tickers: holdings.map(h => h.ticker) }) });
         if (er.ok) {
@@ -504,10 +525,8 @@ try {
     setLoading(false);
   }
 
-  // ref에 최신 analyze 저장 (useEffect 클로저 문제 방지)
   analyzeRef.current = analyze;
 
-  // ── 초기 로드: localStorage → 캐시 복원 or 자동 분석 ──────────────────────
   useEffect(() => {
     let loadedHoldings: Holding[] = [];
     try {
@@ -516,37 +535,32 @@ try {
       setHoldings(loadedHoldings);
     } catch {}
 
-    // 캐시 확인
     try {
       const cached = localStorage.getItem(PORTFOLIO_CACHE);
       if (cached) {
         const p = JSON.parse(cached);
         const age = Date.now() - new Date(p.analyzed_at ?? 0).getTime();
         if (age < CACHE_TTL_MS) {
-          // 캐시 유효 → 그대로 사용
           setResults(p.results ?? []);
           setAnalyzedAt(p.analyzed_at ?? '');
           setStatus(`> 캐시 결과 | ${new Date(p.analyzed_at).toLocaleString('ko-KR')}`);
-          return; // 자동 분석 스킵
+          return;
         }
       }
     } catch {}
 
-    // 캐시 없거나 만료 → 자동 분석
     if (loadedHoldings.length > 0) {
       setTimeout(() => analyzeRef.current?.(), 300);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ── 6시간마다 자동 재분석 ──────────────────────────────────────────────────
   useEffect(() => {
     if (holdings.length === 0) return;
     const iv = setInterval(() => { analyzeRef.current?.(); }, CACHE_TTL_MS);
     return () => clearInterval(iv);
   }, [holdings.length]);
 
-  // ── Holdings 관리 ──────────────────────────────────────────────────────────
   function saveHoldings(h: Holding[]) {
     setHoldings(h);
     try { localStorage.setItem(PORTFOLIO_KEY, JSON.stringify(h)); } catch {}
@@ -581,13 +595,11 @@ try {
     setShowForm(true);
   }
 
-  // ── 총 손익 ────────────────────────────────────────────────────────────────
   const totalCost    = results.reduce((a, r) => a + (r.avgPrice * (r.shares ?? 0)), 0);
   const totalCurrent = results.reduce((a, r) => a + ((rtMap[r.ticker] ?? r.currentPrice) * (r.shares ?? 0)), 0);
   const totalPnl     = totalCurrent - totalCost;
   const totalPnlPct  = totalCost > 0 ? (totalPnl / totalCost) * 100 : 0;
 
-  // ── 정렬 (liveAction 기준으로 정렬) ───────────────────────────────────────
   const sortedResults = [...results].sort((a, b) => {
     if (sort === 'action') {
       const aLive = deriveRealtimeAction(a, rtMap[a.ticker] ?? a.currentPrice);
@@ -600,13 +612,11 @@ try {
     return 0;
   });
 
-  // ── 렌더 ───────────────────────────────────────────────────────────────────
   return (
     <div>
 
-      {/* 종목 추가/수정 폼 — 접기/펼치기 */}
+      {/* 종목 추가/수정 폼 */}
       <div className="mb-3 border border-zinc-800 rounded-xl bg-zinc-900/40 overflow-hidden">
-        {/* 헤더 탭 */}
         <button
           onClick={() => { setShowForm(o => !o); if (editIdx !== null) { setEditIdx(null); setForm({ ticker: '', avgPrice: '', shares: '' }); } }}
           className="w-full flex items-center justify-between px-3 py-2.5 hover:bg-zinc-800/40 transition-colors">
@@ -616,10 +626,8 @@ try {
           <span className="text-zinc-600 text-xs">{showForm ? '▲' : '▼'}</span>
         </button>
 
-        {/* 폼 — 펼쳤을 때만 */}
         {(showForm || editIdx !== null) && (
           <div className="px-3 pb-3 border-t border-zinc-800/60 pt-3">
-            {/* 한 줄: 티커 + 매수가 */}
             <div className="flex gap-2 mb-2">
               <input value={form.ticker}
                 onChange={e => setForm(f => ({ ...f, ticker: e.target.value.toUpperCase() }))}
@@ -648,7 +656,7 @@ try {
         )}
       </div>
 
-      {/* 보유 종목 칩 — 접기/펼치기 */}
+      {/* 보유 종목 칩 */}
       {holdings.length > 0 && (
         <div className="mb-4">
           <button
@@ -680,7 +688,6 @@ try {
             </div>
           )}
 
-          {/* 재분석 버튼 — 항상 표시 */}
           <button onClick={analyze} disabled={loading}
             className={`w-full py-2.5 text-sm font-semibold rounded-lg border transition-all
               ${loading
@@ -730,7 +737,6 @@ try {
               </button>
             ))}
           </div>
-          {/* 실시간 action 기준 카운트 */}
           <div className="flex gap-1.5 ml-1 flex-wrap">
             {['즉시매도', '매도', '매도검토', '홀딩', '모니터링'].map(a => {
               const cnt = results.filter(r => deriveRealtimeAction(r, rtMap[r.ticker] ?? r.currentPrice) === a).length;
