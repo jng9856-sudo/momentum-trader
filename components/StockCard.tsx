@@ -69,14 +69,33 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
   const router = useRouter();
   const [open, setOpen] = useState(forceOpen);
   const [tab, setTab] = useState<TabKey>('core');
-  const [rtPrice, setRtPrice] = useState<{ price: number; changePct: number; isRealtime?: boolean } | null>(null);
+
+  // ── [수정 1] rtPrice 타입에 시간외 필드 추가 ──────────────────────────────
+  const [rtPrice, setRtPrice] = useState<{
+    price:         number;
+    changePct:     number;
+    isRealtime?:   boolean;
+    marketSession?: 'REGULAR' | 'PRE' | 'AFTER' | 'CLOSED';
+    extPrice?:     number | null;
+    extChangePct?: number | null;
+  } | null>(null);
 
   useEffect(() => { if (forceOpen) setOpen(true); }, [forceOpen]);
 
+  // ── [수정 2] fetch에서 시간외 필드도 수신 ────────────────────────────────
   useEffect(() => {
     const fetchPrice = () => fetch(`/api/realtime?tickers=${stock.ticker}`)
       .then(r => r.json())
-      .then(d => { if (d.price && d.price > 0) setRtPrice({ price: d.price, changePct: d.changePct ?? 0, isRealtime: d.isRealtime }); })
+      .then(d => {
+        if (d.price && d.price > 0) setRtPrice({
+          price:         d.price,
+          changePct:     d.changePct     ?? 0,
+          isRealtime:    d.isRealtime,
+          marketSession: d.marketSession,
+          extPrice:      d.extPrice      ?? null,
+          extChangePct:  d.extChangePct  ?? null,
+        });
+      })
       .catch(() => {});
     fetchPrice();
     const iv = setInterval(fetchPrice, 30000);
@@ -155,6 +174,35 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
     </button>
   ) : null;
 
+  // ── [수정 3] 시간외 가격 뱃지 공통 컴포넌트 ─────────────────────────────
+  const ExtPriceBadge = ({ compact: isCompact = false }: { compact?: boolean }) => {
+    if (!rtPrice?.extPrice) return null;
+    const isPre   = rtPrice.marketSession === 'PRE';
+    const isAfter = rtPrice.marketSession === 'AFTER';
+    if (!isPre && !isAfter) return null;
+
+    if (isCompact) {
+      return (
+        <span className={`flex items-center gap-0.5 px-1 py-0.5 rounded border ${isPre ? 'bg-sky-950 border-sky-800' : 'bg-violet-950 border-violet-800'}`}>
+          <span className={`text-[8px] font-semibold ${isPre ? 'text-sky-400' : 'text-violet-400'}`}>{isPre ? '프리' : '애프터'}</span>
+          <span className={`text-[8px] font-mono ${isPre ? 'text-sky-300' : 'text-violet-300'}`}>${rtPrice.extPrice.toLocaleString()}</span>
+        </span>
+      );
+    }
+
+    return (
+      <span className={`flex items-center gap-1 ml-1 px-1.5 py-0.5 rounded border ${isPre ? 'bg-sky-950 border-sky-800' : 'bg-violet-950 border-violet-800'}`}>
+        <span className={`text-[9px] font-semibold ${isPre ? 'text-sky-400' : 'text-violet-400'}`}>{isPre ? '프리' : '애프터'}</span>
+        <span className={`text-[9px] font-mono ${isPre ? 'text-sky-300' : 'text-violet-300'}`}>${rtPrice.extPrice.toLocaleString()}</span>
+        {rtPrice.extChangePct != null && (
+          <span className={`text-[9px] font-mono ${rtPrice.extChangePct >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+            {rtPrice.extChangePct >= 0 ? '+' : ''}{rtPrice.extChangePct.toFixed(2)}%
+          </span>
+        )}
+      </span>
+    );
+  };
+
   // ── 컴팩트 뷰 ────────────────────────────────────────────────────────────────
   if (compact) {
     return (
@@ -182,6 +230,8 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
               <div className="flex items-center gap-1">
                 <span className="text-xs font-bold text-zinc-100 font-mono">${rtPrice.price.toLocaleString()}</span>
                 <span className={`text-[10px] font-mono ${rtPrice.changePct >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{rtPrice.changePct >= 0 ? '+' : ''}{rtPrice.changePct?.toFixed(2)}%</span>
+                {/* 컴팩트 시간외 뱃지 */}
+                <ExtPriceBadge compact />
               </div>
             )}
             <span className={`text-[10px] font-semibold px-2 py-0.5 rounded border ${c.badge}`}>{SIG_KO[stock.signal] ?? stock.signal}</span>
@@ -221,6 +271,8 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
               <span className="text-sm font-bold text-zinc-100 font-mono">${rtPrice.price.toLocaleString()}</span>
               <span className={`text-xs font-mono ${rtPrice.changePct >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{rtPrice.changePct >= 0 ? '+' : ''}{rtPrice.changePct?.toFixed(2)}%</span>
               <span className={`text-[9px] px-1 py-0.5 rounded ${rtPrice.isRealtime ? 'text-emerald-600 bg-emerald-950 border border-emerald-900 animate-pulse' : 'text-zinc-600 bg-zinc-900 border border-zinc-800'}`}>{rtPrice.isRealtime ? '실시간' : '15분'}</span>
+              {/* 상세뷰 시간외 뱃지 */}
+              <ExtPriceBadge />
             </div>
           )}
           {stock.breakout_52w && <span className="text-[9px] bg-emerald-900 text-emerald-200 border border-emerald-700 px-1.5 py-0.5 rounded">🚀 신고가</span>}
