@@ -20,7 +20,9 @@ function sigColors(s: string) {
   }
 }
 function rsClass(r: string) { return r === 'STRONG' ? 'text-emerald-400' : r === 'WEAK' ? 'text-red-400' : 'text-zinc-400'; }
-function barColor(score: number) { return score >= 7 ? '#10b981' : score >= 4 ? '#f59e0b' : '#ef4444'; }
+
+// ── [수정] 0-100 스케일 기준으로 색상 임계값 변경 ──────────────────────────────
+function barColor(score: number) { return score >= 70 ? '#10b981' : score >= 40 ? '#f59e0b' : '#ef4444'; }
 
 function rrColors(grade: string | null) {
   switch (grade) {
@@ -70,7 +72,6 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
   const [open, setOpen] = useState(forceOpen);
   const [tab, setTab] = useState<TabKey>('core');
 
-  // ── [수정 1] rtPrice 타입에 시간외 필드 추가 ──────────────────────────────
   const [rtPrice, setRtPrice] = useState<{
     price:         number;
     changePct:     number;
@@ -82,7 +83,6 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
 
   useEffect(() => { if (forceOpen) setOpen(true); }, [forceOpen]);
 
-  // ── [수정 2] fetch에서 시간외 필드도 수신 ────────────────────────────────
   useEffect(() => {
     const fetchPrice = () => fetch(`/api/realtime?tickers=${stock.ticker}`)
       .then(r => r.json())
@@ -102,7 +102,8 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
     return () => clearInterval(iv);
   }, [stock.ticker]);
 
-  const score = Math.min(10, Math.max(1, Math.round(Number(stock.momentum_score) * 2) / 2));
+  // ── [수정] 0-100 스케일로 클램핑 변경 ────────────────────────────────────────
+  const score = Math.min(100, Math.max(0, Math.round(Number(stock.momentum_score))));
   const c = sigColors(stock.signal);
   const regimeNote  = stock.regime_note  ?? null;
   const regimeStyle = regimeNote ? regimeBadgeStyle(regimeNote) : null;
@@ -163,7 +164,6 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
   const splitExit3   = stock.split_exit3     ?? null;
   const splitAvgEntry = stock.split_avg_entry ?? null;
 
-  // ── 즐겨찾기 버튼 공통 ──────────────────────────────────────────────────────
   const FavBtn = () => onToggleFavorite ? (
     <button
       onClick={e => { e.stopPropagation(); onToggleFavorite(stock.ticker); }}
@@ -174,7 +174,6 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
     </button>
   ) : null;
 
-  // ── [수정 3] 시간외 가격 뱃지 공통 컴포넌트 ─────────────────────────────
   const ExtPriceBadge = ({ compact: isCompact = false }: { compact?: boolean }) => {
     if (!rtPrice?.extPrice) return null;
     const isPre   = rtPrice.marketSession === 'PRE';
@@ -230,11 +229,11 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
               <div className="flex items-center gap-1">
                 <span className="text-xs font-bold text-zinc-100 font-mono">${rtPrice.price.toLocaleString()}</span>
                 <span className={`text-[10px] font-mono ${rtPrice.changePct >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{rtPrice.changePct >= 0 ? '+' : ''}{rtPrice.changePct?.toFixed(2)}%</span>
-                {/* 컴팩트 시간외 뱃지 */}
                 <ExtPriceBadge compact />
               </div>
             )}
             <span className={`text-[10px] font-semibold px-2 py-0.5 rounded border ${c.badge}`}>{SIG_KO[stock.signal] ?? stock.signal}</span>
+            {/* ── [수정] 컴팩트 점수 표기 ── */}
             <span className="text-xs font-mono" style={{ color: barColor(score) }}>{score}</span>
             {stock.entry_zone && <span className="text-[9px] text-emerald-400 font-mono hidden sm:inline">진입 {stock.entry_zone}</span>}
             {stock.stop_loss  && <span className="text-[9px] text-red-400 font-mono hidden sm:inline">손절 {stock.stop_loss}</span>}
@@ -271,7 +270,6 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
               <span className="text-sm font-bold text-zinc-100 font-mono">${rtPrice.price.toLocaleString()}</span>
               <span className={`text-xs font-mono ${rtPrice.changePct >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{rtPrice.changePct >= 0 ? '+' : ''}{rtPrice.changePct?.toFixed(2)}%</span>
               <span className={`text-[9px] px-1 py-0.5 rounded ${rtPrice.isRealtime ? 'text-emerald-600 bg-emerald-950 border border-emerald-900 animate-pulse' : 'text-zinc-600 bg-zinc-900 border border-zinc-800'}`}>{rtPrice.isRealtime ? '실시간' : '15분'}</span>
-              {/* 상세뷰 시간외 뱃지 */}
               <ExtPriceBadge />
             </div>
           )}
@@ -289,6 +287,7 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
         {/* ── 헤더 우측: 신호 배지 + 점수 + 즐겨찾기 + 접기 ── */}
         <div className="flex items-center gap-2 shrink-0 ml-2">
           <span className={`text-xs font-semibold px-2.5 py-1 rounded-md border ${c.badge}`}>{SIG_KO[stock.signal] ?? stock.signal}</span>
+          {/* ── [수정] 헤더 점수 표기 ── */}
           <span className="text-xs font-mono" style={{ color: barColor(score) }}>{score}</span>
           <FavBtn />
           {!forceOpen && <span className="text-zinc-600 text-xs">{open ? '▲' : '▼'}</span>}
@@ -348,10 +347,18 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
                     <p className="text-xs text-red-300 font-semibold" style={{ fontFamily: 'system-ui' }}>⚡ {macroWarning.title} ({macroWarning.date}) — 이벤트 전 신규 진입 자제</p>
                   </div>
                 )}
+
+                {/* ── [수정] 모멘텀 강도 바 — 0-100 스케일 ── */}
                 <div className="mb-3">
-                  <div className="flex justify-between text-xs text-zinc-500 mb-1.5"><span>모멘텀 강도</span><span className="font-semibold" style={{ color: c.bar }}>{score} / 10</span></div>
-                  <div className="h-1.5 bg-zinc-800 rounded-full overflow-hidden"><div className="h-full rounded-full" style={{ width: `${score * 10}%`, background: c.bar }} /></div>
+                  <div className="flex justify-between text-xs text-zinc-500 mb-1.5">
+                    <span>모멘텀 강도</span>
+                    <span className="font-semibold" style={{ color: c.bar }}>{score} / 100</span>
+                  </div>
+                  <div className="h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+                    <div className="h-full rounded-full" style={{ width: `${score}%`, background: c.bar }} />
+                  </div>
                 </div>
+
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
                   <Metric label="지수 RS"><span className={`text-sm font-medium ${rsClass(stock.rs_vs_index)}`}>{RS_KO[stock.rs_vs_index]}</span></Metric>
                   <Metric label="섹터 RS"><span className={`text-sm font-medium ${rsClass(stock.rs_vs_sector)}`}>{RS_KO[stock.rs_vs_sector]}</span></Metric>
@@ -461,8 +468,9 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
                         <span className="text-[10px] text-zinc-500 uppercase tracking-widest">주봉 멀티 타임프레임</span>
                         {stock.weekly_is_entry && <span className="text-[9px] bg-emerald-800 text-emerald-200 border border-emerald-600 px-1.5 py-0.5 rounded font-semibold">🎯 최고 타점</span>}
                       </div>
+                      {/* ── [수정] 주봉 alignScore 0-100 스케일 표기 ── */}
                       <span className={`text-xs font-semibold ${stock.weekly_trend === 'UPTREND' ? 'text-emerald-400' : stock.weekly_trend === 'DOWNTREND' ? 'text-red-400' : 'text-zinc-400'}`}>
-                        {stock.weekly_align_score ?? '-'}/10 {stock.weekly_trend === 'UPTREND' ? '▲ 주봉 상승' : stock.weekly_trend === 'DOWNTREND' ? '▼ 주봉 하락' : '— 횡보'}
+                        {stock.weekly_align_score ?? '-'}/100 {stock.weekly_trend === 'UPTREND' ? '▲ 주봉 상승' : stock.weekly_trend === 'DOWNTREND' ? '▼ 주봉 하락' : '— 횡보'}
                       </span>
                     </div>
                     <div className="grid grid-cols-3 gap-2 text-[10px] text-zinc-500">
