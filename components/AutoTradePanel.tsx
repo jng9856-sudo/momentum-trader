@@ -43,21 +43,18 @@ export default function AutoTradePanel() {
         fetch('/api/trade/balance'),
         fetch('/api/trade'),
       ]);
-      if (balRes.ok) {
-        const data = await balRes.json();
-        if (data.error) setBalError(data.error);
-        else setBalance(data);
-      } else {
-        const data = await balRes.json().catch(() => ({}));
-        setBalError(data.error ?? '잔고 조회 실패');
-      }
-      if (statusRes.ok) setTradeStatus(await statusRes.json());
-    } catch (e) {
-      setBalError(String(e));
-    } finally {
-      setLoadingBal(false);
-    }
-  }, []);
+     if (balRes.ok) {
+  const data = await balRes.json();
+  if (data.error) setBalError(data.error);
+  else { setBalance(data); setBalError(null); }
+} else {
+  try {
+    const data = await balRes.json();
+    setBalError(data.error ?? '잔고 조회 실패');
+  } catch {
+    setBalError('잔고 조회 실패');
+  }
+}, []);
 
   useEffect(() => { fetchBalance(); }, [fetchBalance]);
 
