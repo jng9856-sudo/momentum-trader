@@ -33,41 +33,63 @@ export function getUSMarketSession(): 'REGULAR' | 'PRE' | 'AFTER' | 'CLOSED' {
   // 프리장:  KST 18:00 ~ 23:30       (EDT 04:00~09:30)
   // 애프터:  KST 06:00 ~ 10:00       (EDT 16:00~20:00)
   // 장마감:  KST 10:00 ~ 18:00
-  if (timeMin >= 23 * 60 + 30 || timeMin < 6 * 60)       return 'REGULAR';
-  if (timeMin >= 18 * 60 && timeMin < 23 * 60 + 30)      return 'PRE';
-  if (timeMin >= 6 * 60  && timeMin < 10 * 60)            return 'AFTER';
+  if (timeMin >= 23 * 60 + 30 || timeMin < 6 * 60)  return 'REGULAR';
+  if (timeMin >= 18 * 60 && timeMin < 23 * 60 + 30) return 'PRE';
+  if (timeMin >= 6 * 60  && timeMin < 10 * 60)       return 'AFTER';
   return 'CLOSED';
 }
 
 // ── Access Token 발급 (24시간 유효) ──────────────────────────────────────────
+// 인메모리 캐시: 동일 프로세스 내 재사용 (서버리스에서는 Supabase가 주 캐시)
 let cachedToken: { token: string; expiresAt: number } | null = null;
 
 async function getAccessToken(): Promise<string | null> {
   if (!KIS_APP_KEY || !KIS_APP_SECRET) return null;
 
+  // 1순위: 인메모리 캐시 (프로세스 재사용 시)
   if (cachedToken && Date.now() < cachedToken.expiresAt) {
     return cachedToken.token;
   }
 
-  try {
-    const dbRes = await fetch(
-      `${SUPABASE_URL}/rest/v1/kis_token?id=eq.singleton&select=token,expires_at`,
-      {
-        headers: {
-          'apikey':        SUPABASE_KEY,
-          'Authorization': `Bearer ${SUPABASE_KEY}`,
-        },
-      }
-    );
-    if (dbRes.ok) {
-      const rows = await dbRes.json();
-      if (rows?.[0] && rows[0].expires_at > Date.now()) {
-        cachedToken = { token: rows[0].token, expiresAt: rows[0].expires_at };
-        return cachedToken.token;
-      }
-    }
-  } catch { /* fallback */ }
+  // 2순위: Supabase DB 캐시
+  // ── [핵심 수정] expires_at 서버사이드 필터 추가 → 만료 토큰 조회 방지 ──
+  if (SUPABASE_URL && SUPABASE_KEY) {
+    try {
+      const now = Date.now();
+      // expires_at=gt.{now} 필터: DB에서 유효한 토큰만 반환
+      const dbRes = await fetch(
+        `${SUPABASE_URL}/rest/v1/kis_token?id=eq.singleton&expires_at=gt.${now}&select=token,expires_at`,
+        {
+          headers: {
+            'apikey':        SUPABASE_KEY,
+            'Authorization': `Bearer ${SUPABASE_KEY}`,
+          },
+          // DB 응답 자체는 캐싱하지 않음
+          cache: 'no-store',
+        }
+      );
+      if (dbRes.ok) {
+        const rows = await dbRes.json();
+        const row = rows?.[0];
+        if (row?.token && row?.expires_at) {
+          // expires_at이 문자열로 올 경우 대비해 숫자 변환
+          const expiresAt = typeof row.expires_at === 'number'
+            ? row.expires_at
+            : parseInt(String(row.expires_at), 10);
 
+          if (expiresAt > now) {
+            // 인메모리에도 저장해두어 동일 프로세스 내 재사용
+            cachedToken = { token: row.token, expiresAt };
+            return cachedToken.token;
+          }
+        }
+      }
+    } catch {
+      // Supabase 실패 시 재발급으로 fallback
+    }
+  }
+
+  // 3순위: KIS API 재발급 (여기까지 오면 문자 발송됨)
   try {
     const res = await fetch(`${BASE_URL}/oauth2/tokenP`, {
       method: 'POST',
@@ -80,24 +102,31 @@ async function getAccessToken(): Promise<string | null> {
     });
     if (!res.ok) return null;
 
-    const data       = await res.json();
-    const expiresAt  = Date.now() + 23 * 60 * 60 * 1000;
-    cachedToken      = { token: data.access_token, expiresAt };
+    const data      = await res.json();
+    const expiresAt = Date.now() + 23 * 60 * 60 * 1000; // 23시간 후
+    cachedToken     = { token: data.access_token, expiresAt };
 
-    await fetch(`${SUPABASE_URL}/rest/v1/kis_token`, {
-      method: 'POST',
-      headers: {
-        'apikey':        SUPABASE_KEY,
-        'Authorization': `Bearer ${SUPABASE_KEY}`,
-        'Content-Type':  'application/json',
-        'Prefer':        'resolution=merge-duplicates',
-      },
-      body: JSON.stringify({
-        id:         'singleton',
-        token:      data.access_token,
-        expires_at: expiresAt,
-      }),
-    });
+    // Supabase에 저장 (upsert)
+    if (SUPABASE_URL && SUPABASE_KEY) {
+      try {
+        await fetch(`${SUPABASE_URL}/rest/v1/kis_token`, {
+          method: 'POST',
+          headers: {
+            'apikey':        SUPABASE_KEY,
+            'Authorization': `Bearer ${SUPABASE_KEY}`,
+            'Content-Type':  'application/json',
+            'Prefer':        'resolution=merge-duplicates',
+          },
+          body: JSON.stringify({
+            id:         'singleton',
+            token:      data.access_token,
+            expires_at: expiresAt,  // 밀리초 숫자로 저장
+          }),
+        });
+      } catch {
+        // Supabase 저장 실패해도 토큰은 사용 가능
+      }
+    }
 
     return data.access_token;
   } catch { return null; }
@@ -114,7 +143,6 @@ export async function getUSStockPrice(ticker: string): Promise<{
   open:         number;
   volume:       number;
   isRealtime:   boolean;
-  // 시간외 필드 추가
   marketSession: 'REGULAR' | 'PRE' | 'AFTER' | 'CLOSED';
   extPrice:     number | null;
   extChange:    number | null;
@@ -147,7 +175,6 @@ export async function getUSStockPrice(ticker: string): Promise<{
     const price     = parseFloat(o.last ?? o.base ?? '0');
     const prevClose = parseFloat(o.base ?? '0');
 
-    // 시간외 가격 필드
     const extPrice    = parseFloat(o.t_xprc ?? '0');
     const extDif      = parseFloat(o.t_xdif ?? '0');
     const extRat      = parseFloat(o.t_xrat ?? '0');
@@ -155,7 +182,6 @@ export async function getUSStockPrice(ticker: string): Promise<{
 
     const marketSession = getUSMarketSession();
 
-    // 프리/애프터 중 시간외 데이터 있으면 등락 수치를 시간외 기준으로 표시
     const effectiveChange =
       hasExtPrice && marketSession !== 'REGULAR'
         ? extDif
