@@ -4,11 +4,14 @@ import { useState, useEffect, useCallback } from 'react';
 interface BalanceItem {
   ticker: string; name: string; qty: number;
   avgPrice: number; curPrice: number;
-  evalAmt: number; pnl: number; pnlPct: number;
+  evalAmt: number; pnl: number; pnlPct: number; exchange: string;
 }
 interface Balance {
-  items: BalanceItem[]; totalEval: number; totalBuy: number;
-  totalPnl: number; totalPnlPct: number; cashUSD: number; isPaper: boolean;
+  items: BalanceItem[];
+  totalEval: number; totalBuy: number;
+  totalPnl: number; totalPnlPct: number;
+  cashUSD: number; totalAssetUSD: number;
+  isPaper: boolean;
 }
 interface TradeStatus {
   isPaper: boolean; autoEnabled: boolean;
@@ -18,28 +21,39 @@ interface TradeStatus {
 
 const pColor = (n: number) => n >= 0 ? 'text-emerald-400' : 'text-red-400';
 const fmt2   = (n: number) => n.toFixed(2);
+const fmtUSD = (n: number) => `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 export default function AutoTradePanel() {
-  const [balance,     setBalance]     = useState<Balance | null>(null);
-  const [tradeStatus, setTradeStatus] = useState<TradeStatus | null>(null);
-  const [loadingBal,  setLoadingBal]  = useState(false);
-  const [orderTicker, setOrderTicker] = useState('');
-  const [orderQty,    setOrderQty]    = useState('');
-  const [orderPrice,  setOrderPrice]  = useState('');
-  const [orderSide,   setOrderSide]   = useState<'BUY' | 'SELL'>('BUY');
+  const [balance,      setBalance]      = useState<Balance | null>(null);
+  const [tradeStatus,  setTradeStatus]  = useState<TradeStatus | null>(null);
+  const [loadingBal,   setLoadingBal]   = useState(false);
+  const [balError,     setBalError]     = useState<string | null>(null);
+  const [orderTicker,  setOrderTicker]  = useState('');
+  const [orderQty,     setOrderQty]     = useState('');
+  const [orderPrice,   setOrderPrice]   = useState('');
+  const [orderSide,    setOrderSide]    = useState<'BUY' | 'SELL'>('BUY');
   const [orderLoading, setOrderLoading] = useState(false);
   const [orderResult,  setOrderResult]  = useState<{ success: boolean; message: string } | null>(null);
-  const [confirm,     setConfirm]     = useState(false);
+  const [confirm,      setConfirm]      = useState(false);
 
   const fetchBalance = useCallback(async () => {
-    setLoadingBal(true);
+    setLoadingBal(true); setBalError(null);
     try {
       const [balRes, statusRes] = await Promise.all([
         fetch('/api/trade/balance'),
         fetch('/api/trade'),
       ]);
-      if (balRes.ok)    setBalance(await balRes.json());
+      if (balRes.ok) {
+        const data = await balRes.json();
+        if (data.error) setBalError(data.error);
+        else setBalance(data);
+      } else {
+        const data = await balRes.json().catch(() => ({}));
+        setBalError(data.error ?? '잔고 조회 실패');
+      }
       if (statusRes.ok) setTradeStatus(await statusRes.json());
+    } catch (e) {
+      setBalError(String(e));
     } finally {
       setLoadingBal(false);
     }
@@ -105,121 +119,108 @@ export default function AutoTradePanel() {
           </p>
         </div>
         <button onClick={fetchBalance} disabled={loadingBal}
-          className="px-3 py-2 text-xs border border-zinc-700 rounded-lg text-zinc-400 hover:bg-zinc-800 transition-colors shrink-0">
-          {loadingBal ? '조회 중…' : '↺ 새로고침'}
+          className="px-3 py-2 text-xs border border-zinc-700 rounded-lg text-zinc-400 hover:bg-zinc-800 transition-colors shrink-0 flex items-center gap-1.5">
+          <span className={loadingBal ? 'animate-spin inline-block' : ''}>↺</span>
+          {loadingBal ? '조회 중…' : '새로고침'}
         </button>
       </div>
 
-      {/* ── 환경변수 설정 안내 ── */}
-      {!balance && !loadingBal && (
-        <div className="mb-6 p-4 rounded-xl border border-amber-800 bg-amber-950/20">
-          <p className="text-xs text-amber-300 font-semibold mb-2">⚠ 연동 전 Vercel 환경변수 설정 필요</p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[10px] font-mono text-zinc-400">
-            {[
-              ['KIS_APP_KEY',          '한국투자증권 앱키'],
-              ['KIS_APP_SECRET',       '한국투자증권 시크릿'],
-              ['KIS_ACCOUNT_NO',       '계좌번호 앞 8자리'],
-              ['KIS_ACCOUNT_PROD',     '계좌번호 뒤 2자리 (보통 01)'],
-              ['KIS_PAPER_TRADING',    'true=모의 / false=실전 (기본: true)'],
-              ['AUTO_TRADE_ENABLED',   'true=자동매매 활성화 (기본: false)'],
-              ['MAX_ORDER_USD',        '1회 최대 주문금액 (기본: 2000)'],
-              ['MAX_DAILY_ORDERS',     '일일 최대 주문횟수 (기본: 5)'],
-            ].map(([key, desc]) => (
-              <div key={key} className="flex gap-2 items-start">
-                <span className="text-emerald-400 shrink-0">{key}</span>
-                <span className="text-zinc-600">{desc}</span>
-              </div>
-            ))}
-          </div>
+      {/* ── 잔고 오류 표시 ── */}
+      {balError && (
+        <div className="mb-4 p-3 rounded-xl border border-red-800 bg-red-950/20 text-xs text-red-400">
+          <p className="font-semibold mb-1">⚠ 잔고 조회 실패</p>
+          <p>{balError}</p>
+          <p className="mt-2 text-red-600">계좌번호(KIS_ACCOUNT_NO), 계좌상품코드(KIS_ACCOUNT_PROD), API키를 Vercel 환경변수에서 확인하세요.</p>
         </div>
       )}
 
-      {/* ── 안전장치 현황 ── */}
-      {tradeStatus && (
-        <div className="mb-6 grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
-            <div className="text-[10px] text-zinc-500 uppercase tracking-widest mb-1">오늘 주문</div>
-            <div className={`text-xl font-bold font-mono ${tradeStatus.todayOrders >= tradeStatus.maxDailyOrders ? 'text-red-400' : 'text-zinc-100'}`}>
-              {tradeStatus.todayOrders} / {tradeStatus.maxDailyOrders}
-            </div>
-            <div className="text-[10px] text-zinc-600 mt-1">일일 한도</div>
-          </div>
-          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
-            <div className="text-[10px] text-zinc-500 uppercase tracking-widest mb-1">1회 한도</div>
-            <div className="text-xl font-bold font-mono text-zinc-100">${tradeStatus.maxOrderUSD.toLocaleString()}</div>
-            <div className="text-[10px] text-zinc-600 mt-1">MAX_ORDER_USD</div>
-          </div>
-          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
-            <div className="text-[10px] text-zinc-500 uppercase tracking-widest mb-1">자동매매</div>
-            <div className={`text-xl font-bold ${tradeStatus.autoEnabled ? 'text-emerald-400' : 'text-zinc-600'}`}>
-              {tradeStatus.autoEnabled ? 'ON' : 'OFF'}
-            </div>
-            <div className="text-[10px] text-zinc-600 mt-1">AUTO_TRADE_ENABLED</div>
-          </div>
-          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
-            <div className="text-[10px] text-zinc-500 uppercase tracking-widest mb-1">모드</div>
-            <div className={`text-xl font-bold ${isPaper ? 'text-amber-400' : 'text-red-400'}`}>
-              {isPaper ? '모의' : '실전'}
-            </div>
-            <div className="text-[10px] text-zinc-600 mt-1">KIS_PAPER_TRADING</div>
-          </div>
-        </div>
-      )}
-
-      {/* ── 잔고 현황 ── */}
+      {/* ── 총 자산 요약 카드 ── */}
       {balance && (
         <div className="mb-6">
-          <h3 className="text-sm font-semibold text-zinc-400 uppercase tracking-widest mb-3">계좌 현황</h3>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
-            <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
-              <div className="text-[10px] text-zinc-500 uppercase tracking-widest mb-1">평가금액</div>
-              <div className="text-lg font-bold font-mono text-zinc-100">${balance.totalEval.toLocaleString()}</div>
+          {/* 총 자산 강조 카드 */}
+          <div className="mb-3 p-5 rounded-xl border border-zinc-700 bg-zinc-900/80">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-[10px] text-zinc-500 uppercase tracking-widest">총 자산 (USD)</span>
+              <span className="text-[10px] text-zinc-600">주식평가 + 가용현금</span>
             </div>
-            <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
-              <div className="text-[10px] text-zinc-500 uppercase tracking-widest mb-1">매입금액</div>
-              <div className="text-lg font-bold font-mono text-zinc-100">${balance.totalBuy.toLocaleString()}</div>
-            </div>
-            <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
-              <div className="text-[10px] text-zinc-500 uppercase tracking-widest mb-1">평가손익</div>
-              <div className={`text-lg font-bold font-mono ${pColor(balance.totalPnl)}`}>
-                {balance.totalPnl >= 0 ? '+' : ''}${balance.totalPnl.toLocaleString()}
-                <span className="text-sm ml-1">({balance.totalPnlPct >= 0 ? '+' : ''}{fmt2(balance.totalPnlPct)}%)</span>
-              </div>
-            </div>
-            <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
-              <div className="text-[10px] text-zinc-500 uppercase tracking-widest mb-1">가용 현금 (USD)</div>
-              <div className="text-lg font-bold font-mono text-emerald-400">${balance.cashUSD.toLocaleString()}</div>
+            <div className="flex items-end gap-4 flex-wrap">
+              <span className="text-3xl font-bold font-mono text-zinc-100">
+                {fmtUSD(balance.totalAssetUSD)}
+              </span>
+              {balance.totalBuy > 0 && (
+                <span className={`text-lg font-bold font-mono ${pColor(balance.totalPnl)}`}>
+                  {balance.totalPnl >= 0 ? '+' : ''}{fmtUSD(balance.totalPnl)}
+                  <span className="text-sm ml-1">({balance.totalPnlPct >= 0 ? '+' : ''}{fmt2(balance.totalPnlPct)}%)</span>
+                </span>
+              )}
             </div>
           </div>
 
-          {/* 보유 종목 */}
+          {/* 세부 잔고 카드 */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+            <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
+              <div className="text-[10px] text-zinc-500 uppercase tracking-widest mb-1">가용 현금</div>
+              <div className="text-lg font-bold font-mono text-emerald-400">{fmtUSD(balance.cashUSD)}</div>
+              <div className="text-[10px] text-zinc-600 mt-0.5">주문 가능 USD</div>
+            </div>
+            <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
+              <div className="text-[10px] text-zinc-500 uppercase tracking-widest mb-1">주식 평가</div>
+              <div className="text-lg font-bold font-mono text-zinc-100">{fmtUSD(balance.totalEval)}</div>
+              <div className="text-[10px] text-zinc-600 mt-0.5">보유 종목 합계</div>
+            </div>
+            <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
+              <div className="text-[10px] text-zinc-500 uppercase tracking-widest mb-1">매입 원가</div>
+              <div className="text-lg font-bold font-mono text-zinc-400">{fmtUSD(balance.totalBuy)}</div>
+              <div className="text-[10px] text-zinc-600 mt-0.5">취득 금액 합계</div>
+            </div>
+            <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
+              <div className="text-[10px] text-zinc-500 uppercase tracking-widest mb-1">평가 손익</div>
+              <div className={`text-lg font-bold font-mono ${pColor(balance.totalPnl)}`}>
+                {balance.totalPnl >= 0 ? '+' : ''}{fmtUSD(balance.totalPnl)}
+              </div>
+              <div className={`text-[10px] mt-0.5 ${pColor(balance.totalPnlPct)}`}>
+                {balance.totalPnlPct >= 0 ? '+' : ''}{fmt2(balance.totalPnlPct)}%
+              </div>
+            </div>
+          </div>
+
+          {/* 보유 종목 테이블 */}
           {balance.items.length > 0 ? (
             <div className="overflow-x-auto rounded-xl border border-zinc-800">
               <table className="w-full text-xs">
                 <thead className="bg-zinc-900 border-b border-zinc-800">
                   <tr>
-                    {['종목', '수량', '평균단가', '현재가', '평가금액', '손익', '수익률'].map(h => (
+                    {['종목', '거래소', '수량', '평균단가', '현재가', '평가금액', '손익', '수익률', '액션'].map(h => (
                       <th key={h} className="px-3 py-2 text-left text-[10px] text-zinc-500 uppercase tracking-widest whitespace-nowrap">{h}</th>
                     ))}
-                    <th className="px-3 py-2 text-left text-[10px] text-zinc-500 uppercase tracking-widest">액션</th>
                   </tr>
                 </thead>
                 <tbody>
                   {balance.items.map(item => (
-                    <tr key={item.ticker} className="border-b border-zinc-900 hover:bg-zinc-900/40">
+                    <tr key={`${item.ticker}-${item.exchange}`} className="border-b border-zinc-900 hover:bg-zinc-900/40">
                       <td className="px-3 py-2 font-bold text-zinc-100">{item.ticker}</td>
+                      <td className="px-3 py-2 text-zinc-500 text-[10px]">{item.exchange}</td>
                       <td className="px-3 py-2 text-zinc-300 font-mono">{item.qty}</td>
-                      <td className="px-3 py-2 text-zinc-400 font-mono">${fmt2(item.avgPrice)}</td>
-                      <td className="px-3 py-2 text-zinc-300 font-mono">${fmt2(item.curPrice)}</td>
-                      <td className="px-3 py-2 text-zinc-300 font-mono">${item.evalAmt.toLocaleString()}</td>
-                      <td className={`px-3 py-2 font-mono ${pColor(item.pnl)}`}>{item.pnl >= 0 ? '+' : ''}${fmt2(item.pnl)}</td>
-                      <td className={`px-3 py-2 font-mono font-bold ${pColor(item.pnlPct)}`}>{item.pnlPct >= 0 ? '+' : ''}{fmt2(item.pnlPct)}%</td>
+                      <td className="px-3 py-2 text-zinc-400 font-mono">{fmtUSD(item.avgPrice)}</td>
+                      <td className="px-3 py-2 text-zinc-300 font-mono">{fmtUSD(item.curPrice)}</td>
+                      <td className="px-3 py-2 text-zinc-300 font-mono">{fmtUSD(item.evalAmt)}</td>
+                      <td className={`px-3 py-2 font-mono ${pColor(item.pnl)}`}>
+                        {item.pnl >= 0 ? '+' : ''}{fmtUSD(item.pnl)}
+                      </td>
+                      <td className={`px-3 py-2 font-mono font-bold ${pColor(item.pnlPct)}`}>
+                        {item.pnlPct >= 0 ? '+' : ''}{fmt2(item.pnlPct)}%
+                      </td>
                       <td className="px-3 py-2">
                         <button
-                          onClick={() => { setOrderTicker(item.ticker); setOrderQty(String(item.qty)); setOrderSide('SELL'); setOrderPrice('0'); }}
+                          onClick={() => {
+                            setOrderTicker(item.ticker);
+                            setOrderQty(String(item.qty));
+                            setOrderSide('SELL');
+                            setOrderPrice('0');
+                          }}
                           className="text-[9px] px-2 py-1 rounded border border-red-800 text-red-400 hover:bg-red-950 transition-colors"
                         >
-                          매도
+                          전량매도
                         </button>
                       </td>
                     </tr>
@@ -229,9 +230,52 @@ export default function AutoTradePanel() {
             </div>
           ) : (
             <div className="p-6 rounded-xl border border-zinc-800 bg-zinc-900/30 text-center text-zinc-600 text-sm">
-              보유 종목 없음
+              보유 종목 없음 — 현금 {fmtUSD(balance.cashUSD)} 대기 중
             </div>
           )}
+        </div>
+      )}
+
+      {/* ── 로딩 중 스켈레톤 ── */}
+      {loadingBal && !balance && (
+        <div className="mb-6 space-y-3">
+          <div className="h-24 bg-zinc-900 border border-zinc-800 rounded-xl animate-pulse" />
+          <div className="grid grid-cols-4 gap-3">
+            {[...Array(4)].map((_, i) => (
+              <div key={i} className="h-20 bg-zinc-900 border border-zinc-800 rounded-xl animate-pulse" />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── 안전장치 현황 ── */}
+      {tradeStatus && (
+        <div className="mb-6">
+          <h3 className="text-sm font-semibold text-zinc-400 uppercase tracking-widest mb-3">안전장치 현황</h3>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
+              <div className="text-[10px] text-zinc-500 uppercase tracking-widest mb-1">오늘 주문</div>
+              <div className={`text-xl font-bold font-mono ${tradeStatus.todayOrders >= tradeStatus.maxDailyOrders ? 'text-red-400' : 'text-zinc-100'}`}>
+                {tradeStatus.todayOrders} / {tradeStatus.maxDailyOrders}
+              </div>
+            </div>
+            <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
+              <div className="text-[10px] text-zinc-500 uppercase tracking-widest mb-1">1회 한도</div>
+              <div className="text-xl font-bold font-mono text-zinc-100">{fmtUSD(tradeStatus.maxOrderUSD)}</div>
+            </div>
+            <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
+              <div className="text-[10px] text-zinc-500 uppercase tracking-widest mb-1">자동매매</div>
+              <div className={`text-xl font-bold ${tradeStatus.autoEnabled ? 'text-emerald-400' : 'text-zinc-600'}`}>
+                {tradeStatus.autoEnabled ? 'ON' : 'OFF'}
+              </div>
+            </div>
+            <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
+              <div className="text-[10px] text-zinc-500 uppercase tracking-widest mb-1">모드</div>
+              <div className={`text-xl font-bold ${isPaper ? 'text-amber-400' : 'text-red-400'}`}>
+                {isPaper ? '모의' : '실전'}
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
@@ -262,7 +306,7 @@ export default function AutoTradePanel() {
               />
             </div>
             <div>
-              <label className="block text-[10px] text-zinc-500 uppercase tracking-widest mb-1.5">매수/매도</label>
+              <label className="block text-[10px] text-zinc-500 uppercase tracking-widest mb-1.5">매수 / 매도</label>
               <div className="flex gap-2">
                 <button onClick={() => setOrderSide('BUY')}
                   className={`flex-1 py-2 text-xs font-bold rounded-lg border transition-colors ${orderSide === 'BUY' ? 'bg-emerald-900 border-emerald-600 text-emerald-300' : 'bg-zinc-800 border-zinc-700 text-zinc-500'}`}>
@@ -276,7 +320,16 @@ export default function AutoTradePanel() {
             </div>
           </div>
 
-          {/* 주문 확인 단계 */}
+          {/* 주문 금액 미리보기 */}
+          {orderTicker && orderQty && Number(orderQty) > 0 && Number(orderPrice) > 0 && (
+            <div className="mb-3 px-3 py-2 bg-zinc-800 rounded-lg text-xs text-zinc-400">
+              예상 주문금액: <span className="text-zinc-200 font-mono font-bold">{fmtUSD(Number(orderQty) * Number(orderPrice))}</span>
+              {balance && orderSide === 'BUY' && (
+                <span className="ml-3">가용현금: <span className="text-emerald-400 font-mono">{fmtUSD(balance.cashUSD)}</span></span>
+              )}
+            </div>
+          )}
+
           {!confirm ? (
             <button
               onClick={() => { if (orderTicker && orderQty) setConfirm(true); }}
@@ -291,8 +344,13 @@ export default function AutoTradePanel() {
                 {isPaper ? '🟡 모의투자 주문 확인' : '🔴 실전 주문 확인 — 실제 체결됩니다!'}
               </p>
               <p className="text-xs text-zinc-300 mb-4">
-                <span className={`font-bold ${orderSide === 'BUY' ? 'text-emerald-400' : 'text-red-400'}`}>{orderSide === 'BUY' ? '매수' : '매도'}</span>
-                {' '}{orderTicker} {orderQty}주 @ {Number(orderPrice) > 0 ? `$${orderPrice}` : '시장가'}
+                <span className={`font-bold ${orderSide === 'BUY' ? 'text-emerald-400' : 'text-red-400'}`}>
+                  {orderSide === 'BUY' ? '매수' : '매도'}
+                </span>
+                {' '}{orderTicker} {orderQty}주 @ {Number(orderPrice) > 0 ? fmtUSD(Number(orderPrice)) : '시장가'}
+                {Number(orderPrice) > 0 && Number(orderQty) > 0 && (
+                  <span className="ml-2 text-zinc-500">= {fmtUSD(Number(orderQty) * Number(orderPrice))}</span>
+                )}
               </p>
               <div className="flex gap-2">
                 <button onClick={submitOrder} disabled={orderLoading}
@@ -337,7 +395,7 @@ export default function AutoTradePanel() {
                     <td className={`px-3 py-2 font-bold ${o.action === 'BUY' ? 'text-emerald-400' : 'text-red-400'}`}>{o.action === 'BUY' ? '매수' : '매도'}</td>
                     <td className="px-3 py-2 font-bold text-zinc-100">{o.ticker}</td>
                     <td className="px-3 py-2 text-zinc-300 font-mono">{o.qty}주</td>
-                    <td className="px-3 py-2 text-zinc-400 font-mono">{o.price > 0 ? `$${o.price}` : '시장가'}</td>
+                    <td className="px-3 py-2 text-zinc-400 font-mono">{o.price > 0 ? fmtUSD(o.price) : '시장가'}</td>
                     <td className="px-3 py-2 text-zinc-600 font-mono">{o.ordNo ?? '-'}</td>
                     <td className="px-3 py-2">
                       <span className={`text-[9px] px-1.5 py-0.5 rounded border ${o.source === 'AUTO' ? 'bg-violet-950 text-violet-400 border-violet-800' : 'bg-zinc-900 text-zinc-500 border-zinc-800'}`}>
@@ -352,13 +410,13 @@ export default function AutoTradePanel() {
         </div>
       )}
 
-      {/* ── 자동매매 활성화 안내 ── */}
+      {/* ── 주의사항 ── */}
       <div className="p-4 rounded-xl border border-zinc-800 bg-zinc-900/30 text-[10px] text-zinc-600 leading-relaxed">
-        <p className="font-semibold text-zinc-500 mb-2">자동매매 활성화 순서</p>
-        <p>1. 먼저 모의투자(KIS_PAPER_TRADING=true)로 충분히 테스트</p>
-        <p>2. 백테스트로 전략 승률·손익비 검증 완료 후</p>
-        <p>3. KIS_PAPER_TRADING=false + AUTO_TRADE_ENABLED=true 로 전환</p>
-        <p>4. MAX_ORDER_USD · MAX_DAILY_ORDERS 한도를 보수적으로 설정</p>
+        <p className="font-semibold text-zinc-500 mb-2">⚠ 자동매매 활성화 순서</p>
+        <p>1. 수동 주문으로 실제 체결 확인 (소액 1주)</p>
+        <p>2. 백테스트로 전략 승률·손익비 검증</p>
+        <p>3. Vercel에서 AUTO_TRADE_ENABLED=true 로 전환</p>
+        <p>4. MAX_ORDER_USD · MAX_DAILY_ORDERS 한도를 보수적으로 유지</p>
         <p className="mt-2 text-red-700">⚠ 실전 전환 후 첫 1주일은 반드시 소액으로 운용하세요.</p>
       </div>
     </div>
