@@ -8,6 +8,7 @@ import PortfolioTab from '@/components/PortfolioTab';
 import MarketStatus from '@/components/MarketStatus';
 import SectorHeatmap from '@/components/SectorHeatmap';
 import BacktestPanel from '@/components/BacktestPanel';
+import BacktestSimPanel from '@/components/BacktestSimPanel';
 
 const DEFAULT_TICKERS = ['PLTR'];
 const CACHE_KEY = 'mt_analysis_v4';
@@ -18,7 +19,7 @@ const BATCH_SIZE = 50;
 
 type FilterType = 'ALL' | 'BREAKOUT' | 'SETUP' | 'WATCH' | 'HOLD' | 'SELL' | 'STRONG_SELL';
 type SortType = 'SCORE' | 'TICKER' | 'SIGNAL';
-type TabType = 'scanner' | 'favorites' | 'portfolio' | 'sectors' | 'backtest';
+type TabType = 'scanner' | 'favorites' | 'portfolio' | 'sectors' | 'backtest' | 'backtest-sim';
 
 const SECTOR_MAP: Record<string, string> = {
   // ── 반도체 ──────────────────────────────────────────────────────────────
@@ -76,7 +77,7 @@ const SECTOR_MAP: Record<string, string> = {
   DRS:'방산·항공우주', AVAV:'방산·항공우주', RKLB:'방산·항공우주',
   ARKX:'방산·항공우주', ITA:'방산·항공우주', XAR:'방산·항공우주',
   PL:'방산·항공우주', SPCE:'방산·항공우주', ASTS:'방산·항공우주',
-  
+
   // ── 원자력·전력 ──────────────────────────────────────────────────────────
   SMR:'원자력·전력', OKLO:'원자력·전력', LEU:'원자력·전력',
   CCJ:'원자력·전력', UEC:'원자력·전력', NNE:'원자력·전력',
@@ -529,29 +530,38 @@ export default function Home() {
               )}
             </div>
           </div>
+
+          {/* ── 탭 네비게이션 ── */}
           <div className="flex gap-1 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
             {([
-              ['scanner',   '모멘텀 스캐너'],
-              ['favorites', `즐겨찾기${favorites.size > 0 ? ` (${favorites.size})` : ''}`],
-              ['portfolio', '내 포트폴리오'],
-              ['sectors',   '섹터 히트맵'],
-              ['backtest',  '백테스트'],
+              ['scanner',      '모멘텀 스캐너'],
+              ['favorites',    `즐겨찾기${favorites.size > 0 ? ` (${favorites.size})` : ''}`],
+              ['portfolio',    '내 포트폴리오'],
+              ['sectors',      '섹터 히트맵'],
+              ['backtest',     '백테스트'],
+              ['backtest-sim', '포트폴리오 시뮬'],
             ] as [TabType, string][]).map(([tab, label]) => (
               <button key={tab} onClick={() => setActiveTab(tab)}
                 className={`px-3 py-2 text-xs sm:text-sm font-medium rounded-lg border transition-colors whitespace-nowrap shrink-0
                   ${activeTab === tab
-                    ? tab === 'favorites' ? 'bg-yellow-900/60 border-yellow-700 text-yellow-300'
-                    : 'bg-zinc-700 border-zinc-600 text-zinc-100'
+                    ? tab === 'favorites'
+                      ? 'bg-yellow-900/60 border-yellow-700 text-yellow-300'
+                      : tab === 'backtest-sim'
+                      ? 'bg-emerald-900/60 border-emerald-700 text-emerald-300'
+                      : 'bg-zinc-700 border-zinc-600 text-zinc-100'
                     : 'bg-transparent border-zinc-800 text-zinc-500 hover:text-zinc-300'}`}>
-                {tab === 'favorites' ? `★ ${label}` : label}
+                {tab === 'favorites'    ? `★ ${label}` :
+                 tab === 'backtest-sim' ? `📊 ${label}` : label}
               </button>
             ))}
           </div>
         </header>
 
-        {activeTab === 'portfolio' && <PortfolioTab />}
-        {activeTab === 'sectors'   && <SectorHeatmap />}
-        {activeTab === 'backtest'  && <BacktestPanel />}
+        {/* ── 탭 콘텐츠 ── */}
+        {activeTab === 'portfolio'    && <PortfolioTab />}
+        {activeTab === 'sectors'      && <SectorHeatmap />}
+        {activeTab === 'backtest'     && <BacktestPanel />}
+        {activeTab === 'backtest-sim' && <BacktestSimPanel />}
 
         {activeTab === 'favorites' && (
           favoriteStocks.length === 0 ? (
