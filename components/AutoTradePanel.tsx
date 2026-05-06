@@ -37,30 +37,39 @@ export default function AutoTradePanel() {
   const [confirm,      setConfirm]      = useState(false);
 
   const fetchBalance = useCallback(async () => {
-    setLoadingBal(true); setBalError(null);
+    setLoadingBal(true);
+    setBalError(null);
     try {
       const [balRes, statusRes] = await Promise.all([
         fetch('/api/trade/balance'),
         fetch('/api/trade'),
       ]);
-     if (balRes.ok) {
-  const data = await balRes.json();
-  if (data.error) setBalError(data.error);
-  else { setBalance(data); setBalError(null); }
-} else {
-  try {
-    const data = await balRes.json();
-    setBalError(data.error ?? '잔고 조회 실패');
-  } catch {
-    setBalError('잔고 조회 실패');
-  }
-}, []);
+
+      const balData = await balRes.json();
+      if (balData.error) {
+        setBalError(balData.error);
+      } else {
+        setBalance(balData);
+        setBalError(null);
+      }
+
+      if (statusRes.ok) {
+        const statusData = await statusRes.json();
+        setTradeStatus(statusData);
+      }
+    } catch (e) {
+      setBalError(String(e));
+    } finally {
+      setLoadingBal(false);
+    }
+  }, []);
 
   useEffect(() => { fetchBalance(); }, [fetchBalance]);
 
   const submitOrder = async () => {
     if (!orderTicker || !orderQty) return;
-    setOrderLoading(true); setOrderResult(null);
+    setOrderLoading(true);
+    setOrderResult(null);
     try {
       const res = await fetch('/api/trade', {
         method:  'POST',
@@ -76,7 +85,9 @@ export default function AutoTradePanel() {
       const data = await res.json();
       if (data.success) {
         setOrderResult({ success: true, message: `✓ ${orderSide} 주문 접수 완료 — 주문번호 ${data.ordNo ?? '-'}` });
-        setOrderTicker(''); setOrderQty(''); setOrderPrice('');
+        setOrderTicker('');
+        setOrderQty('');
+        setOrderPrice('');
         setTimeout(fetchBalance, 2000);
       } else {
         setOrderResult({ success: false, message: data.error ?? '주문 실패' });
@@ -84,7 +95,8 @@ export default function AutoTradePanel() {
     } catch (e) {
       setOrderResult({ success: false, message: String(e) });
     } finally {
-      setOrderLoading(false); setConfirm(false);
+      setOrderLoading(false);
+      setConfirm(false);
     }
   };
 
@@ -115,8 +127,11 @@ export default function AutoTradePanel() {
             한국투자증권 OpenAPI 연동 · {isPaper ? '실제 체결 없음 (테스트용)' : '실제 계좌 체결 주의'}
           </p>
         </div>
-        <button onClick={fetchBalance} disabled={loadingBal}
-          className="px-3 py-2 text-xs border border-zinc-700 rounded-lg text-zinc-400 hover:bg-zinc-800 transition-colors shrink-0 flex items-center gap-1.5">
+        <button
+          onClick={fetchBalance}
+          disabled={loadingBal}
+          className="px-3 py-2 text-xs border border-zinc-700 rounded-lg text-zinc-400 hover:bg-zinc-800 transition-colors shrink-0 flex items-center gap-1.5"
+        >
           <span className={loadingBal ? 'animate-spin inline-block' : ''}>↺</span>
           {loadingBal ? '조회 중…' : '새로고침'}
         </button>
@@ -131,10 +146,9 @@ export default function AutoTradePanel() {
         </div>
       )}
 
-      {/* ── 총 자산 요약 카드 ── */}
+      {/* ── 총 자산 요약 ── */}
       {balance && (
         <div className="mb-6">
-          {/* 총 자산 강조 카드 */}
           <div className="mb-3 p-5 rounded-xl border border-zinc-700 bg-zinc-900/80">
             <div className="flex items-center justify-between mb-3">
               <span className="text-[10px] text-zinc-500 uppercase tracking-widest">총 자산 (USD)</span>
@@ -153,7 +167,6 @@ export default function AutoTradePanel() {
             </div>
           </div>
 
-          {/* 세부 잔고 카드 */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
             <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
               <div className="text-[10px] text-zinc-500 uppercase tracking-widest mb-1">가용 현금</div>
@@ -181,7 +194,7 @@ export default function AutoTradePanel() {
             </div>
           </div>
 
-          {/* 보유 종목 테이블 */}
+          {/* 보유 종목 */}
           {balance.items.length > 0 ? (
             <div className="overflow-x-auto rounded-xl border border-zinc-800">
               <table className="w-full text-xs">
@@ -233,7 +246,7 @@ export default function AutoTradePanel() {
         </div>
       )}
 
-      {/* ── 로딩 중 스켈레톤 ── */}
+      {/* 로딩 스켈레톤 */}
       {loadingBal && !balance && (
         <div className="mb-6 space-y-3">
           <div className="h-24 bg-zinc-900 border border-zinc-800 rounded-xl animate-pulse" />
@@ -283,21 +296,29 @@ export default function AutoTradePanel() {
           <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 mb-4">
             <div>
               <label className="block text-[10px] text-zinc-500 uppercase tracking-widest mb-1.5">종목 (티커)</label>
-              <input value={orderTicker} onChange={e => setOrderTicker(e.target.value.toUpperCase())}
+              <input
+                value={orderTicker}
+                onChange={e => setOrderTicker(e.target.value.toUpperCase())}
                 placeholder="NVDA"
                 className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-100 font-mono focus:outline-none focus:border-emerald-600"
               />
             </div>
             <div>
               <label className="block text-[10px] text-zinc-500 uppercase tracking-widest mb-1.5">수량</label>
-              <input type="number" value={orderQty} onChange={e => setOrderQty(e.target.value)}
+              <input
+                type="number"
+                value={orderQty}
+                onChange={e => setOrderQty(e.target.value)}
                 placeholder="1"
                 className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-100 font-mono focus:outline-none focus:border-emerald-600"
               />
             </div>
             <div>
               <label className="block text-[10px] text-zinc-500 uppercase tracking-widest mb-1.5">지정가 (0=시장가)</label>
-              <input type="number" value={orderPrice} onChange={e => setOrderPrice(e.target.value)}
+              <input
+                type="number"
+                value={orderPrice}
+                onChange={e => setOrderPrice(e.target.value)}
                 placeholder="0"
                 className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-100 font-mono focus:outline-none focus:border-emerald-600"
               />
@@ -305,19 +326,23 @@ export default function AutoTradePanel() {
             <div>
               <label className="block text-[10px] text-zinc-500 uppercase tracking-widest mb-1.5">매수 / 매도</label>
               <div className="flex gap-2">
-                <button onClick={() => setOrderSide('BUY')}
-                  className={`flex-1 py-2 text-xs font-bold rounded-lg border transition-colors ${orderSide === 'BUY' ? 'bg-emerald-900 border-emerald-600 text-emerald-300' : 'bg-zinc-800 border-zinc-700 text-zinc-500'}`}>
+                <button
+                  onClick={() => setOrderSide('BUY')}
+                  className={`flex-1 py-2 text-xs font-bold rounded-lg border transition-colors ${orderSide === 'BUY' ? 'bg-emerald-900 border-emerald-600 text-emerald-300' : 'bg-zinc-800 border-zinc-700 text-zinc-500'}`}
+                >
                   매수
                 </button>
-                <button onClick={() => setOrderSide('SELL')}
-                  className={`flex-1 py-2 text-xs font-bold rounded-lg border transition-colors ${orderSide === 'SELL' ? 'bg-red-900 border-red-600 text-red-300' : 'bg-zinc-800 border-zinc-700 text-zinc-500'}`}>
+                <button
+                  onClick={() => setOrderSide('SELL')}
+                  className={`flex-1 py-2 text-xs font-bold rounded-lg border transition-colors ${orderSide === 'SELL' ? 'bg-red-900 border-red-600 text-red-300' : 'bg-zinc-800 border-zinc-700 text-zinc-500'}`}
+                >
                   매도
                 </button>
               </div>
             </div>
           </div>
 
-          {/* 주문 금액 미리보기 */}
+          {/* 예상 주문금액 */}
           {orderTicker && orderQty && Number(orderQty) > 0 && Number(orderPrice) > 0 && (
             <div className="mb-3 px-3 py-2 bg-zinc-800 rounded-lg text-xs text-zinc-400">
               예상 주문금액: <span className="text-zinc-200 font-mono font-bold">{fmtUSD(Number(orderQty) * Number(orderPrice))}</span>
@@ -350,12 +375,17 @@ export default function AutoTradePanel() {
                 )}
               </p>
               <div className="flex gap-2">
-                <button onClick={submitOrder} disabled={orderLoading}
-                  className={`px-5 py-2 text-sm font-bold rounded-lg transition-colors ${orderSide === 'BUY' ? 'bg-emerald-700 hover:bg-emerald-600 text-white' : 'bg-red-700 hover:bg-red-600 text-white'} disabled:opacity-50`}>
+                <button
+                  onClick={submitOrder}
+                  disabled={orderLoading}
+                  className={`px-5 py-2 text-sm font-bold rounded-lg transition-colors disabled:opacity-50 ${orderSide === 'BUY' ? 'bg-emerald-700 hover:bg-emerald-600 text-white' : 'bg-red-700 hover:bg-red-600 text-white'}`}
+                >
                   {orderLoading ? '주문 중…' : '확인 — 주문 실행'}
                 </button>
-                <button onClick={() => setConfirm(false)}
-                  className="px-5 py-2 text-sm border border-zinc-700 text-zinc-400 rounded-lg hover:bg-zinc-800 transition-colors">
+                <button
+                  onClick={() => setConfirm(false)}
+                  className="px-5 py-2 text-sm border border-zinc-700 text-zinc-400 rounded-lg hover:bg-zinc-800 transition-colors"
+                >
                   취소
                 </button>
               </div>
@@ -389,7 +419,9 @@ export default function AutoTradePanel() {
                 {[...tradeStatus.orders].reverse().map((o, i) => (
                   <tr key={i} className="border-b border-zinc-900">
                     <td className="px-3 py-2 text-zinc-500 font-mono">{new Date(o.time).toLocaleTimeString('ko-KR')}</td>
-                    <td className={`px-3 py-2 font-bold ${o.action === 'BUY' ? 'text-emerald-400' : 'text-red-400'}`}>{o.action === 'BUY' ? '매수' : '매도'}</td>
+                    <td className={`px-3 py-2 font-bold ${o.action === 'BUY' ? 'text-emerald-400' : 'text-red-400'}`}>
+                      {o.action === 'BUY' ? '매수' : '매도'}
+                    </td>
                     <td className="px-3 py-2 font-bold text-zinc-100">{o.ticker}</td>
                     <td className="px-3 py-2 text-zinc-300 font-mono">{o.qty}주</td>
                     <td className="px-3 py-2 text-zinc-400 font-mono">{o.price > 0 ? fmtUSD(o.price) : '시장가'}</td>
