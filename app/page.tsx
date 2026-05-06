@@ -9,6 +9,7 @@ import MarketStatus from '@/components/MarketStatus';
 import SectorHeatmap from '@/components/SectorHeatmap';
 import BacktestPanel from '@/components/BacktestPanel';
 import BacktestSimPanel from '@/components/BacktestSimPanel';
+import AutoTradePanel from '@/components/AutoTradePanel'; // ← 추가
 
 const DEFAULT_TICKERS = ['PLTR'];
 const CACHE_KEY = 'mt_analysis_v4';
@@ -19,10 +20,9 @@ const BATCH_SIZE = 50;
 
 type FilterType = 'ALL' | 'BREAKOUT' | 'SETUP' | 'WATCH' | 'HOLD' | 'SELL' | 'STRONG_SELL';
 type SortType = 'SCORE' | 'TICKER' | 'SIGNAL';
-type TabType = 'scanner' | 'favorites' | 'portfolio' | 'sectors' | 'backtest' | 'backtest-sim';
+type TabType = 'scanner' | 'favorites' | 'portfolio' | 'sectors' | 'backtest' | 'backtest-sim' | 'autotrade'; // ← autotrade 추가
 
 const SECTOR_MAP: Record<string, string> = {
-  // ── 반도체 ──────────────────────────────────────────────────────────────
   NVDA:'반도체', AMD:'반도체', AVGO:'반도체', MU:'반도체', INTC:'반도체',
   ARM:'반도체', MRVL:'반도체', TSM:'반도체', QCOM:'반도체', AMAT:'반도체',
   LRCX:'반도체', KLAC:'반도체', ASML:'반도체', ON:'반도체', SWKS:'반도체',
@@ -33,8 +33,6 @@ const SECTOR_MAP: Record<string, string> = {
   SITM:'반도체', ALGM:'반도체', DIOD:'반도체', MTSI:'반도체', POWI:'반도체',
   ATOM:'반도체', AXTI:'반도체', SIMO:'반도체', TSEM:'반도체',
   NVTS:'반도체', CRDO:'반도체', SNDK:'반도체',
-
-  // ── AI·소프트웨어 ────────────────────────────────────────────────────────
   MSFT:'AI·소프트웨어', GOOGL:'AI·소프트웨어', GOOG:'AI·소프트웨어',
   META:'AI·소프트웨어', CRM:'AI·소프트웨어', SNOW:'AI·소프트웨어',
   DDOG:'AI·소프트웨어', ZS:'AI·소프트웨어', CRWD:'AI·소프트웨어',
@@ -58,8 +56,6 @@ const SECTOR_MAP: Record<string, string> = {
   NBIS:'AI·소프트웨어', ADEA:'AI·소프트웨어', BAND:'AI·소프트웨어',
   CRWV:'AI·소프트웨어', SNPS:'AI·소프트웨어', SOUN:'AI·소프트웨어',
   BBAI:'AI·소프트웨어', RZLV:'AI·소프트웨어', IREN:'AI·소프트웨어',
-
-  // ── 빅테크·하드웨어 ──────────────────────────────────────────────────────
   AAPL:'빅테크·하드웨어', AMZN:'빅테크·하드웨어', ORCL:'빅테크·하드웨어',
   IBM:'빅테크·하드웨어', HPQ:'빅테크·하드웨어', DELL:'빅테크·하드웨어',
   HPE:'빅테크·하드웨어', WDC:'빅테크·하드웨어', STX:'빅테크·하드웨어',
@@ -68,8 +64,6 @@ const SECTOR_MAP: Record<string, string> = {
   AKAM:'빅테크·하드웨어', CDW:'빅테크·하드웨어',
   BHE:'빅테크·하드웨어', LWLG:'빅테크·하드웨어', NOK:'빅테크·하드웨어',
   IRM:'빅테크·하드웨어', SILC:'빅테크·하드웨어',
-
-  // ── 방산·항공우주 ────────────────────────────────────────────────────────
   LMT:'방산·항공우주', RTX:'방산·항공우주', NOC:'방산·항공우주',
   GD:'방산·항공우주', BA:'방산·항공우주', HII:'방산·항공우주',
   TDG:'방산·항공우주', LDOS:'방산·항공우주', KTOS:'방산·항공우주',
@@ -77,32 +71,22 @@ const SECTOR_MAP: Record<string, string> = {
   DRS:'방산·항공우주', AVAV:'방산·항공우주', RKLB:'방산·항공우주',
   ARKX:'방산·항공우주', ITA:'방산·항공우주', XAR:'방산·항공우주',
   PL:'방산·항공우주', SPCE:'방산·항공우주', ASTS:'방산·항공우주',
-
-  // ── 원자력·전력 ──────────────────────────────────────────────────────────
   SMR:'원자력·전력', OKLO:'원자력·전력', LEU:'원자력·전력',
   CCJ:'원자력·전력', UEC:'원자력·전력', NNE:'원자력·전력',
   BWXT:'원자력·전력', TLN:'원자력·전력', VST:'원자력·전력',
   CEG:'원자력·전력', ETR:'원자력·전력', EXC:'원자력·전력',
-
-  // ── 친환경에너지 ─────────────────────────────────────────────────────────
   PLUG:'친환경에너지', BE:'친환경에너지', FCEL:'친환경에너지',
   ENPH:'친환경에너지', SEDG:'친환경에너지', FSLR:'친환경에너지',
   RUN:'친환경에너지', ARRY:'친환경에너지', NEE:'친환경에너지',
-
-  // ── 전기차·배터리 ────────────────────────────────────────────────────────
   TSLA:'전기차·배터리', RIVN:'전기차·배터리', LCID:'전기차·배터리',
   NIO:'전기차·배터리', XPEV:'전기차·배터리', LI:'전기차·배터리',
   CHPT:'전기차·배터리', BLNK:'전기차·배터리', QS:'전기차·배터리',
   ABAT:'전기차·배터리',
-
-  // ── 전통에너지 ───────────────────────────────────────────────────────────
   XOM:'전통에너지', CVX:'전통에너지', SLB:'전통에너지', COP:'전통에너지',
   OXY:'전통에너지', HAL:'전통에너지', BKR:'전통에너지', PSX:'전통에너지',
   MPC:'전통에너지', VLO:'전통에너지', DVN:'전통에너지', EOG:'전통에너지',
   LNG:'전통에너지', MRO:'전통에너지', APA:'전통에너지', HES:'전통에너지',
   FTI:'전통에너지', NGL:'전통에너지', SBR:'전통에너지', DINO:'전통에너지',
-
-  // ── 헬스케어·제약 ────────────────────────────────────────────────────────
   LLY:'헬스케어·제약', JNJ:'헬스케어·제약', UNH:'헬스케어·제약',
   PFE:'헬스케어·제약', MRK:'헬스케어·제약', ABBV:'헬스케어·제약',
   BMY:'헬스케어·제약', AMGN:'헬스케어·제약', GILD:'헬스케어·제약',
@@ -111,16 +95,12 @@ const SECTOR_MAP: Record<string, string> = {
   BSX:'헬스케어·제약', ISRG:'헬스케어·제약', TMO:'헬스케어·제약',
   BTSG:'헬스케어·제약', DHC:'헬스케어·제약', HIMS:'헬스케어·제약',
   AZN:'헬스케어·제약',
-
-  // ── 바이오테크 ───────────────────────────────────────────────────────────
   MRNA:'바이오테크', BNTX:'바이오테크', BEAM:'바이오테크',
   CRSP:'바이오테크', EDIT:'바이오테크', NTLA:'바이오테크',
   RXRX:'바이오테크', VERA:'바이오테크', ILMN:'바이오테크',
   IONS:'바이오테크', ALNY:'바이오테크', INCY:'바이오테크',
   ARKG:'바이오테크', IBB:'바이오테크', XBI:'바이오테크',
   TEM:'바이오테크',
-
-  // ── 금융·핀테크 ──────────────────────────────────────────────────────────
   JPM:'금융·핀테크', BAC:'금융·핀테크', GS:'금융·핀테크',
   MS:'금융·핀테크', WFC:'금융·핀테크', V:'금융·핀테크',
   MA:'금융·핀테크', PYPL:'금융·핀테크', SQ:'금융·핀테크',
@@ -133,19 +113,13 @@ const SECTOR_MAP: Record<string, string> = {
   RMR:'금융·핀테크', CBOE:'금융·핀테크', HUT:'금융·핀테크',
   PGY:'금융·핀테크', CRCL:'금융·핀테크',
   ASST:'금융·핀테크', BLSH:'금융·핀테크',
-
-  // ── 소비재·미디어 ────────────────────────────────────────────────────────
   NFLX:'소비재·미디어', DIS:'소비재·미디어', SPOT:'소비재·미디어',
   TTD:'소비재·미디어', RBLX:'소비재·미디어', EA:'소비재·미디어',
   ROKU:'소비재·미디어', LAMR:'소비재·미디어', CMPR:'소비재·미디어',
-
-  // ── 소비재·유통 ──────────────────────────────────────────────────────────
   HD:'소비재·유통', LOW:'소비재·유통', WMT:'소비재·유통',
   COST:'소비재·유통', NKE:'소비재·유통', SBUX:'소비재·유통',
   MCD:'소비재·유통', UBER:'소비재·유통', ABNB:'소비재·유통',
   ZGN:'소비재·유통',
-
-  // ── 산업재·소재 ──────────────────────────────────────────────────────────
   GE:'산업재·소재', HON:'산업재·소재', CAT:'산업재·소재',
   DE:'산업재·소재', ETN:'산업재·소재', EMR:'산업재·소재',
   FCX:'산업재·소재', NEM:'산업재·소재', AA:'산업재·소재',
@@ -257,7 +231,6 @@ function SectorGroup({
         const setupCnt    = sectorStocks.filter(s => s.signal === 'SETUP').length;
         const watchCnt    = sectorStocks.filter(s => s.signal === 'WATCH').length;
         const avgScore    = Math.round(sectorStocks.reduce((acc, s) => acc + Number(s.momentum_score), 0) / sectorStocks.length);
-
         return (
           <div key={sector}>
             <button onClick={() => toggleSector(sector)}
@@ -271,20 +244,15 @@ function SectorGroup({
               <div className="flex-1 h-px bg-zinc-800 group-hover:bg-zinc-700 transition-colors" />
               <span className="text-zinc-600 text-xs group-hover:text-zinc-400 transition-colors shrink-0">{collapsed ? '▶' : '▼'}</span>
             </button>
-
             {!collapsed && (
               <div className={isCompact ? 'flex flex-col gap-1.5' : 'grid grid-cols-1 xl:grid-cols-2 gap-4'}>
                 {sectorStocks.map((s, i) => (
                   <StockCard
-                    key={s.ticker}
-                    stock={s}
+                    key={s.ticker} stock={s}
                     highlight={i === 0 && filter !== 'SELL' && filter !== 'STRONG_SELL'}
-                    onRemove={removeFromResults}
-                    earnings={earningsMap[s.ticker]}
-                    compact={isCompact}
-                    onOpenDrawer={setDrawerTicker}
-                    isFavorite={favorites.has(s.ticker)}
-                    onToggleFavorite={toggleFavorite}
+                    onRemove={removeFromResults} earnings={earningsMap[s.ticker]}
+                    compact={isCompact} onOpenDrawer={setDrawerTicker}
+                    isFavorite={favorites.has(s.ticker)} onToggleFavorite={toggleFavorite}
                   />
                 ))}
               </div>
@@ -348,12 +316,10 @@ export default function Home() {
       const fav = localStorage.getItem(FAVORITES_KEY);
       if (fav) setFavorites(new Set(JSON.parse(fav)));
     } catch {}
-
     fetch('/api/db?type=watchlist').then(r => r.json()).then(d => {
       if (d.tickers?.length > 0) setWatchlist(d.tickers);
       else { try { const wl = localStorage.getItem(WATCHLIST_KEY); if (wl) setWatchlist(JSON.parse(wl)); } catch {} }
     }).catch(() => { try { const wl = localStorage.getItem(WATCHLIST_KEY); if (wl) setWatchlist(JSON.parse(wl)); } catch {} });
-
     fetch(`/api/db?type=analysis&date=${todayKey()}`).then(r => r.json()).then(d => {
       if (d && !d.empty && d.stocks?.length > 0) {
         setAllStocks(d.stocks); setMarketCtx(d.market_context ?? '');
@@ -368,7 +334,6 @@ export default function Home() {
     }).catch(() => {
       try { const cached = localStorage.getItem(CACHE_KEY); if (cached) { const p = JSON.parse(cached); if (p.date === todayKey()) { setAllStocks(p.stocks ?? []); setMarketCtx(p.market_context ?? ''); setAnalyzedAt(p.analyzed_at ?? ''); } } } catch {}
     });
-
     try {
       const ec = localStorage.getItem('mt_earnings_v1');
       if (ec) { const ep = JSON.parse(ec); if (ep.date === todayKey()) setEarningsMap(ep.data ?? {}); }
@@ -471,7 +436,6 @@ export default function Home() {
   async function saveWatchlistToDB(wl: string[]) {
     try { await fetch('/api/db', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'watchlist', tickers: wl }) }); } catch {}
   }
-
   async function saveAnalysisToDB(stocks: StockAnalysis[], ctx: string, ts: string) {
     try { await fetch('/api/db', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'analysis', stocks, market_context: ctx, date: todayKey(), analyzed_at: ts }) }); } catch {}
   }
@@ -540,18 +504,19 @@ export default function Home() {
               ['sectors',      '섹터 히트맵'],
               ['backtest',     '백테스트'],
               ['backtest-sim', '포트폴리오 시뮬'],
+              ['autotrade',    '자동매매'],
             ] as [TabType, string][]).map(([tab, label]) => (
               <button key={tab} onClick={() => setActiveTab(tab)}
                 className={`px-3 py-2 text-xs sm:text-sm font-medium rounded-lg border transition-colors whitespace-nowrap shrink-0
                   ${activeTab === tab
-                    ? tab === 'favorites'
-                      ? 'bg-yellow-900/60 border-yellow-700 text-yellow-300'
-                      : tab === 'backtest-sim'
-                      ? 'bg-emerald-900/60 border-emerald-700 text-emerald-300'
-                      : 'bg-zinc-700 border-zinc-600 text-zinc-100'
+                    ? tab === 'favorites'    ? 'bg-yellow-900/60 border-yellow-700 text-yellow-300'
+                    : tab === 'backtest-sim' ? 'bg-emerald-900/60 border-emerald-700 text-emerald-300'
+                    : tab === 'autotrade'    ? 'bg-blue-900/60 border-blue-700 text-blue-300'
+                    : 'bg-zinc-700 border-zinc-600 text-zinc-100'
                     : 'bg-transparent border-zinc-800 text-zinc-500 hover:text-zinc-300'}`}>
-                {tab === 'favorites'    ? `★ ${label}` :
-                 tab === 'backtest-sim' ? `📊 ${label}` : label}
+                {tab === 'favorites'    ? `★ ${label}`  :
+                 tab === 'backtest-sim' ? `📊 ${label}` :
+                 tab === 'autotrade'    ? `⚡ ${label}` : label}
               </button>
             ))}
           </div>
@@ -562,6 +527,7 @@ export default function Home() {
         {activeTab === 'sectors'      && <SectorHeatmap />}
         {activeTab === 'backtest'     && <BacktestPanel />}
         {activeTab === 'backtest-sim' && <BacktestSimPanel />}
+        {activeTab === 'autotrade'    && <AutoTradePanel />}  {/* ← 추가 */}
 
         {activeTab === 'favorites' && (
           favoriteStocks.length === 0 ? (
@@ -632,7 +598,6 @@ export default function Home() {
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-600 text-sm">⌕</span>
                   {search && <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300 text-xs">✕</button>}
                 </div>
-
                 <div className="mb-3 sticky top-[100px] z-10 bg-bg-base py-2">
                   <div className="flex gap-1 overflow-x-auto mb-2" style={{ scrollbarWidth: 'none' }}>
                     {([
@@ -675,9 +640,7 @@ export default function Home() {
                     </button>
                   </div>
                 </div>
-
                 <SectorGroup stocks={displayed} {...sectorGroupProps} />
-
                 {analyzedAt && <div className="text-[10px] text-zinc-700 text-center mt-8">마지막 분석: {new Date(analyzedAt).toLocaleString('ko-KR')}</div>}
               </>
             )}
@@ -715,12 +678,9 @@ export default function Home() {
             </div>
             <div className="p-4">
               <StockCard
-                stock={drawerStock}
-                highlight={false}
-                onRemove={removeFromResults}
-                earnings={earningsMap[drawerStock.ticker]}
-                forceOpen={true}
-                isFavorite={favorites.has(drawerStock.ticker)}
+                stock={drawerStock} highlight={false}
+                onRemove={removeFromResults} earnings={earningsMap[drawerStock.ticker]}
+                forceOpen={true} isFavorite={favorites.has(drawerStock.ticker)}
                 onToggleFavorite={toggleFavorite}
               />
             </div>
