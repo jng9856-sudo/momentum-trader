@@ -34,38 +34,6 @@ export async function GET(req: NextRequest) {
     .map(t => t.trim().toUpperCase())
     .filter(Boolean);
 
-  const hasKIS = !!process.env.KIS_APP_KEY;
-
-  if (hasKIS) {
-    try {
-      const { getUSStockPrice, getKRStockPrice, isKRStock, toKISCode } =
-        await import('@/lib/kis');
-
-      if (tickers.length === 1) {
-        const t    = tickers[0];
-        const data = isKRStock(t)
-          ? await getKRStockPrice(toKISCode(t))
-          : await getUSStockPrice(t);
-        // data 안에 marketSession, extPrice, extChangePct 자동 포함됨
-        if (data && (data as { price?: number }).price)
-          return NextResponse.json(data);
-
-      } else {
-        const results = await Promise.all(
-          tickers.map(async t => {                          // ← 버그 수정
-            const d = isKRStock(t)
-              ? await getKRStockPrice(toKISCode(t))
-              : await getUSStockPrice(t);
-            return d ? { ticker: t, ...d } : null;         // 새 필드 자동 스프레드
-          })
-        );
-        const quotes = results.filter(Boolean);
-        if (quotes.length > 0)
-          return NextResponse.json({ quotes, count: quotes.length });
-      }
-    } catch { /* fallthrough to Yahoo */ }
-  }
-
   // Yahoo Finance 폴백 (15분 지연, 시간외 가격 없음)
   if (tickers.length === 1) {
     const data = await getYahooPriceForTicker(tickers[0]);
