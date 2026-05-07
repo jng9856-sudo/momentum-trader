@@ -24,18 +24,16 @@ function getExchangeCode(ticker: string): 'NAS' | 'NYS' | 'AMS' {
 
 // ── 현재 미국 장 세션 판단 (KST 기준) ────────────────────────────────────────
 export function getUSMarketSession(): 'REGULAR' | 'PRE' | 'AFTER' | 'CLOSED' {
-  const nowKST  = new Date(Date.now() + 9 * 60 * 60 * 1000);
-  const h       = nowKST.getUTCHours();
-  const m       = nowKST.getUTCMinutes();
-  const timeMin = h * 60 + m;
+  const now = new Date();
+  const ny = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+  const day = ny.getDay();
+  const t = ny.getHours() * 60 + ny.getMinutes();
 
-  // 정규장:  KST 23:30 ~ 익일 06:00  (EDT 09:30~16:00)
-  // 프리장:  KST 18:00 ~ 23:30       (EDT 04:00~09:30)
-  // 애프터:  KST 06:00 ~ 10:00       (EDT 16:00~20:00)
-  // 장마감:  KST 10:00 ~ 18:00
-  if (timeMin >= 23 * 60 + 30 || timeMin < 6 * 60)  return 'REGULAR';
-  if (timeMin >= 18 * 60 && timeMin < 23 * 60 + 30) return 'PRE';
-  if (timeMin >= 6 * 60  && timeMin < 10 * 60)       return 'AFTER';
+  if (day === 0 || day === 6) return 'CLOSED';
+
+  if (t >= 4 * 60 && t < 9 * 60 + 30)  return 'PRE';
+  if (t >= 9 * 60 + 30 && t < 16 * 60) return 'REGULAR';
+  if (t >= 16 * 60 && t < 20 * 60)     return 'AFTER';
   return 'CLOSED';
 }
 
