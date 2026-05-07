@@ -313,10 +313,12 @@ export default function Home() {
       const fav = localStorage.getItem(FAVORITES_KEY);
       if (fav) setFavorites(new Set(JSON.parse(fav)));
     } catch {}
+
     fetch('/api/db?type=watchlist').then(r => r.json()).then(d => {
       if (d.tickers?.length > 0) setWatchlist(d.tickers);
       else { try { const wl = localStorage.getItem(WATCHLIST_KEY); if (wl) setWatchlist(JSON.parse(wl)); } catch {} }
     }).catch(() => { try { const wl = localStorage.getItem(WATCHLIST_KEY); if (wl) setWatchlist(JSON.parse(wl)); } catch {} });
+
     fetch(`/api/db?type=analysis&date=${todayKey()}`).then(r => r.json()).then(d => {
       if (d && !d.empty && d.stocks?.length > 0) {
         setAllStocks(d.stocks); setMarketCtx(d.market_context ?? '');
@@ -331,6 +333,7 @@ export default function Home() {
     }).catch(() => {
       try { const cached = localStorage.getItem(CACHE_KEY); if (cached) { const p = JSON.parse(cached); if (p.date === todayKey()) { setAllStocks(p.stocks ?? []); setMarketCtx(p.market_context ?? ''); setAnalyzedAt(p.analyzed_at ?? ''); } } } catch {}
     });
+
     try {
       const ec = localStorage.getItem('mt_earnings_v1');
       if (ec) { const ep = JSON.parse(ec); if (ep.date === todayKey()) setEarningsMap(ep.data ?? {}); }
@@ -495,26 +498,28 @@ export default function Home() {
           {/* ── 탭 네비게이션 ── */}
           <div className="flex gap-1 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
             {([
-              ['scanner',      '모멘텀 스캐너'],
-              ['favorites',    `즐겨찾기${favorites.size > 0 ? ` (${favorites.size})` : ''}`],
-              ['portfolio',    '내 포트폴리오'],
-              ['sectors',      '섹터 히트맵'],
+              ['scanner',   '모멘텀 스캐너'],
+              ['favorites', `즐겨찾기${favorites.size > 0 ? ` (${favorites.size})` : ''}`],
+              ['portfolio', '내 포트폴리오'],
+              ['sectors',   '섹터 히트맵'],
             ] as [TabType, string][]).map(([tab, label]) => (
               <button key={tab} onClick={() => setActiveTab(tab)}
                 className={`px-3 py-2 text-xs sm:text-sm font-medium rounded-lg border transition-colors whitespace-nowrap shrink-0
                   ${activeTab === tab
-                    ? tab === 'favorites'    ? 'bg-yellow-900/60 border-yellow-700 text-yellow-300'
-                    : 'bg-zinc-700 border-zinc-600 text-zinc-100'
+                    ? tab === 'favorites'
+                      ? 'bg-yellow-900/60 border-yellow-700 text-yellow-300'
+                      : 'bg-zinc-700 border-zinc-600 text-zinc-100'
                     : 'bg-transparent border-zinc-800 text-zinc-500 hover:text-zinc-300'}`}>
-                {tab === 'favorites'    ? `★ ${label}`  :
+                {tab === 'favorites' ? `★ ${label}` : label}
               </button>
             ))}
           </div>
         </header>
 
         {/* ── 탭 콘텐츠 ── */}
-        {activeTab === 'portfolio'    && <PortfolioTab />}
-        {activeTab === 'sectors'      && <SectorHeatmap />}
+        {activeTab === 'portfolio' && <PortfolioTab />}
+        {activeTab === 'sectors'   && <SectorHeatmap />}
+
         {activeTab === 'favorites' && (
           favoriteStocks.length === 0 ? (
             <div className="text-center py-20">
