@@ -504,13 +504,9 @@ export default function Home() {
                 className={`px-3 py-2 text-xs sm:text-sm font-medium rounded-lg border transition-colors whitespace-nowrap shrink-0
                   ${activeTab === tab
                     ? tab === 'favorites'    ? 'bg-yellow-900/60 border-yellow-700 text-yellow-300'
-                    : tab === 'backtest-sim' ? 'bg-emerald-900/60 border-emerald-700 text-emerald-300'
-                    : tab === 'autotrade'    ? 'bg-blue-900/60 border-blue-700 text-blue-300'
                     : 'bg-zinc-700 border-zinc-600 text-zinc-100'
                     : 'bg-transparent border-zinc-800 text-zinc-500 hover:text-zinc-300'}`}>
                 {tab === 'favorites'    ? `★ ${label}`  :
-                 tab === 'backtest-sim' ? `📊 ${label}` :
-                 tab === 'autotrade'    ? `⚡ ${label}` : label}
               </button>
             ))}
           </div>
