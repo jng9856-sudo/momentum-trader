@@ -66,6 +66,7 @@ const SORT_OPTIONS: { key: SortType; label: string }[] = [
 
 // ── 실시간 가격 기반 action 재판단 ──────────────────────────────────────────
 function deriveRealtimeAction(r: HoldingResult, livePrice: number): string {
+  if (!r.mas) return '모니터링';
   const { ma10, ma20, ma50, ma120 } = r.mas;
   const { rsi, macd } = r.indicators;
   const macdContracting = r.divergences.macd.contracting;
