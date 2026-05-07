@@ -583,13 +583,6 @@ interface QuoteData {
 async function fetchQuote(ticker: string): Promise<QuoteData | null> {
   try {
     let realtimePrice: number | null = null;
-    if (process.env.KIS_APP_KEY) {
-      try {
-        const { getUSStockPrice, isKRStock, getKRStockPrice, toKISCode } = await import('@/lib/kis');
-        if (isKRStock(ticker)) { const kr = await getKRStockPrice(toKISCode(ticker)); if (kr?.price) realtimePrice = kr.price; }
-        else { const us = await getUSStockPrice(ticker); if (us?.price) realtimePrice = us.price; }
-      } catch {}
-    }
     const res = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=2y`, { headers: { 'User-Agent': 'Mozilla/5.0' }, next: { revalidate: 0 } });
     if (!res.ok) return null;
     const data = await res.json(), result = data?.chart?.result?.[0];
