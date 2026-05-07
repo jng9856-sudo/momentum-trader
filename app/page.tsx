@@ -7,9 +7,6 @@ import WatchlistManager from '@/components/WatchlistManager';
 import PortfolioTab from '@/components/PortfolioTab';
 import MarketStatus from '@/components/MarketStatus';
 import SectorHeatmap from '@/components/SectorHeatmap';
-import BacktestPanel from '@/components/BacktestPanel';
-import BacktestSimPanel from '@/components/BacktestSimPanel';
-import AutoTradePanel from '@/components/AutoTradePanel'; // ← 추가
 
 const DEFAULT_TICKERS = ['PLTR'];
 const CACHE_KEY = 'mt_analysis_v4';
@@ -20,7 +17,7 @@ const BATCH_SIZE = 50;
 
 type FilterType = 'ALL' | 'BREAKOUT' | 'SETUP' | 'WATCH' | 'HOLD' | 'SELL' | 'STRONG_SELL';
 type SortType = 'SCORE' | 'TICKER' | 'SIGNAL';
-type TabType = 'scanner' | 'favorites' | 'portfolio' | 'sectors' | 'backtest' | 'backtest-sim' | 'autotrade'; // ← autotrade 추가
+type TabType = 'scanner' | 'favorites' | 'portfolio' | 'sectors';
 
 const SECTOR_MAP: Record<string, string> = {
   NVDA:'반도체', AMD:'반도체', AVGO:'반도체', MU:'반도체', INTC:'반도체',
@@ -502,9 +499,6 @@ export default function Home() {
               ['favorites',    `즐겨찾기${favorites.size > 0 ? ` (${favorites.size})` : ''}`],
               ['portfolio',    '내 포트폴리오'],
               ['sectors',      '섹터 히트맵'],
-              ['backtest',     '백테스트'],
-              ['backtest-sim', '포트폴리오 시뮬'],
-              ['autotrade',    '자동매매'],
             ] as [TabType, string][]).map(([tab, label]) => (
               <button key={tab} onClick={() => setActiveTab(tab)}
                 className={`px-3 py-2 text-xs sm:text-sm font-medium rounded-lg border transition-colors whitespace-nowrap shrink-0
@@ -525,10 +519,6 @@ export default function Home() {
         {/* ── 탭 콘텐츠 ── */}
         {activeTab === 'portfolio'    && <PortfolioTab />}
         {activeTab === 'sectors'      && <SectorHeatmap />}
-        {activeTab === 'backtest'     && <BacktestPanel />}
-        {activeTab === 'backtest-sim' && <BacktestSimPanel />}
-        {activeTab === 'autotrade'    && <AutoTradePanel />}  {/* ← 추가 */}
-
         {activeTab === 'favorites' && (
           favoriteStocks.length === 0 ? (
             <div className="text-center py-20">
