@@ -17,7 +17,7 @@ const BATCH_SIZE = 50;
 
 type FilterType = 'ALL' | 'BREAKOUT' | 'SETUP' | 'WATCH' | 'HOLD' | 'SELL' | 'STRONG_SELL';
 type SortType = 'SCORE' | 'TICKER' | 'SIGNAL';
-type TabType = 'scanner' | 'favorites' | 'portfolio' | 'sectors';
+type TabType = 'scanner' | 'portfolio' | 'sectors';
 
 const SECTOR_MAP: Record<string, string> = {
   NVDA:'반도체', AMD:'반도체', AVGO:'반도체', MU:'반도체', INTC:'반도체',
@@ -128,17 +128,11 @@ const SECTOR_MAP: Record<string, string> = {
 };
 
 const YF_SECTOR_MAP: Record<string, string> = {
-  'Technology': 'AI·소프트웨어',
-  'Healthcare': '헬스케어·제약',
-  'Financial Services': '금융·핀테크',
-  'Consumer Cyclical': '소비재·유통',
-  'Consumer Defensive': '소비재·유통',
-  'Communication Services': '소비재·미디어',
-  'Energy': '전통에너지',
-  'Industrials': '산업재·소재',
-  'Basic Materials': '산업재·소재',
-  'Utilities': '원자력·전력',
-  'Real Estate': '기타',
+  'Technology': 'AI·소프트웨어', 'Healthcare': '헬스케어·제약',
+  'Financial Services': '금융·핀테크', 'Consumer Cyclical': '소비재·유통',
+  'Consumer Defensive': '소비재·유통', 'Communication Services': '소비재·미디어',
+  'Energy': '전통에너지', 'Industrials': '산업재·소재',
+  'Basic Materials': '산업재·소재', 'Utilities': '원자력·전력', 'Real Estate': '기타',
 };
 
 const SECTOR_ORDER = [
@@ -171,12 +165,11 @@ async function parseExcelTickers(file: File): Promise<string[]> {
   for (const sheetName of wb.SheetNames) {
     const ws = wb.Sheets[sheetName];
     const rows = XLSX.utils.sheet_to_json<string[]>(ws, { header: 1 }) as string[][];
-    for (const row of rows) {
+    for (const row of rows)
       for (const cell of row) {
         const val = String(cell ?? '').trim();
         if (isTicker(val)) tickers.push(val.toUpperCase());
       }
-    }
   }
   return [...new Set(tickers)];
 }
@@ -187,21 +180,48 @@ function chunk<T>(arr: T[], size: number): T[][] {
   return out;
 }
 
-function SectorGroup({
-  stocks, filter, isCompact, collapsedSectors, toggleSector,
-  earningsMap, removeFromResults, setDrawerTicker,
-  favorites, toggleFavorite,
-}: {
-  stocks: StockAnalysis[];
-  filter: FilterType;
-  isCompact: boolean;
-  collapsedSectors: Set<string>;
-  toggleSector: (name: string) => void;
-  earningsMap: Record<string, { earningsDate: string | null; daysUntil: number | null; epsEstimate: number | null; revenueEstimate: string | null; lastEPS: number | null }>;
-  removeFromResults: (ticker: string) => void;
-  setDrawerTicker: (ticker: string) => void;
-  favorites: Set<string>;
-  toggleFavorite: (ticker: string) => void;
+type EarningsInfo = { earningsDate: string | null; daysUntil: number | null; epsEstimate: number | null; revenueEstimate: string | null; lastEPS: number | null };
+
+// ── 즐겨찾기 상단 고정 핀 ────────────────────────────────────────────────────
+function FavoritesPin({ stocks, isCompact, earningsMap, removeFromResults, setDrawerTicker, favorites, toggleFavorite }: {
+  stocks: StockAnalysis[]; isCompact: boolean;
+  earningsMap: Record<string, EarningsInfo>;
+  removeFromResults: (t: string) => void;
+  setDrawerTicker: (t: string) => void;
+  favorites: Set<string>; toggleFavorite: (t: string) => void;
+}) {
+  const [collapsed, setCollapsed] = useState(false);
+  if (stocks.length === 0) return null;
+  return (
+    <div className="mb-6">
+      <button onClick={() => setCollapsed(c => !c)}
+        className="w-full flex items-center gap-2 mb-2 group text-left">
+        <span className="text-yellow-400 text-sm shrink-0">★</span>
+        <span className="text-[11px] font-bold text-yellow-300 tracking-widest uppercase shrink-0">즐겨찾기</span>
+        <span className="text-[10px] text-zinc-600 font-mono shrink-0">{stocks.length}종목</span>
+        <div className="flex-1 h-px bg-yellow-900/40 group-hover:bg-yellow-800/60 transition-colors" />
+        <span className="text-yellow-700 text-xs group-hover:text-yellow-500 transition-colors shrink-0">{collapsed ? '▶' : '▼'}</span>
+      </button>
+      {!collapsed && (
+        <div className={isCompact ? 'flex flex-col gap-1.5' : 'grid grid-cols-1 xl:grid-cols-2 gap-4'}>
+          {stocks.map(s => (
+            <StockCard key={s.ticker} stock={s} highlight={false}
+              onRemove={removeFromResults} earnings={earningsMap[s.ticker]}
+              compact={isCompact} onOpenDrawer={setDrawerTicker}
+              isFavorite={favorites.has(s.ticker)} onToggleFavorite={toggleFavorite} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SectorGroup({ stocks, filter, isCompact, collapsedSectors, toggleSector, earningsMap, removeFromResults, setDrawerTicker, favorites, toggleFavorite }: {
+  stocks: StockAnalysis[]; filter: FilterType; isCompact: boolean;
+  collapsedSectors: Set<string>; toggleSector: (n: string) => void;
+  earningsMap: Record<string, EarningsInfo>;
+  removeFromResults: (t: string) => void; setDrawerTicker: (t: string) => void;
+  favorites: Set<string>; toggleFavorite: (t: string) => void;
 }) {
   const grouped = new Map<string, StockAnalysis[]>();
   for (const s of stocks) {
@@ -210,30 +230,26 @@ function SectorGroup({
     grouped.get(sec)!.push(s);
   }
   const orderedSectors = [...grouped.keys()].sort((a, b) => {
-    const ai = SECTOR_ORDER.indexOf(a);
-    const bi = SECTOR_ORDER.indexOf(b);
+    const ai = SECTOR_ORDER.indexOf(a), bi = SECTOR_ORDER.indexOf(b);
     return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
   });
-
-  if (orderedSectors.length === 0) {
+  if (orderedSectors.length === 0)
     return <p className="text-sm text-zinc-600 py-6 text-center">해당 조건의 종목이 없습니다.</p>;
-  }
-
   return (
     <div className="flex flex-col gap-6">
       {orderedSectors.map(sector => {
-        const sectorStocks = grouped.get(sector)!;
+        const ss = grouped.get(sector)!;
         const collapsed = collapsedSectors.has(sector);
-        const breakoutCnt = sectorStocks.filter(s => s.signal === 'BREAKOUT').length;
-        const setupCnt    = sectorStocks.filter(s => s.signal === 'SETUP').length;
-        const watchCnt    = sectorStocks.filter(s => s.signal === 'WATCH').length;
-        const avgScore    = Math.round(sectorStocks.reduce((acc, s) => acc + Number(s.momentum_score), 0) / sectorStocks.length);
+        const breakoutCnt = ss.filter(s => s.signal === 'BREAKOUT').length;
+        const setupCnt    = ss.filter(s => s.signal === 'SETUP').length;
+        const watchCnt    = ss.filter(s => s.signal === 'WATCH').length;
+        const avgScore    = Math.round(ss.reduce((a, s) => a + Number(s.momentum_score), 0) / ss.length);
         return (
           <div key={sector}>
             <button onClick={() => toggleSector(sector)}
               className="w-full flex items-center gap-2 mb-2 group text-left">
               <span className="text-[11px] font-bold text-zinc-200 tracking-widest uppercase shrink-0">{sector}</span>
-              <span className="text-[10px] text-zinc-600 font-mono shrink-0">{sectorStocks.length}종목</span>
+              <span className="text-[10px] text-zinc-600 font-mono shrink-0">{ss.length}종목</span>
               {breakoutCnt > 0 && <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-950 border border-emerald-700 text-emerald-400 font-mono shrink-0">즉시진입 {breakoutCnt}</span>}
               {setupCnt > 0 && <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-950 border border-blue-800 text-blue-400 font-mono shrink-0">진입대기 {setupCnt}</span>}
               {watchCnt > 0 && <span className="text-[10px] px-1.5 py-0.5 rounded bg-yellow-950 border border-yellow-800 text-yellow-500 font-mono shrink-0">관심 {watchCnt}</span>}
@@ -243,14 +259,12 @@ function SectorGroup({
             </button>
             {!collapsed && (
               <div className={isCompact ? 'flex flex-col gap-1.5' : 'grid grid-cols-1 xl:grid-cols-2 gap-4'}>
-                {sectorStocks.map((s, i) => (
-                  <StockCard
-                    key={s.ticker} stock={s}
+                {ss.map((s, i) => (
+                  <StockCard key={s.ticker} stock={s}
                     highlight={i === 0 && filter !== 'SELL' && filter !== 'STRONG_SELL'}
                     onRemove={removeFromResults} earnings={earningsMap[s.ticker]}
                     compact={isCompact} onOpenDrawer={setDrawerTicker}
-                    isFavorite={favorites.has(s.ticker)} onToggleFavorite={toggleFavorite}
-                  />
+                    isFavorite={favorites.has(s.ticker)} onToggleFavorite={toggleFavorite} />
                 ))}
               </div>
             )}
@@ -262,43 +276,38 @@ function SectorGroup({
 }
 
 export default function Home() {
-  const [activeTab, setActiveTab] = useState<TabType>('scanner');
-  const [watchlist, setWatchlist] = useState<string[]>([]);
-  const [allStocks, setAllStocks] = useState<StockAnalysis[]>([]);
-  const [marketCtx, setMarketCtx] = useState('');
-  const [analyzedAt, setAnalyzedAt] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [progress, setProgress] = useState({ done: 0, total: 0 });
-  const [status, setStatus] = useState('');
-  const [error, setError] = useState('');
-  const [filter, setFilter] = useState<FilterType>('ALL');
-  const [sort, setSort] = useState<SortType>('SCORE');
-  const [xlsxOpen, setXlsxOpen] = useState(false);
-  const [xlsxMsg, setXlsxMsg] = useState('');
-  const [search, setSearch] = useState('');
-  const [ctxOpen, setCtxOpen] = useState(false);
-  const [isCompact, setIsCompact] = useState(false);
+  const [activeTab, setActiveTab]     = useState<TabType>('scanner');
+  const [watchlist, setWatchlist]     = useState<string[]>([]);
+  const [allStocks, setAllStocks]     = useState<StockAnalysis[]>([]);
+  const [marketCtx, setMarketCtx]     = useState('');
+  const [analyzedAt, setAnalyzedAt]   = useState('');
+  const [loading, setLoading]         = useState(false);
+  const [progress, setProgress]       = useState({ done: 0, total: 0 });
+  const [status, setStatus]           = useState('');
+  const [error, setError]             = useState('');
+  const [filter, setFilter]           = useState<FilterType>('ALL');
+  const [sort, setSort]               = useState<SortType>('SCORE');
+  const [xlsxOpen, setXlsxOpen]       = useState(false);
+  const [xlsxMsg, setXlsxMsg]         = useState('');
+  const [search, setSearch]           = useState('');
+  const [ctxOpen, setCtxOpen]         = useState(false);
+  const [isCompact, setIsCompact]     = useState(false);
   const [drawerTicker, setDrawerTicker] = useState<string | null>(null);
-  const [earningsMap, setEarningsMap] = useState<Record<string, { earningsDate: string | null; daysUntil: number | null; epsEstimate: number | null; revenueEstimate: string | null; lastEPS: number | null }>>({});
+  const [earningsMap, setEarningsMap] = useState<Record<string, EarningsInfo>>({});
   const [collapsedSectors, setCollapsedSectors] = useState<Set<string>>(new Set());
-  const [favorites, setFavorites] = useState<Set<string>>(new Set());
-  const fileRef = useRef<HTMLInputElement>(null);
+  const [favorites, setFavorites]     = useState<Set<string>>(new Set());
+  const fileRef  = useRef<HTMLInputElement>(null);
   const abortRef = useRef(false);
 
   function toggleSector(name: string) {
-    setCollapsedSectors(prev => {
-      const next = new Set(prev);
-      next.has(name) ? next.delete(name) : next.add(name);
-      return next;
-    });
+    setCollapsedSectors(prev => { const n = new Set(prev); n.has(name) ? n.delete(name) : n.add(name); return n; });
   }
-
   function toggleFavorite(ticker: string) {
     setFavorites(prev => {
-      const next = new Set(prev);
-      next.has(ticker) ? next.delete(ticker) : next.add(ticker);
-      try { localStorage.setItem(FAVORITES_KEY, JSON.stringify([...next])); } catch {}
-      return next;
+      const n = new Set(prev);
+      n.has(ticker) ? n.delete(ticker) : n.add(ticker);
+      try { localStorage.setItem(FAVORITES_KEY, JSON.stringify([...n])); } catch {}
+      return n;
     });
   }
 
@@ -309,35 +318,22 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    try {
-      const fav = localStorage.getItem(FAVORITES_KEY);
-      if (fav) setFavorites(new Set(JSON.parse(fav)));
-    } catch {}
-
+    try { const fav = localStorage.getItem(FAVORITES_KEY); if (fav) setFavorites(new Set(JSON.parse(fav))); } catch {}
     fetch('/api/db?type=watchlist').then(r => r.json()).then(d => {
       if (d.tickers?.length > 0) setWatchlist(d.tickers);
       else { try { const wl = localStorage.getItem(WATCHLIST_KEY); if (wl) setWatchlist(JSON.parse(wl)); } catch {} }
     }).catch(() => { try { const wl = localStorage.getItem(WATCHLIST_KEY); if (wl) setWatchlist(JSON.parse(wl)); } catch {} });
-
     fetch(`/api/db?type=analysis&date=${todayKey()}`).then(r => r.json()).then(d => {
       if (d && !d.empty && d.stocks?.length > 0) {
         setAllStocks(d.stocks); setMarketCtx(d.market_context ?? '');
         setAnalyzedAt(d.analyzed_at ?? new Date().toISOString());
-        setStatus(`> 크론 분석 결과 로드 완료 — ${d.stocks.length}개 종목`);
-        return;
+        setStatus(`> 크론 분석 결과 로드 완료 — ${d.stocks.length}개 종목`); return;
       }
-      try {
-        const cached = localStorage.getItem(CACHE_KEY);
-        if (cached) { const p = JSON.parse(cached); if (p.date === todayKey()) { setAllStocks(p.stocks ?? []); setMarketCtx(p.market_context ?? ''); setAnalyzedAt(p.analyzed_at ?? ''); } }
-      } catch {}
+      try { const c = localStorage.getItem(CACHE_KEY); if (c) { const p = JSON.parse(c); if (p.date === todayKey()) { setAllStocks(p.stocks ?? []); setMarketCtx(p.market_context ?? ''); setAnalyzedAt(p.analyzed_at ?? ''); } } } catch {}
     }).catch(() => {
-      try { const cached = localStorage.getItem(CACHE_KEY); if (cached) { const p = JSON.parse(cached); if (p.date === todayKey()) { setAllStocks(p.stocks ?? []); setMarketCtx(p.market_context ?? ''); setAnalyzedAt(p.analyzed_at ?? ''); } } } catch {}
+      try { const c = localStorage.getItem(CACHE_KEY); if (c) { const p = JSON.parse(c); if (p.date === todayKey()) { setAllStocks(p.stocks ?? []); setMarketCtx(p.market_context ?? ''); setAnalyzedAt(p.analyzed_at ?? ''); } } } catch {}
     });
-
-    try {
-      const ec = localStorage.getItem('mt_earnings_v1');
-      if (ec) { const ep = JSON.parse(ec); if (ep.date === todayKey()) setEarningsMap(ep.data ?? {}); }
-    } catch {}
+    try { const ec = localStorage.getItem('mt_earnings_v1'); if (ec) { const ep = JSON.parse(ec); if (ep.date === todayKey()) setEarningsMap(ep.data ?? {}); } } catch {}
   }, []);
 
   useEffect(() => {
@@ -345,7 +341,7 @@ export default function Home() {
     saveWatchlistToDB(watchlist);
   }, [watchlist]);
 
-  function addTicker(t: string) { if (watchlist.length < MAX_TICKERS) setWatchlist(w => [...w, t]); }
+  function addTicker(t: string)    { if (watchlist.length < MAX_TICKERS) setWatchlist(w => [...w, t]); }
   function removeTicker(t: string) { setWatchlist(w => w.filter(x => x !== t)); }
 
   function removeFromResults(ticker: string) {
@@ -354,25 +350,19 @@ export default function Home() {
     if (drawerTicker === ticker) setDrawerTicker(null);
     try {
       const c = localStorage.getItem(CACHE_KEY);
-      if (c) {
-        const p = JSON.parse(c);
-        p.stocks = (p.stocks ?? []).filter((s: { ticker: string }) => s.ticker !== ticker);
-        localStorage.setItem(CACHE_KEY, JSON.stringify(p));
-      }
+      if (c) { const p = JSON.parse(c); p.stocks = (p.stocks ?? []).filter((s: { ticker: string }) => s.ticker !== ticker); localStorage.setItem(CACHE_KEY, JSON.stringify(p)); }
     } catch {}
   }
 
   async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const file = e.target.files?.[0]; if (!file) return;
     setXlsxMsg('파일 읽는 중...');
     try {
       const found = await parseExcelTickers(file);
       if (found.length === 0) { setXlsxMsg('티커를 찾지 못했습니다.'); return; }
       const prev = watchlist.length;
       const merged = [...new Set([...watchlist, ...found])].slice(0, MAX_TICKERS);
-      setWatchlist(merged);
-      setXlsxMsg(`✓ ${found.length}개 → ${merged.length - prev}개 추가`);
+      setWatchlist(merged); setXlsxMsg(`✓ ${found.length}개 → ${merged.length - prev}개 추가`);
     } catch (err) { setXlsxMsg(`오류: ${String(err)}`); }
     e.target.value = '';
   }
@@ -386,8 +376,7 @@ export default function Home() {
     setLoading(true); setError(''); setSearch('');
     const batches = chunk(tickersToAnalyze, BATCH_SIZE);
     setProgress({ done: 0, total: tickersToAnalyze.length });
-    let accumulated: StockAnalysis[] = [...allStocks];
-    let firstCtx = marketCtx || '';
+    let accumulated: StockAnalysis[] = [...allStocks], firstCtx = marketCtx || '';
     for (let i = 0; i < batches.length; i++) {
       if (abortRef.current) break;
       setStatus(`> 배치 ${i+1}/${batches.length} 처리 중...`);
@@ -403,16 +392,15 @@ export default function Home() {
       setProgress({ done: Math.min(tickersToAnalyze.length, (i+1) * BATCH_SIZE), total: tickersToAnalyze.length });
     }
     const ts = new Date().toISOString();
-    setAnalyzedAt(ts);
-    setStatus(`> 완료 — ${accumulated.length}개 종목 · 실적 조회 중...`);
+    setAnalyzedAt(ts); setStatus(`> 완료 — ${accumulated.length}개 종목 · 실적 조회 중...`);
     try { localStorage.setItem(CACHE_KEY, JSON.stringify({ date: todayKey(), stocks: accumulated, market_context: firstCtx, analyzed_at: ts })); } catch {}
     await saveAnalysisToDB(accumulated, firstCtx, ts);
     try {
       const tBatches = chunk(tickersToAnalyze, 20);
-      const eMap: Record<string, { earningsDate: string | null; daysUntil: number | null; epsEstimate: number | null; revenueEstimate: string | null; lastEPS: number | null }> = { ...earningsMap };
+      const eMap: Record<string, EarningsInfo> = { ...earningsMap };
       for (const tb of tBatches) {
         const er = await fetch('/api/earnings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tickers: tb }) });
-        if (er.ok) { const ed = await er.json(); (ed.earnings ?? []).forEach((e: { ticker: string; earningsDate: string | null; daysUntil: number | null; epsEstimate: number | null; revenueEstimate: string | null; lastEPS: number | null }) => { eMap[e.ticker] = e; }); }
+        if (er.ok) { const ed = await er.json(); (ed.earnings ?? []).forEach((e: EarningsInfo & { ticker: string }) => { eMap[e.ticker] = e; }); }
       }
       setEarningsMap(eMap);
       try { localStorage.setItem('mt_earnings_v1', JSON.stringify({ date: todayKey(), data: eMap })); } catch {}
@@ -428,8 +416,7 @@ export default function Home() {
     setLoading(false); setAllStocks([]); setMarketCtx(''); setAnalyzedAt('');
     setStatus(''); setError(''); setSearch(''); setFilter('ALL'); setSort('SCORE');
     setWatchlist([]); setXlsxMsg(''); setXlsxOpen(false); setCtxOpen(false);
-    setIsCompact(false); setDrawerTicker(null); setEarningsMap({});
-    setCollapsedSectors(new Set());
+    setIsCompact(false); setDrawerTicker(null); setEarningsMap({}); setCollapsedSectors(new Set());
     try { localStorage.removeItem(CACHE_KEY); localStorage.removeItem(WATCHLIST_KEY); localStorage.removeItem('mt_earnings_v1'); } catch {}
   }
 
@@ -440,7 +427,8 @@ export default function Home() {
     try { await fetch('/api/db', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'analysis', stocks, market_context: ctx, date: todayKey(), analyzed_at: ts }) }); } catch {}
   }
 
-  const displayed = [...allStocks]
+  // ── filter/search/sort → 즐겨찾기 상단 고정 ────────────────────────────────
+  const allDisplayed = [...allStocks]
     .filter(s => filter === 'ALL' || s.signal === filter)
     .filter(s => search === '' || s.ticker.includes(search.toUpperCase()))
     .sort((a, b) => {
@@ -450,12 +438,14 @@ export default function Home() {
       return (o[a.signal] ?? 9) - (o[b.signal] ?? 9);
     });
 
-  const favoriteStocks = allStocks.filter(s => favorites.has(s.ticker));
+  const pinnedStocks  = allDisplayed.filter(s => favorites.has(s.ticker));   // 상단 고정
+  const displayedRest = allDisplayed.filter(s => !favorites.has(s.ticker)); // 나머지 섹터
+
   const holdCnt = allStocks.filter(s => s.signal === 'HOLD').length;
   const pct = progress.total > 0 ? Math.round((progress.done / progress.total) * 100) : 0;
   const today = new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'short' });
-  const analyzedSet = new Set(allStocks.map(s => s.ticker));
-  const newTickerCount = watchlist.filter(t => !analyzedSet.has(t)).length;
+  const analyzedSet2 = new Set(allStocks.map(s => s.ticker));
+  const newTickerCount = watchlist.filter(t => !analyzedSet2.has(t)).length;
 
   const analyzeButtonLabel = loading
     ? <span className="flex items-center gap-1"><span className="blink">▋</span>분석 중...</span>
@@ -464,11 +454,8 @@ export default function Home() {
 
   const drawerStock = drawerTicker ? allStocks.find(s => s.ticker === drawerTicker) ?? null : null;
 
-  const sectorGroupProps = {
-    filter, isCompact, collapsedSectors, toggleSector,
-    earningsMap, removeFromResults, setDrawerTicker,
-    favorites, toggleFavorite,
-  };
+  const cardProps = { isCompact, earningsMap, removeFromResults, setDrawerTicker, favorites, toggleFavorite };
+  const sectorGroupProps = { filter, isCompact, collapsedSectors, toggleSector, earningsMap, removeFromResults, setDrawerTicker, favorites, toggleFavorite };
 
   return (
     <div className="min-h-screen bg-bg-base">
@@ -495,40 +482,26 @@ export default function Home() {
             </div>
           </div>
 
-          {/* ── 탭 네비게이션 ── */}
+          {/* ── 탭 (즐겨찾기 탭 제거, 뱃지로 대체) ── */}
           <div className="flex gap-1 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
-            {([
-              ['scanner',   '모멘텀 스캐너'],
-              ['favorites', `즐겨찾기${favorites.size > 0 ? ` (${favorites.size})` : ''}`],
-              ['portfolio', '내 포트폴리오'],
-              ['sectors',   '섹터 히트맵'],
-            ] as [TabType, string][]).map(([tab, label]) => (
+            {([['scanner', '모멘텀 스캐너'], ['portfolio', '내 포트폴리오'], ['sectors', '섹터 히트맵']] as [TabType, string][]).map(([tab, label]) => (
               <button key={tab} onClick={() => setActiveTab(tab)}
                 className={`px-3 py-2 text-xs sm:text-sm font-medium rounded-lg border transition-colors whitespace-nowrap shrink-0
-                  ${activeTab === tab
-                    ? tab === 'favorites'
-                      ? 'bg-yellow-900/60 border-yellow-700 text-yellow-300'
-                      : 'bg-zinc-700 border-zinc-600 text-zinc-100'
-                    : 'bg-transparent border-zinc-800 text-zinc-500 hover:text-zinc-300'}`}>
-                {tab === 'favorites' ? `★ ${label}` : label}
+                  ${activeTab === tab ? 'bg-zinc-700 border-zinc-600 text-zinc-100' : 'bg-transparent border-zinc-800 text-zinc-500 hover:text-zinc-300'}`}>
+                {label}
               </button>
             ))}
+            {/* 즐겨찾기 상태 뱃지 */}
+            {favorites.size > 0 && activeTab === 'scanner' && (
+              <span className="flex items-center gap-1 px-2.5 py-1.5 text-xs rounded-lg border border-yellow-800/60 bg-yellow-950/40 text-yellow-500 whitespace-nowrap shrink-0 pointer-events-none">
+                ★ {favorites.size}개 상단 고정
+              </span>
+            )}
           </div>
         </header>
 
-        {/* ── 탭 콘텐츠 ── */}
         {activeTab === 'portfolio' && <PortfolioTab />}
         {activeTab === 'sectors'   && <SectorHeatmap />}
-
-        {activeTab === 'favorites' && (
-          favoriteStocks.length === 0 ? (
-            <div className="text-center py-20">
-              <div className="text-5xl mb-4 text-zinc-800">☆</div>
-              <p className="text-zinc-600 text-sm mb-1">즐겨찾기한 종목이 없습니다.</p>
-              <p className="text-zinc-700 text-xs">스캐너 카드 우측 상단 ☆ 버튼을 눌러 추가하세요.</p>
-            </div>
-          ) : <SectorGroup stocks={favoriteStocks} {...sectorGroupProps} />
-        )}
 
         {activeTab === 'scanner' && (
           <>
@@ -540,11 +513,11 @@ export default function Home() {
                   <button onClick={() => setCtxOpen(o => !o)} className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-zinc-800/30 transition-colors">
                     <div className="flex items-center gap-3 min-w-0">
                       <span className="text-[10px] text-zinc-600 uppercase tracking-widest shrink-0">시장 컨텍스트</span>
-                      {!ctxOpen && <p className="text-xs text-zinc-500 truncate" style={{ fontFamily: 'system-ui, sans-serif' }}>{marketCtx.slice(0, 60)}...</p>}
+                      {!ctxOpen && <p className="text-xs text-zinc-500 truncate" style={{ fontFamily: 'system-ui' }}>{marketCtx.slice(0, 60)}...</p>}
                     </div>
                     <span className="text-zinc-600 text-xs shrink-0 ml-2">{ctxOpen ? '▲' : '▼'}</span>
                   </button>
-                  {ctxOpen && <div className="px-4 pb-4 border-t border-zinc-800/50 pt-3"><p className="text-xs text-zinc-400 leading-relaxed" style={{ fontFamily: 'system-ui, sans-serif' }}>{marketCtx}</p></div>}
+                  {ctxOpen && <div className="px-4 pb-4 border-t border-zinc-800/50 pt-3"><p className="text-xs text-zinc-400 leading-relaxed" style={{ fontFamily: 'system-ui' }}>{marketCtx}</p></div>}
                 </div>
               ) : <div />}
               <div className="border border-zinc-800 rounded-xl bg-zinc-900/40 overflow-hidden">
@@ -592,12 +565,12 @@ export default function Home() {
                 <div className="mb-3 sticky top-[100px] z-10 bg-bg-base py-2">
                   <div className="flex gap-1 overflow-x-auto mb-2" style={{ scrollbarWidth: 'none' }}>
                     {([
-                      ['ALL',         `전체(${allStocks.length})`],
-                      ['BREAKOUT',    `즉시진입(${allStocks.filter(s => s.signal==='BREAKOUT').length})`],
-                      ['SETUP',       `진입대기(${allStocks.filter(s => s.signal==='SETUP').length})`],
-                      ['WATCH',       `관심등록(${allStocks.filter(s => s.signal==='WATCH').length})`],
-                      ['HOLD',        `관망(${holdCnt})`],
-                      ['SELL',        `매도(${allStocks.filter(s => s.signal==='SELL').length})`],
+                      ['ALL', `전체(${allStocks.length})`],
+                      ['BREAKOUT', `즉시진입(${allStocks.filter(s => s.signal==='BREAKOUT').length})`],
+                      ['SETUP', `진입대기(${allStocks.filter(s => s.signal==='SETUP').length})`],
+                      ['WATCH', `관심등록(${allStocks.filter(s => s.signal==='WATCH').length})`],
+                      ['HOLD', `관망(${holdCnt})`],
+                      ['SELL', `매도(${allStocks.filter(s => s.signal==='SELL').length})`],
                       ['STRONG_SELL', `즉시매도(${allStocks.filter(s => s.signal==='STRONG_SELL').length})`],
                     ] as [FilterType, string][]).map(([f, label]) => (
                       <button key={f} onClick={() => setFilter(f)}
@@ -622,8 +595,8 @@ export default function Home() {
                     </button>
                     <button
                       onClick={() => {
-                        const sectorNames = [...new Set(displayed.map(s => getSector(s)))];
-                        if (collapsedSectors.size < sectorNames.length) setCollapsedSectors(new Set(sectorNames));
+                        const names = [...new Set(displayedRest.map(s => getSector(s)))];
+                        if (collapsedSectors.size < names.length) setCollapsedSectors(new Set(names));
                         else setCollapsedSectors(new Set());
                       }}
                       className="text-xs px-3 py-1.5 rounded-lg border transition-colors whitespace-nowrap shrink-0 bg-transparent border-zinc-800 text-zinc-500 hover:text-zinc-300">
@@ -631,7 +604,13 @@ export default function Home() {
                     </button>
                   </div>
                 </div>
-                <SectorGroup stocks={displayed} {...sectorGroupProps} />
+
+                {/* ── 즐겨찾기 상단 고정 ── */}
+                <FavoritesPin stocks={pinnedStocks} {...cardProps} />
+
+                {/* ── 나머지 섹터 그룹 ── */}
+                <SectorGroup stocks={displayedRest} {...sectorGroupProps} />
+
                 {analyzedAt && <div className="text-[10px] text-zinc-700 text-center mt-8">마지막 분석: {new Date(analyzedAt).toLocaleString('ko-KR')}</div>}
               </>
             )}
@@ -647,7 +626,7 @@ export default function Home() {
         )}
 
         <footer className="mt-8 pt-4 border-t border-border">
-          <p className="text-[10px] text-zinc-700 leading-relaxed text-center" style={{ fontFamily: 'system-ui, sans-serif' }}>
+          <p className="text-[10px] text-zinc-700 leading-relaxed text-center" style={{ fontFamily: 'system-ui' }}>
             ⚠ Yahoo Finance 공개 데이터 기반 참고 정보이며, 금융 투자 권유가 아닙니다.
           </p>
         </footer>
@@ -668,12 +647,10 @@ export default function Home() {
               </div>
             </div>
             <div className="p-4">
-              <StockCard
-                stock={drawerStock} highlight={false}
+              <StockCard stock={drawerStock} highlight={false}
                 onRemove={removeFromResults} earnings={earningsMap[drawerStock.ticker]}
                 forceOpen={true} isFavorite={favorites.has(drawerStock.ticker)}
-                onToggleFavorite={toggleFavorite}
-              />
+                onToggleFavorite={toggleFavorite} />
             </div>
           </div>
         </>
