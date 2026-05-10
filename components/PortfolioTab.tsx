@@ -5,11 +5,18 @@ import EarningsBadge from '@/components/EarningsBadge';
 
 interface Holding { ticker: string; avgPrice: number; shares: number; }
 interface SellSignal { text: string; severity: 'high' | 'medium' | 'low'; }
+interface DownsideRisk {
+  toStopLoss: number; toMA20: number | null; toMA50: number | null; toMA120: number | null;
+  worstCase: number; fromAvg: number; label: string; detail: string;
+}
 interface HoldingResult {
   ticker: string; avgPrice: number; shares: number;
   currentPrice: number; pnlPct: number; pnlAbs: number;
   action: string; sellUrgency: string;
   sellSignals: SellSignal[]; holdSignals: string[];
+  holdRegret: string[];   // 지금 팔면 아쉬운 이유
+  sellRegret: string[];   // 지금 안팔면 위험한 이유
+  downsideRisk: DownsideRisk;
   upside: { score: number; label: string };
   indicators: { rsi: number; macd: number; adx: number; volRatio: number; aboveCount: number; bbPos: number; distFromHigh: number };
   stopLoss: { tight: number; standard: number; ma20: number|null; ma50: number|null; recommended: { price: number|null; label: string } };
@@ -34,6 +41,7 @@ interface HoldingResult {
   error?: string;
 }
 
+// ── Action 6단계 스타일 ──────────────────────────────────────────────────────
 const ACTION_STYLE: Record<string, string> = {
   '즉시매도': 'bg-red-900 text-red-200 border-red-600',
   '매도':     'bg-red-950 text-red-400 border-red-800',
@@ -41,6 +49,7 @@ const ACTION_STYLE: Record<string, string> = {
   '매도검토': 'bg-amber-950 text-amber-400 border-amber-800',
   '모니터링': 'bg-zinc-900 text-zinc-400 border-zinc-700',
   '홀딩':     'bg-emerald-950 text-emerald-400 border-emerald-800',
+  '추세홀딩': 'bg-emerald-900 text-emerald-200 border-emerald-500', // 가장 강한 홀딩
 };
 const SEV_COLOR: Record<string, string> = {
   high: 'text-red-400', medium: 'text-amber-400', low: 'text-zinc-400',
@@ -49,12 +58,12 @@ const SEV_DOT: Record<string, string> = {
   high: 'bg-red-400', medium: 'bg-amber-400', low: 'bg-zinc-500',
 };
 const ACTION_ORDER: Record<string, number> = {
-  '즉시매도': 0, '매도': 1, '부분익절': 2, '매도검토': 3, '모니터링': 4, '홀딩': 5,
+  '즉시매도': 0, '매도': 1, '부분익절': 2, '매도검토': 3, '모니터링': 4, '홀딩': 5, '추세홀딩': 6,
 };
 
 const PORTFOLIO_KEY   = 'mt_portfolio_v2';
 const PORTFOLIO_CACHE = 'mt_portfolio_cache_v2';
-const CACHE_TTL_MS    = 6 * 60 * 60 * 1000; // 6시간
+const CACHE_TTL_MS    = 6 * 60 * 60 * 1000;
 
 type SortType = 'action' | 'pnl' | 'upside' | 'ticker';
 const SORT_OPTIONS: { key: SortType; label: string }[] = [
@@ -64,14 +73,13 @@ const SORT_OPTIONS: { key: SortType; label: string }[] = [
   { key: 'ticker',  label: '티커순' },
 ];
 
-// ── 실시간 가격 기반 action 재판단 ──────────────────────────────────────────
+// ── 실시간 가격 기반 action 재판단 (6단계) ──────────────────────────────────
 function deriveRealtimeAction(r: HoldingResult, livePrice: number): string {
   if (!r.mas) return '모니터링';
   const { ma10, ma20, ma50, ma120 } = r.mas;
   const { rsi, macd } = r.indicators;
   const macdContracting = r.divergences.macd.contracting;
   const pnlPct = ((livePrice - r.avgPrice) / r.avgPrice) * 100;
-
   const liveAbove = [ma10, ma20, ma50, ma120].filter(m => m > 0 && livePrice > m).length;
 
   if (r.stopLoss.recommended.price && livePrice <= r.stopLoss.recommended.price) return '즉시매도';
@@ -89,6 +97,9 @@ function deriveRealtimeAction(r: HoldingResult, livePrice: number): string {
   if (highSigs >= 2 && totalSigs >= 3) return '매도';
   if (ma50 > 0 && livePrice < ma50) return '매도검토';
   if (pnlPct > 20 && rsi > 78 && !macdPositive) return '부분익절';
+
+  // 추세홀딩: MACD 양수 + 정배열 + high 신호 없음
+  if (strongUptrend && highSigs === 0 && medSigs === 0) return '추세홀딩';
   if (strongUptrend && highSigs === 0 && medSigs <= 1) return '홀딩';
   if (highSigs >= 1 || (medSigs >= 2 && !strongUptrend)) return '매도검토';
   if (r.holdSignals.length >= 2 && r.upside.score >= 50) return '홀딩';
@@ -99,7 +110,7 @@ function deriveRealtimeAction(r: HoldingResult, livePrice: number): string {
 function UpsideBar({ score, label }: { score: number; label: string }) {
   const color = score >= 70 ? '#10b981' : score >= 50 ? '#f59e0b' : score >= 30 ? '#f97316' : '#ef4444';
   return (
-    <div className="mb-4 p-3 bg-zinc-900/50 rounded-lg">
+    <div className="mb-3 p-3 bg-zinc-900/50 rounded-lg">
       <div className="flex justify-between items-center mb-1.5">
         <span className="text-[10px] text-zinc-600 uppercase tracking-widest">상승 여력 점수</span>
         <span className="text-sm font-semibold font-mono" style={{ color }}>{score}점 — {label}</span>
@@ -121,7 +132,7 @@ function DivergenceRow({ divs }: { divs: HoldingResult['divergences'] }) {
     { label: 'MACD 수축',        active: divs.macd.contracting, detail: divs.macd.detail,  bull: false },
   ];
   return (
-    <div className="mb-4 p-3 bg-zinc-900/50 rounded-lg">
+    <div className="mb-3 p-3 bg-zinc-900/50 rounded-lg">
       <div className="text-[10px] text-zinc-600 uppercase tracking-widest mb-2">다이버전스 감지</div>
       <div className="flex flex-col gap-1.5">
         {items.map(({ label, active, detail, bull }) => (
@@ -138,6 +149,86 @@ function DivergenceRow({ divs }: { divs: HoldingResult['divergences'] }) {
   );
 }
 
+// ── 핵심 추가: RegretPanel ────────────────────────────────────────────────────
+function RegretPanel({ r, action }: { r: HoldingResult; action: string }) {
+  const isSellSide = ['즉시매도', '매도', '부분익절', '매도검토'].includes(action);
+  const isHoldSide = ['추세홀딩', '홀딩', '모니터링'].includes(action);
+
+  return (
+    <div className="mb-3 space-y-2">
+      {/* 지금 팔면 아쉬운 이유 — 홀딩 쪽일 때 강조, 매도 쪽에서도 보조 표시 */}
+      {r.holdRegret && r.holdRegret.length > 0 && (
+        <div className={`rounded-lg p-3 border ${isHoldSide
+          ? 'bg-emerald-950/30 border-emerald-800/60'
+          : 'bg-zinc-900/40 border-zinc-800/40'}`}>
+          <div className="text-[10px] font-semibold mb-2 flex items-center gap-1.5">
+            <span className={isHoldSide ? 'text-emerald-400' : 'text-zinc-500'}>
+              {isHoldSide ? '✦ 지금 팔면 아쉬운 이유' : '▸ 홀딩 근거 (참고)'}
+            </span>
+          </div>
+          <ul className="space-y-1.5">
+            {r.holdRegret.map((s, i) => (
+              <li key={i} className="flex items-start gap-2 text-xs" style={{ fontFamily: 'system-ui' }}>
+                <span className={`mt-0.5 shrink-0 ${isHoldSide ? 'text-emerald-400' : 'text-zinc-600'}`}>✓</span>
+                <span className={isHoldSide ? 'text-emerald-200' : 'text-zinc-500'}>{s}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* 지금 안팔면 위험한 이유 — 매도 쪽일 때 강조 */}
+      {r.sellRegret && r.sellRegret.length > 0 && (
+        <div className={`rounded-lg p-3 border ${isSellSide
+          ? 'bg-red-950/30 border-red-800/60'
+          : 'bg-zinc-900/40 border-zinc-800/40'}`}>
+          <div className="text-[10px] font-semibold mb-2 flex items-center gap-1.5">
+            <span className={isSellSide ? 'text-red-400' : 'text-zinc-500'}>
+              {isSellSide ? '⚠ 지금 안팔면 위험한 이유' : '▸ 위험 요인 (참고)'}
+            </span>
+          </div>
+          <ul className="space-y-1.5">
+            {r.sellRegret.map((s, i) => (
+              <li key={i} className="flex items-start gap-2 text-xs" style={{ fontFamily: 'system-ui' }}>
+                <span className={`mt-0.5 shrink-0 ${isSellSide ? 'text-red-400' : 'text-zinc-600'}`}>!</span>
+                <span className={isSellSide ? 'text-red-200' : 'text-zinc-500'}>{s}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* 하락 위험 계량 */}
+      {r.downsideRisk && (
+        <div className="rounded-lg p-3 border border-zinc-800/60 bg-zinc-900/40">
+          <div className="text-[10px] text-zinc-600 uppercase tracking-widest mb-2">예상 하락폭 (버티면 얼마나 잃을까)</div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-2">
+            <RiskPill label="ATR 손절" val={`${r.downsideRisk.toStopLoss}%`}
+              color={r.downsideRisk.toStopLoss < -10 ? 'text-red-400' : 'text-amber-400'} />
+            {r.downsideRisk.toMA20 !== null && (
+              <RiskPill label="MA20까지" val={`${r.downsideRisk.toMA20}%`} color="text-amber-400" />
+            )}
+            {r.downsideRisk.toMA50 !== null && (
+              <RiskPill label="MA50까지" val={`${r.downsideRisk.toMA50}%`} color="text-orange-400" />
+            )}
+            <RiskPill label="52주 저점" val={`${r.downsideRisk.worstCase}%`} color="text-red-600" />
+          </div>
+          <p className="text-[10px] text-zinc-600">{r.downsideRisk.label}</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RiskPill({ label, val, color }: { label: string; val: string; color: string }) {
+  return (
+    <div className="text-center bg-zinc-900 border border-zinc-800 rounded-md px-2 py-1.5">
+      <div className="text-[9px] text-zinc-600 mb-0.5">{label}</div>
+      <div className={`text-xs font-semibold font-mono ${color}`}>{val}</div>
+    </div>
+  );
+}
+
 interface EarningsInfo { earningsDate: string|null; daysUntil: number|null; epsEstimate: number|null; revenueEstimate: string|null; lastEPS: number|null; }
 
 // ── HoldingCard ───────────────────────────────────────────────────────────────
@@ -148,73 +239,56 @@ function HoldingCard({ result: r, onRemove, earnings }: {
   const [open, setOpen] = useState(false);
   const [holdingTab, setHoldingTab] = useState<'signal' | 'strategy'>('signal');
 
-  // ── [수정 1] rtPrice 타입에 시간외 필드 추가 ──────────────────────────────
   const [rtPrice, setRtPrice] = useState<{
-    price:         number;
-    changePct:     number;
-    isRealtime?:   boolean;
+    price: number; changePct: number; isRealtime?: boolean;
     marketSession?: 'REGULAR' | 'PRE' | 'AFTER' | 'CLOSED';
-    extPrice?:     number | null;
-    extChangePct?: number | null;
+    extPrice?: number | null; extChangePct?: number | null;
   } | null>(null);
 
-  // ── [수정 2] fetch에서 시간외 필드도 수신 ────────────────────────────────
   useEffect(() => {
     const fetchPrice = () =>
       fetch(`/api/realtime?tickers=${r.ticker}`)
         .then(res => res.json())
         .then(d => {
           if (d.price && d.price > 0) setRtPrice({
-            price:         d.price,
-            changePct:     d.changePct     ?? 0,
-            isRealtime:    d.isRealtime,
-            marketSession: d.marketSession,
-            extPrice:      d.extPrice      ?? null,
-            extChangePct:  d.extChangePct  ?? null,
+            price: d.price, changePct: d.changePct ?? 0,
+            isRealtime: d.isRealtime, marketSession: d.marketSession,
+            extPrice: d.extPrice ?? null, extChangePct: d.extChangePct ?? null,
           });
-        })
-        .catch(() => {});
+        }).catch(() => {});
     fetchPrice();
     const iv = setInterval(fetchPrice, 30000);
     return () => clearInterval(iv);
   }, [r.ticker]);
 
-  const displayPrice = rtPrice ? rtPrice.price : r.currentPrice;
-
+  const displayPrice  = rtPrice ? rtPrice.price : r.currentPrice;
   const liveAction    = deriveRealtimeAction(r, displayPrice);
   const actionChanged = liveAction !== r.action;
-
   const rtPnlPct = rtPrice
     ? Math.round(((rtPrice.price - r.avgPrice) / r.avgPrice) * 10000) / 100
     : r.pnlPct;
   const rtPnlAbs = rtPrice && r.shares > 0
     ? Math.round((rtPrice.price - r.avgPrice) * r.shares * 100) / 100
     : r.pnlAbs;
-
   const pnlPos = rtPnlPct >= 0;
 
   const borderColor =
     liveAction === '즉시매도' ? 'border-l-red-400' :
     liveAction === '매도'     ? 'border-l-red-700' :
     liveAction === '부분익절' ? 'border-l-orange-500' :
+    liveAction === '추세홀딩' ? 'border-l-emerald-400' :
     liveAction === '홀딩'     ? 'border-l-emerald-600' : 'border-l-zinc-600';
 
   const upsideColor = r.upside.score >= 70 ? 'text-emerald-400' : r.upside.score >= 50 ? 'text-amber-400' : r.upside.score >= 30 ? 'text-orange-400' : 'text-red-400';
 
-  // ── [수정 3] 시간외 가격 뱃지 ────────────────────────────────────────────
   const ExtPriceBadge = () => {
     if (!rtPrice?.extPrice) return null;
-    const isPre   = rtPrice.marketSession === 'PRE';
-    const isAfter = rtPrice.marketSession === 'AFTER';
+    const isPre = rtPrice.marketSession === 'PRE', isAfter = rtPrice.marketSession === 'AFTER';
     if (!isPre && !isAfter) return null;
     return (
       <span className={`flex items-center gap-1 px-1.5 py-0.5 rounded border ${isPre ? 'bg-sky-950 border-sky-800' : 'bg-violet-950 border-violet-800'}`}>
-        <span className={`text-[9px] font-semibold ${isPre ? 'text-sky-400' : 'text-violet-400'}`}>
-          {isPre ? '프리' : '애프터'}
-        </span>
-        <span className={`text-[9px] font-mono ${isPre ? 'text-sky-300' : 'text-violet-300'}`}>
-          ${rtPrice.extPrice.toLocaleString()}
-        </span>
+        <span className={`text-[9px] font-semibold ${isPre ? 'text-sky-400' : 'text-violet-400'}`}>{isPre ? '프리' : '애프터'}</span>
+        <span className={`text-[9px] font-mono ${isPre ? 'text-sky-300' : 'text-violet-300'}`}>${rtPrice.extPrice.toLocaleString()}</span>
         {rtPrice.extChangePct != null && (
           <span className={`text-[9px] font-mono ${rtPrice.extChangePct >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
             {rtPrice.extChangePct >= 0 ? '+' : ''}{rtPrice.extChangePct.toFixed(2)}%
@@ -222,6 +296,17 @@ function HoldingCard({ result: r, onRemove, earnings }: {
         )}
       </span>
     );
+  };
+
+  // 액션 설명 한 줄
+  const actionDesc: Record<string, string> = {
+    '추세홀딩': '강한 추세 유지 중 — 매도 시 후회 가능성 높음',
+    '홀딩':     '현 추세 유지 — 신호 변화 대기',
+    '모니터링': '방향 불명확 — 관망',
+    '매도검토': '위험 신호 감지 — 일부 익절 고려',
+    '부분익절': '고수익 + 과열 — 30~50% 익절 권장',
+    '매도':     '복수 고위험 신호 — 전량 매도 검토',
+    '즉시매도': '추세 붕괴 — 즉시 손절',
   };
 
   return (
@@ -235,15 +320,10 @@ function HoldingCard({ result: r, onRemove, earnings }: {
             className="text-base font-bold text-zinc-100 hover:text-emerald-300 transition-colors shrink-0">
             {r.ticker} ↗
           </button>
-
           <span className={`text-xs font-semibold px-2.5 py-1 rounded-md border ${ACTION_STYLE[liveAction] ?? 'bg-zinc-900 text-zinc-400 border-zinc-700'}`}>
             {liveAction}
           </span>
-
-          {actionChanged && (
-            <span className="text-[9px] text-zinc-600">(분석시: {r.action})</span>
-          )}
-
+          {actionChanged && <span className="text-[9px] text-zinc-600">(분석시: {r.action})</span>}
           {onRemove && (
             <button onClick={e => { e.stopPropagation(); onRemove(); }}
               className="w-5 h-5 flex items-center justify-center rounded-full bg-zinc-800 hover:bg-red-900 text-zinc-500 hover:text-red-400 transition-colors text-xs shrink-0">✕</button>
@@ -262,7 +342,6 @@ function HoldingCard({ result: r, onRemove, earnings }: {
                   <span className={`text-[9px] px-1 py-0.5 rounded ${rtPrice.isRealtime !== false ? 'text-emerald-700 bg-emerald-950 border border-emerald-900 animate-pulse' : 'text-zinc-600 bg-zinc-900 border border-zinc-800'}`}>
                     {rtPrice.isRealtime !== false ? '실시간' : '15분'}
                   </span>
-                  {/* 시간외 가격 뱃지 */}
                   <ExtPriceBadge />
                 </>
               )}
@@ -280,19 +359,29 @@ function HoldingCard({ result: r, onRemove, earnings }: {
         </div>
       </div>
 
-      {/* ── 접힌 요약 ── */}
+      {/* ── 접힌 요약 — 액션 설명 한 줄 추가 ── */}
       {!open && (
-        <div className="px-4 pb-3 border-t border-zinc-900 pt-2 flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-zinc-500">
-          <span>평균매수 <span className="text-zinc-400 font-mono">${r.avgPrice}</span></span>
-          {r.shares > 0 && <span>{r.shares}주</span>}
-          <span>RSI <span className={r.indicators.rsi > 78 ? 'text-red-400' : r.indicators.rsi < 35 ? 'text-sky-400' : 'text-emerald-400'}>{r.indicators.rsi}</span></span>
-          <span>MA위 <span className={r.indicators.aboveCount >= 3 ? 'text-emerald-400' : r.indicators.aboveCount <= 1 ? 'text-red-400' : 'text-amber-400'}>{r.indicators.aboveCount}/4</span></span>
-          <span>거래량 <span className={r.indicators.volRatio > 1.3 ? 'text-emerald-400' : 'text-zinc-400'}>{r.indicators.volRatio}x</span></span>
-          <span className={upsideColor}>{r.upside.label}</span>
-          {r.sellSignals.length > 0 && <span className="text-red-400">매도신호 {r.sellSignals.length}개</span>}
-          {r.stopLoss.recommended.price && (
-            <span>손절 <span className="text-amber-400 font-mono">${r.stopLoss.recommended.price}</span></span>
+        <div className="px-4 pb-3 border-t border-zinc-900 pt-2">
+          {actionDesc[liveAction] && (
+            <p className={`text-[10px] mb-1.5 ${
+              liveAction === '추세홀딩' ? 'text-emerald-400' :
+              liveAction === '홀딩' ? 'text-emerald-600' :
+              ['즉시매도','매도'].includes(liveAction) ? 'text-red-400' :
+              liveAction === '매도검토' ? 'text-amber-400' : 'text-zinc-500'
+            }`}>{actionDesc[liveAction]}</p>
           )}
+          <div className="flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-zinc-500">
+            <span>평균매수 <span className="text-zinc-400 font-mono">${r.avgPrice}</span></span>
+            {r.shares > 0 && <span>{r.shares}주</span>}
+            <span>RSI <span className={r.indicators.rsi > 78 ? 'text-red-400' : r.indicators.rsi < 35 ? 'text-sky-400' : 'text-emerald-400'}>{r.indicators.rsi}</span></span>
+            <span>MA위 <span className={r.indicators.aboveCount >= 3 ? 'text-emerald-400' : r.indicators.aboveCount <= 1 ? 'text-red-400' : 'text-amber-400'}>{r.indicators.aboveCount}/4</span></span>
+            <span>거래량 <span className={r.indicators.volRatio > 1.3 ? 'text-emerald-400' : 'text-zinc-400'}>{r.indicators.volRatio}x</span></span>
+            <span className={upsideColor}>{r.upside.label}</span>
+            {r.sellSignals.length > 0 && <span className="text-red-400">매도신호 {r.sellSignals.length}개</span>}
+            {r.downsideRisk && (
+              <span className="text-amber-600">손절 {r.downsideRisk.toStopLoss}%</span>
+            )}
+          </div>
         </div>
       )}
 
@@ -320,6 +409,9 @@ function HoldingCard({ result: r, onRemove, earnings }: {
               <div>
                 {earnings && <div className="mb-3"><EarningsBadge info={earnings} /></div>}
                 <UpsideBar score={r.upside.score} label={r.upside.label} />
+
+                {/* ── 핵심: 판단 도우미 패널 ── */}
+                <RegretPanel r={r} action={liveAction} />
 
                 <div className="grid grid-cols-4 sm:grid-cols-7 gap-2 mb-3 p-3 bg-zinc-900/50 rounded-lg">
                   {[
@@ -442,11 +534,9 @@ function TargetPill({ label, val, color }: { label: string; val: string; color: 
   );
 }
 
-// ── 총 손익용 실시간 가격 훅 ──────────────────────────────────────────────────
 function usePortfolioRtPrices(results: HoldingResult[]) {
   const [rtMap, setRtMap] = useState<Record<string, number>>({});
   const tickerKey = results.map(r => r.ticker).join(',');
-
   useEffect(() => {
     if (results.length === 0) return;
     const fetchAll = () =>
@@ -457,17 +547,15 @@ function usePortfolioRtPrices(results: HoldingResult[]) {
           const quotes = d.quotes ?? (d.price ? [{ ticker: results[0].ticker, price: d.price }] : []);
           for (const q of quotes) if (q?.price > 0) map[q.ticker] = q.price;
           setRtMap(map);
-        })
-        .catch(() => {});
+        }).catch(() => {});
     fetchAll();
     const iv = setInterval(fetchAll, 30000);
     return () => clearInterval(iv);
   }, [tickerKey]);
-
   return rtMap;
 }
 
-// ── Main Component ────────────────────────────────────────────────────────────
+// ── Main ──────────────────────────────────────────────────────────────────────
 export default function PortfolioTab() {
   const [holdings,    setHoldings]    = useState<Holding[]>([]);
   const [results,     setResults]     = useState<HoldingResult[]>([]);
@@ -482,8 +570,8 @@ export default function PortfolioTab() {
   const [showHoldings, setShowHoldings] = useState(false);
   const [showForm,     setShowForm]     = useState(false);
 
-  const rtMap        = usePortfolioRtPrices(results);
-  const analyzeRef   = useRef<(() => Promise<void>) | undefined>(undefined);
+  const rtMap      = usePortfolioRtPrices(results);
+  const analyzeRef = useRef<(() => Promise<void>) | undefined>(undefined);
 
   async function analyze() {
     if (holdings.length === 0 || loading) return;
@@ -503,14 +591,8 @@ export default function PortfolioTab() {
       try { localStorage.setItem(PORTFOLIO_CACHE, JSON.stringify({ results: data.holdings, analyzed_at: data.analyzed_at })); } catch {}
       try {
         await fetch('/api/db', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            type: 'portfolio',
-            holdings: holdings,
-            results: data.holdings,
-            analyzed_at: data.analyzed_at,
-          }),
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ type: 'portfolio', holdings, results: data.holdings, analyzed_at: data.analyzed_at }),
         });
       } catch {}
       try {
@@ -535,7 +617,6 @@ export default function PortfolioTab() {
       if (s) loadedHoldings = JSON.parse(s);
       setHoldings(loadedHoldings);
     } catch {}
-
     try {
       const cached = localStorage.getItem(PORTFOLIO_CACHE);
       if (cached) {
@@ -549,10 +630,7 @@ export default function PortfolioTab() {
         }
       }
     } catch {}
-
-    if (loadedHoldings.length > 0) {
-      setTimeout(() => analyzeRef.current?.(), 300);
-    }
+    if (loadedHoldings.length > 0) setTimeout(() => analyzeRef.current?.(), 300);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -615,7 +693,6 @@ export default function PortfolioTab() {
 
   return (
     <div>
-
       {/* 종목 추가/수정 폼 */}
       <div className="mb-3 border border-zinc-800 rounded-xl bg-zinc-900/40 overflow-hidden">
         <button
@@ -626,7 +703,6 @@ export default function PortfolioTab() {
           </span>
           <span className="text-zinc-600 text-xs">{showForm ? '▲' : '▼'}</span>
         </button>
-
         {(showForm || editIdx !== null) && (
           <div className="px-3 pb-3 border-t border-zinc-800/60 pt-3">
             <div className="flex gap-2 mb-2">
@@ -674,7 +750,6 @@ export default function PortfolioTab() {
             </div>
             <span className="text-zinc-600 text-xs shrink-0">{showHoldings ? '▲ 접기' : '▼ 펼치기'}</span>
           </button>
-
           {showHoldings && (
             <div className="flex flex-wrap gap-1.5 mb-3">
               {holdings.map((h, i) => (
@@ -688,7 +763,6 @@ export default function PortfolioTab() {
               ))}
             </div>
           )}
-
           <button onClick={analyze} disabled={loading}
             className={`w-full py-2.5 text-sm font-semibold rounded-lg border transition-all
               ${loading
@@ -702,7 +776,7 @@ export default function PortfolioTab() {
       {status && <div className={`text-xs mb-4 font-mono ${loading ? 'text-sky-500' : 'text-zinc-600'}`}>{status}</div>}
       {error  && <div className="mb-4 p-4 bg-red-950 border border-red-800 rounded-xl text-sm text-red-300">오류: {error}</div>}
 
-      {/* 총 손익 요약 */}
+      {/* 총 손익 */}
       {results.length > 0 && totalCost > 0 && (
         <div className="grid grid-cols-3 gap-3 mb-4">
           <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 text-center">
@@ -725,7 +799,7 @@ export default function PortfolioTab() {
         </div>
       )}
 
-      {/* 정렬 버튼 + action 카운트 */}
+      {/* 정렬 + action 카운트 */}
       {results.length > 0 && (
         <div className="flex items-center gap-2 mb-4 flex-wrap">
           <span className="text-[10px] text-zinc-600 uppercase tracking-widest shrink-0">정렬</span>
@@ -739,7 +813,7 @@ export default function PortfolioTab() {
             ))}
           </div>
           <div className="flex gap-1.5 ml-1 flex-wrap">
-            {['즉시매도', '매도', '매도검토', '홀딩', '모니터링'].map(a => {
+            {['즉시매도', '매도', '부분익절', '매도검토', '홀딩', '추세홀딩', '모니터링'].map(a => {
               const cnt = results.filter(r => deriveRealtimeAction(r, rtMap[r.ticker] ?? r.currentPrice) === a).length;
               if (cnt === 0) return null;
               return (
@@ -752,7 +826,7 @@ export default function PortfolioTab() {
         </div>
       )}
 
-      {/* 종목 카드 그리드 */}
+      {/* 카드 그리드 */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
         {sortedResults.map((r, i) => r.error ? (
           <div key={r.ticker} className="p-4 border border-zinc-800 rounded-xl bg-zinc-900/40 flex items-center justify-between">
