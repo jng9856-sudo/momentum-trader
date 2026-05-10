@@ -5,8 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import type { StockAnalysis } from '@/types/stock';
 import TradingViewChart from './TradingViewChart';
 
-const CACHE_KEY       = 'mt_analysis_v4';
-const PORTFOLIO_CACHE = 'mt_portfolio_cache_v2';
+const CACHE_KEY = 'mt_analysis_v4';
 
 const SIG_KO: Record<string, string> = {
   STRONG_BUY: '즉시매수', BUY: '매수', HOLD: '관망', SELL: '매도', STRONG_SELL: '즉시매도',
@@ -94,24 +93,8 @@ export default function StockDetailPage() {
       }
     } catch {}
 
-    // ── 2) 포트폴리오 캐시 (mt_portfolio_cache_v2) ───────────────────────────
-    // portfolio 분석 결과에는 StockAnalysis와 호환되는 필드가 있음
-    try {
-      const pcache = localStorage.getItem(PORTFOLIO_CACHE);
-      if (pcache) {
-        const { results } = JSON.parse(pcache);
-        // portfolio API가 반환하는 HoldingResult에서 StockAnalysis에 필요한 필드 매핑
-        const found = (results as StockAnalysis[]).find(s => s.ticker === upper);
-        if (found) {
-          setStock(found);
-          fetch(`/api/insider?ticker=${found.ticker}`)
-            .then(r => r.json()).then(d => setInsider(d)).catch(() => {});
-          return;
-        }
-      }
-    } catch {}
-
-    // ── 3) 캐시 미스 → /api/analyze 직접 호출 ───────────────────────────────
+    // ── 2) 캐시 미스 → /api/analyze 직접 호출 ───────────────────────────────
+    // 포트폴리오 캐시는 필드명이 달라(HoldingResult) StockAnalysis와 호환 안 됨
     setFetching(true);
     fetch('/api/analyze', {
       method: 'POST',
