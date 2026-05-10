@@ -20,12 +20,20 @@ function calcRSI(closes: number[], period = 14): number {
   }
   return al === 0 ? 100 : Math.round((100 - 100 / (1 + ag/al)) * 10) / 10;
 }
-function calcMACD(closes: number[]): { histogram: number } {
+
+// ── MACD — prevHistogram 추가 ─────────────────────────────────────────────────
+function calcMACD(closes: number[]): { histogram: number; prevHistogram: number } {
   const e12 = calcEMA(closes, 12), e26 = calcEMA(closes, 26);
   const line = e12.map((v, i) => v - e26[i]);
   const sig  = calcEMA(line.slice(-60), 9);
-  return { histogram: Math.round((line[line.length-1] - sig[sig.length-1]) * 1000) / 1000 };
+  const hist     = line[line.length-1] - sig[sig.length-1];
+  const prevHist = line[line.length-2] - sig[sig.length-2];
+  return {
+    histogram:     Math.round(hist * 1000) / 1000,
+    prevHistogram: Math.round(prevHist * 1000) / 1000,
+  };
 }
+
 function calcBB(closes: number[], period = 20): { position: number } {
   const sl = closes.slice(-period), mid = sl.reduce((a, b) => a + b, 0) / period;
   const std = Math.sqrt(sl.reduce((a, b) => a + (b-mid)**2, 0) / period);
@@ -360,22 +368,18 @@ async function fetchMarketRegime(): Promise<MarketRegimeData | null> {
 }
 
 // ── 시장 국면 신호 강등 ────────────────────────────────────────────────────────
-// BREAKOUT → SETUP → WATCH → HOLD 단계별 강등
 function applyRegimeFilter(signal: string, score: number, regime: MarketRegime): { adjustedSignal: string; adjustedScore: number; regimeNote: string | null } {
   if (regime === 'BULL') return { adjustedSignal: signal, adjustedScore: score, regimeNote: null };
   if (regime === 'NEUTRAL') {
-    // 중립장: 즉시진입 → 진입대기로 한 단계 하향
     if (signal === 'BREAKOUT') return { adjustedSignal: 'SETUP', adjustedScore: Math.max(0, score - 5), regimeNote: '🟡 중립 시장 — BREAKOUT → SETUP 하향' };
     return { adjustedSignal: signal, adjustedScore: score, regimeNote: null };
   }
   if (regime === 'CAUTION') {
-    // 약세주의: BREAKOUT → SETUP, SETUP → WATCH
     if (signal === 'BREAKOUT') return { adjustedSignal: 'SETUP', adjustedScore: Math.max(0, score - 10), regimeNote: '🟠 약세주의 — BREAKOUT → SETUP 하향 (SPY 200일선 하회)' };
     if (signal === 'SETUP') return { adjustedSignal: 'WATCH', adjustedScore: Math.max(0, score - 10), regimeNote: '🟠 약세주의 — SETUP → WATCH 하향 (SPY 200일선 하회)' };
     return { adjustedSignal: signal, adjustedScore: score, regimeNote: null };
   }
   if (regime === 'BEAR') {
-    // 약세장: 모든 진입 신호 무효화
     if (signal === 'BREAKOUT' || signal === 'SETUP' || signal === 'WATCH') return { adjustedSignal: 'HOLD', adjustedScore: Math.max(0, score - 20), regimeNote: '🔴 약세장 — 진입 신호 무효화 (SPY 200일선 하회 + VIX 35+)' };
     return { adjustedSignal: signal, adjustedScore: score, regimeNote: null };
   }
@@ -459,7 +463,6 @@ function calcMAAlignment(price: number, mas: Record<string, number>) {
 
 function calcEntryZone(price: number, mas: Record<string, number>, atrAbs: number, signal: string, distFromHigh: number, vcp: VCPResult, pivot: { isBroken: boolean; distFromPivot: number; withinChaseLimit: boolean }) {
   const r = (n: number) => Math.round(n * 100) / 100;
-  // HOLD/SELL/STRONG_SELL은 진입구간 없음
   if (signal === 'HOLD' || signal === 'SELL' || signal === 'STRONG_SELL') return { entry: null, stopLoss: `$${r(price - 2 * atrAbs)}` };
   if (vcp.isVCP && vcp.pivotPrice && pivot.isBroken && pivot.withinChaseLimit) return { entry: `$${r(vcp.pivotPrice)}–$${r(vcp.pivotPrice * 1.03)} (VCP 피봇 돌파)`, stopLoss: `$${r(vcp.pivotPrice * 0.97)}` };
   if (vcp.isVCP && vcp.pivotPrice && !pivot.isBroken) return { entry: `$${r(vcp.pivotPrice)}–$${r(vcp.pivotPrice * 1.03)} (피봇 돌파 대기)`, stopLoss: `$${r(vcp.pivotPrice * 0.97)}` };
@@ -492,7 +495,6 @@ async function fetchWeeklyData(ticker: string): Promise<WeeklyData | null> {
     const high13w = Math.max(...closes.slice(-13)), pullbackPct = ((price - high13w) / high13w) * 100;
     const isEntry = trend === 'UPTREND' && aboveAllMAs && pullbackPct >= -8 && pullbackPct <= -2;
 
-    // ── 주봉 alignScore 0-100 스케일 ──────────────────────────────────────────
     let alignScore = 50;
     if (trend === 'UPTREND') alignScore += 20; else if (trend === 'DOWNTREND') alignScore -= 20;
     if (aboveAllMAs) alignScore += 15;
@@ -547,7 +549,6 @@ async function fetchShortInterest(ticker: string) {
   } catch { return null; }
 }
 
-// ── 섹터/업종 조회 ─────────────────────────────────────────────────────────────
 async function fetchSector(ticker: string): Promise<{ sector: string | null; industry: string | null }> {
   try {
     const res = await fetch(
@@ -567,7 +568,8 @@ interface QuoteData {
   ticker: string; price: number; change1d: number; ytdReturn: number;
   ma10: number; ma20: number; ma30: number; ma50: number; ma120: number; ma200: number;
   high52w: number; low52w: number; distFromHigh: number; momentum3m: number;
-  rsi: number; macdHistogram: number; bbPosition: number; atrPct: number; atrAbs: number; volumeRatio: number;
+  rsi: number; macdHistogram: number; prevMacdHistogram: number; bbPosition: number;
+  atrPct: number; atrAbs: number; volumeRatio: number;
   closes: number[]; volumes: number[];
   spyCloses: number[];
   vcp: VCPResult; pivot: { isBroken: boolean; distFromPivot: number; withinChaseLimit: boolean };
@@ -601,13 +603,22 @@ async function fetchQuote(ticker: string): Promise<QuoteData | null> {
     const ma10=calcMA(cs,10), ma20=calcMA(cs,20), ma30=calcMA(cs,30), ma50=calcMA(cs,50), ma120=calcMA(cs,120), ma200=calcMA(cs,200);
     const high52w=Math.max(...cs.slice(-252)), low52w=Math.min(...cs.slice(-252));
     const distFromHigh=((price-high52w)/high52w)*100, rsi=calcRSI(cs.slice(-30));
-    const { histogram }=calcMACD(cs), { position }=calcBB(cs);
+    const { histogram, prevHistogram }=calcMACD(cs), { position }=calcBB(cs);
     const atrVal=calcATR(hs.slice(-20),ls.slice(-20),cs.slice(-20)), volRatio=calcVolumeRatio(vs);
     const obv=calcOBV(cs.slice(-60), vs.slice(-60));
     const [shortInterest, weekly, earningSurprise, sectorData] = await Promise.all([fetchShortInterest(ticker), fetchWeeklyData(ticker), fetchEarningsSurprise(ticker), fetchSector(ticker)]);
     const breakout52w=detect52wBreakout(cs,vs), vcp=detectVCP(cs,vs,high52w), pivot=checkPivotBreakout(cs,vs,vcp.pivotPrice);
     const r = (n: number, d=2) => Math.round(n * 10**d) / 10**d;
-    return { ticker, price:r(price), change1d:r(change1d,1), ytdReturn:r(ytdReturn,1), momentum3m:r(momentum3m,1), ma10:r(ma10), ma20:r(ma20), ma30:r(ma30), ma50:r(ma50), ma120:r(ma120), ma200:r(ma200), high52w:r(high52w), low52w:r(low52w), distFromHigh:r(distFromHigh,1), rsi:r(rsi,1), macdHistogram:r(histogram,4), bbPosition:Math.round(position), atrPct:r((atrVal/price)*100,2), atrAbs:r(atrVal,2), volumeRatio:r(volRatio,2), closes:cs.slice(-70), volumes:vs.slice(-15), spyCloses:[], vcp, pivot, obv, shortInterest, weekly, breakout52w, earningSurprise, sector: sectorData.sector, industry: sectorData.industry };
+    return {
+      ticker, price:r(price), change1d:r(change1d,1), ytdReturn:r(ytdReturn,1), momentum3m:r(momentum3m,1),
+      ma10:r(ma10), ma20:r(ma20), ma30:r(ma30), ma50:r(ma50), ma120:r(ma120), ma200:r(ma200),
+      high52w:r(high52w), low52w:r(low52w), distFromHigh:r(distFromHigh,1), rsi:r(rsi,1),
+      macdHistogram:r(histogram,4), prevMacdHistogram:r(prevHistogram,4),
+      bbPosition:Math.round(position), atrPct:r((atrVal/price)*100,2), atrAbs:r(atrVal,2),
+      volumeRatio:r(volRatio,2), closes:cs.slice(-70), volumes:vs.slice(-15), spyCloses:[],
+      vcp, pivot, obv, shortInterest, weekly, breakout52w, earningSurprise,
+      sector: sectorData.sector, industry: sectorData.industry,
+    };
   } catch { return null; }
 }
 
@@ -622,6 +633,16 @@ function analyzeStock(q: QuoteData, spyYtd: number, sectorAvgYtd: number, regime
   const pocketPivot = detectPocketPivot(q.closes, q.volumes, mas);
   const rsLine      = calcRSLine(q.closes, q.spyCloses);
 
+  // ── MACD 방향 플래그 ──────────────────────────────────────────────────────────
+  const macdBull       = q.macdHistogram > 0;
+  const macdBear       = q.macdHistogram < 0;
+  const macdExpanding  = q.macdHistogram > q.prevMacdHistogram;          // 히스토그램 확장 중
+  const macdContracting = q.macdHistogram > 0 && !macdExpanding;         // 양수이지만 축소 중
+
+  // ── 강세 모멘텀 모드 — RSI·BB caution 완화 기준 ──────────────────────────────
+  // 조건: 정배열 + MACD 양수 확장 + MA 4개 이상 위
+  const isMomentumMode = stackedBull && macdBull && macdExpanding && aboveCount >= 4;
+
   let pattern='NONE';
   if (q.vcp.isVCP && q.pivot.isBroken) pattern='BREAKOUT';
   else if (q.vcp.isVCP && !q.pivot.isBroken) pattern='CUP';
@@ -632,120 +653,92 @@ function analyzeStock(q: QuoteData, spyYtd: number, sectorAvgYtd: number, regime
   let score = 0;
 
   // ── A. 패턴·구조 (최대 30점) ─────────────────────────────────────────────────
-  // VCP 점수 (내부 0-100 → 최대 15점)
   score += (q.vcp.score / 100) * 15;
-
-  // 피봇 돌파 + 추격 한도 (최대 10점)
   if (q.pivot.isBroken && q.pivot.withinChaseLimit)        score += 10;
-  else if (q.pivot.isBroken && !q.pivot.withinChaseLimit)  score += 3;   // 돌파했으나 추격 한도 초과
-  else if (q.vcp.isVCP && q.pivot.distFromPivot >= -5)     score += 5;   // 피봇 5% 이내 대기
-
-  // 52주 신고가 돌파 (최대 5점)
+  else if (q.pivot.isBroken && !q.pivot.withinChaseLimit)  score += 3;
+  else if (q.vcp.isVCP && q.pivot.distFromPivot >= -5)     score += 5;
   if (q.breakout52w.isBreakout && q.breakout52w.breakoutDay === 0 && q.breakout52w.volConfirmed) score += 5;
   else if (q.breakout52w.isBreakout && q.breakout52w.breakoutDay === 0)  score += 3;
   else if (q.breakout52w.isBreakout && q.breakout52w.breakoutDay === 1)  score += 2;
 
   // ── B. 상대강도 (최대 25점) ──────────────────────────────────────────────────
-  // RS Line (최대 15점) — Minervini 전략의 최우선 지표
-  if      (rsLine.divergence === 'BULLISH')                               score += 15; // SPY 신저 + RS 신고 = 최우량
+  if      (rsLine.divergence === 'BULLISH')                               score += 15;
   else if (rsLine.rsLineTrend === 'UP' && rsLine.rs3mChange > 5)         score += 10;
   else if (rsLine.rsLineTrend === 'UP')                                   score += 6;
   else if (rsLine.rsLineTrend === 'FLAT')                                 score += 2;
   else if (rsLine.rsLineTrend === 'DOWN')                                 score -= 3;
-  if      (rsLine.divergence === 'BEARISH')                               score -= 5;  // 추가 감점
-
-  // RS vs 지수 YTD (최대 5점)
+  if      (rsLine.divergence === 'BEARISH')                               score -= 5;
   if      (rsIndex === 'STRONG') score += 5;
   else if (rsIndex === 'WEAK')   score -= 5;
-
-  // RS vs 섹터 (최대 5점)
   if      (rsSector === 'STRONG') score += 5;
   else if (rsSector === 'WEAK')   score -= 3;
 
   // ── C. MA 배열·추세 (최대 20점) ──────────────────────────────────────────────
-  // MA 위 개수 0~5개 → 0~10점
   score += aboveCount * 2;
-
-  // 정배열/역배열 (최대 5점)
   if (stackedBull) score += 5;
   if (stackedBear) score -= 5;
-
-  // 주봉 추세·진입 타점 (최대 5점)
   if (q.weekly) {
-    if      (q.weekly.trend === 'UPTREND' && q.weekly.isEntry)        score += 5; // 최고 타점
+    if      (q.weekly.trend === 'UPTREND' && q.weekly.isEntry)        score += 5;
     else if (q.weekly.trend === 'UPTREND' && q.weekly.aboveAllMAs)    score += 3;
     else if (q.weekly.trend === 'UPTREND')                            score += 1;
     else if (q.weekly.trend === 'DOWNTREND')                          score -= 5;
   }
 
   // ── D. 모멘텀 지표 (최대 15점) ───────────────────────────────────────────────
-  // RSI (최대 5점)
-  if      (q.rsi >= 50 && q.rsi <= 70) score += 5;  // 황금 구간
-  else if (q.rsi >= 45 && q.rsi <  50) score += 3;
-  else if (q.rsi >= 70 && q.rsi <= 78) score += 2;  // 약간 과열
-  else if (q.rsi >  78)                score -= 3;  // 과열 감점
-  else if (q.rsi <  30)                score -= 3;  // 과매도 감점
 
-  // 거래량 비율 (최대 4점)
+  // RSI — 강세 모드일 때 78-85 구간 감점 완화
+  if      (q.rsi >= 50 && q.rsi <= 70)               score += 5;  // 황금 구간
+  else if (q.rsi >= 45 && q.rsi <  50)               score += 3;
+  else if (q.rsi >= 70 && q.rsi <= 78)               score += 2;
+  else if (q.rsi > 78  && q.rsi <= 85 && isMomentumMode) score += 1;  // 강세 모드: 소폭 가점
+  else if (q.rsi > 78  && q.rsi <= 85)               score -= 1;  // 일반 모드: 소폭 감점
+  else if (q.rsi > 85)                                score -= 3;  // 극도 과열만 강하게 감점
+  else if (q.rsi < 30)                                score -= 3;
+
+  // 거래량 비율
   if      (q.volumeRatio >= 2.0) score += 4;
   else if (q.volumeRatio >= 1.5) score += 3;
   else if (q.volumeRatio >= 1.0) score += 1;
   else if (q.volumeRatio <  0.7) score -= 2;
 
-  // MACD histogram (최대 3점)
-  if      (q.macdHistogram > 0.05)  score += 3;
-  else if (q.macdHistogram > 0)     score += 1;
-  else if (q.macdHistogram < -0.05) score -= 2;
-  else                              score -= 1;
+  // MACD — 확장/축소 방향 반영
+  if      (q.macdHistogram > 0.05 && macdExpanding)   score += 4;  // 양수 + 확장: 최고
+  else if (q.macdHistogram > 0.05 && macdContracting) score += 2;  // 양수지만 축소: 주의
+  else if (q.macdHistogram > 0)                       score += 1;
+  else if (q.macdHistogram < -0.05 && !macdExpanding) score -= 3;  // 음수 + 계속 하락
+  else if (q.macdHistogram < -0.05)                   score -= 1;  // 음수이지만 회복 시도
+  else                                                score -= 1;
 
-  // OBV (최대 3점)
+  // OBV
   if      (q.obv.trend === 'UP'   && !q.obv.divergence) score += 3;
   else if (q.obv.trend === 'DOWN' && !q.obv.divergence) score -= 2;
-  if      (q.obv.divergence && q.obv.trend === 'DOWN')  score -= 3; // 베어리시 다이버전스 추가 감점
+  if      (q.obv.divergence && q.obv.trend === 'DOWN')  score -= 3;
 
   // ── E. 촉매·특수 (최대 10점) ─────────────────────────────────────────────────
-  // Pocket Pivot (최대 5점)
   if      (pocketPivot.isPocketPivot && pocketPivot.daysAgo === 0) score += 5;
   else if (pocketPivot.isPocketPivot && pocketPivot.daysAgo === 1) score += 3;
-
-  // 어닝 서프라이즈 PEAD (최대 3점)
   if (q.earningSurprise?.peadSignal) {
     if ((q.earningSurprise.surprisePct ?? 0) > 15) score += 3;
     else                                           score += 2;
   }
-
-  // 숏스퀴즈 (최대 2점, VCP 조합일 때만 가점 / 과도한 공매도는 감점)
   if      (q.shortInterest?.squeezePotential === 'HIGH' && q.vcp.isVCP) score += 2;
   else if (q.shortInterest?.shortPct && q.shortInterest.shortPct > 20)  score -= 2;
 
   // ── 최종 클램핑 0-100 ─────────────────────────────────────────────────────────
   score = Math.max(0, Math.min(100, Math.round(score)));
 
-  const macdBull=q.macdHistogram>0, macdBear=q.macdHistogram<0, rsiOk=q.rsi>=45&&q.rsi<=75, volStrong=q.volumeRatio>1.5;
+  const rsiOk=q.rsi>=45&&q.rsi<=75, volStrong=q.volumeRatio>1.5;
 
-  // ── 신호 4단계 분류 (0-100 임계값) ───────────────────────────────────────────
-  // BREAKOUT: 거래량 동반 실제 돌파 — 지금 당장 진입 가능한 종목만
-  // SETUP:    피봇 근처 대기 or 패턴 완성 — 진입 준비 완료
-  // WATCH:    좋은 종목이나 아직 셋업 미완성 — 관심 등록
-  // HOLD:     기본값 — 보유 중이거나 조건 미달
+  // ── 신호 4단계 분류 ───────────────────────────────────────────────────────────
   let signal='HOLD';
-
-  // BREAKOUT: 거래량 확인된 진짜 돌파 신호
   if (q.breakout52w.isBreakout&&q.breakout52w.breakoutDay===0&&q.breakout52w.volConfirmed&&aboveCount>=3&&rsIndex!=='WEAK') signal='BREAKOUT';
   else if (q.vcp.isVCP&&q.pivot.isBroken&&q.pivot.withinChaseLimit&&volStrong&&aboveCount>=3) signal='BREAKOUT';
   else if (score>=85&&aboveCount>=4&&stackedBull&&macdBull&&rsiOk&&volStrong) signal='BREAKOUT';
-  // Pocket Pivot 오늘 + RS 강세 다이버전스 = 최우량 BREAKOUT
   else if (pocketPivot.isPocketPivot&&pocketPivot.daysAgo===0&&rsLine.divergence==='BULLISH'&&aboveCount>=3) signal='BREAKOUT';
-
-  // SETUP: 패턴 완성 or 피봇 5% 이내 대기 — 아직 돌파 전
   else if (q.vcp.isVCP&&!q.pivot.isBroken&&q.pivot.distFromPivot>=-5&&aboveCount>=3&&rsIndex!=='WEAK') signal='SETUP';
   else if (pocketPivot.isPocketPivot&&aboveCount>=3&&macdBull) signal='SETUP';
   else if (score>=70&&aboveCount>=3&&rsIndex!=='WEAK') signal='SETUP';
-
-  // WATCH: 좋은 종목이나 셋업 미완성 — 관심 등록만
   else if (score>=50&&aboveCount>=2&&rsIndex!=='WEAK') signal='WATCH';
-
-  // SELL / STRONG_SELL
   else if (score<=15||(aboveCount===0&&macdBear&&rsIndex==='WEAK')) signal='STRONG_SELL';
   else if (score<=35||(aboveCount<=1&&rsIndex==='WEAK')) signal='SELL';
 
@@ -764,7 +757,6 @@ function analyzeStock(q: QuoteData, spyYtd: number, sectorAvgYtd: number, regime
     supportPrice:  null as number | null,
     nearestSupport: null as string | null,
   };
-  // BREAKOUT / SETUP만 분할 매수 구간 계산
   const splitZones = (signal === 'BREAKOUT' || signal === 'SETUP')
     ? calcSplitZones(q.price, mas, q.atrAbs, q.vcp, pullbackForSplit)
     : null;
@@ -773,11 +765,27 @@ function analyzeStock(q: QuoteData, spyYtd: number, sectorAvgYtd: number, regime
   const signalWord={ BREAKOUT:'즉시진입', SETUP:'진입대기', WATCH:'관심등록', HOLD:'관망', SELL:'매도', STRONG_SELL:'즉시매도' }[signal]??signal;
   const summary=`[${signalWord}] YTD ${q.ytdReturn>0?'+':''}${q.ytdReturn}% (S&P500 대비 ${excessIdx>0?'+':''}${Math.round(excessIdx*10)/10}%). ${maStatus}. RSI ${q.rsi} · MACD ${macdBull?'상승':'하락'} · 거래량 ${q.volumeRatio}x.`;
 
+  // ── cautions — 완화된 RSI·BB 기준 적용 ──────────────────────────────────────
   const cautions: string[]=[];
   if (regimeNote) cautions.push(regimeNote);
   if (rrGrade==='POOR'&&(signal==='BREAKOUT'||signal==='SETUP'||signal==='WATCH')) cautions.push(`R/R ${rrLabel} — 리스크 대비 수익 불리, 진입 재검토`);
-  if (q.rsi>78) cautions.push(`RSI ${q.rsi} 과열`);
-  if (q.bbPosition>90) cautions.push('BB 상단 근접');
+
+  // RSI: 극도 과열(>85)만 강하게 경보 / 78-85는 강세 모드이면 생략
+  if (q.rsi > 85)
+    cautions.push(`RSI ${q.rsi} 극도 과열 — 분할 익절 고려`);
+  else if (q.rsi > 78 && !isMomentumMode)
+    cautions.push(`RSI ${q.rsi} 과열 (강세 추세 미확인)`);
+
+  // BB: 강세 모드이면 100% 이하 생략, 100% 초과만 경보
+  if (q.bbPosition > 100 && !isMomentumMode)
+    cautions.push('BB 상단 초과 — 단기 과열');
+  else if (q.bbPosition > 90 && !isMomentumMode)
+    cautions.push('BB 상단 근접');
+
+  // MACD 축소 경보 — 조기 전량 매도 대신 트레일링 스탑 유도
+  if (macdContracting && (signal === 'BREAKOUT' || signal === 'SETUP'))
+    cautions.push(`MACD 히스토그램 축소 중 — 트레일링 스탑 $${trailingStop.trailStop10} 설정 고려`);
+
   if (q.distFromHigh>-3&&(signal==='BREAKOUT'||signal==='SETUP')&&!q.pivot.isBroken) cautions.push('52주 고점 근접 — 돌파 확인 후 진입');
   if (q.pivot.isBroken&&!q.pivot.withinChaseLimit) cautions.push(`피봇 돌파 후 ${q.pivot.distFromPivot}% — 추격 한도 초과`);
   if (q.volumeRatio<0.6) cautions.push('거래량 부족');
@@ -793,7 +801,9 @@ function analyzeStock(q: QuoteData, spyYtd: number, sectorAvgYtd: number, regime
     rs_vs_index:rsIndex, rs_vs_sector:rsSector, ma50_status:ma50Status, pattern,
     volume_confirmation:volStrong, entry_zone:entry, key_support:support, key_resistance:resistance, stop_loss:stopLoss,
     summary, caution:cautions.length>0?cautions.join(' / '):null,
-    rsi:q.rsi, macd_histogram:q.macdHistogram, bb_position:q.bbPosition, atr_pct:q.atrPct, volume_ratio:q.volumeRatio,
+    rsi:q.rsi, macd_histogram:q.macdHistogram, prev_macd_histogram:q.prevMacdHistogram,
+    macd_expanding:macdExpanding, macd_contracting:macdContracting, is_momentum_mode:isMomentumMode,
+    bb_position:q.bbPosition, atr_pct:q.atrPct, volume_ratio:q.volumeRatio,
     ma10:q.ma10, ma20:q.ma20, ma30:q.ma30, ma50:q.ma50, ma120:q.ma120,
     above_ma_count:aboveCount, stacked_bull:stackedBull, stacked_bear:stackedBear,
     vcp_score:q.vcp.score, vcp_is_vcp:q.vcp.isVCP, vcp_contraction_count:q.vcp.contractionCount,
@@ -866,7 +876,6 @@ export async function POST(req: NextRequest) {
     const ytd=validStocks[i]?.ytdReturn??0, rank=ytdValues.filter(v=>v<=ytd).length;
     const rsRank=Math.round((rank/totalCount)*100);
     (stocks[i] as Record<string,unknown>).rs_rank=rsRank;
-    // BREAKOUT/SETUP/WATCH에서만 RS 순위 경고
     if (rsRank<10&&(stocks[i].signal==='BREAKOUT'||stocks[i].signal==='SETUP'||stocks[i].signal==='WATCH')) {
       (stocks[i] as Record<string,unknown>).rs_rank_warning=true;
       if (stocks[i].confidence==='HIGH') (stocks[i] as Record<string,unknown>).confidence='MEDIUM';
