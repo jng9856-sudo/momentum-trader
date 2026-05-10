@@ -5,17 +5,22 @@ import { useParams, useRouter } from 'next/navigation';
 import type { StockAnalysis } from '@/types/stock';
 import TradingViewChart from './TradingViewChart';
 
-const CACHE_KEY = 'mt_analysis_v4';
+const CACHE_KEY       = 'mt_analysis_v4';
+const PORTFOLIO_CACHE = 'mt_portfolio_cache_v2';
 
 const SIG_KO: Record<string, string> = {
   STRONG_BUY: '즉시매수', BUY: '매수', HOLD: '관망', SELL: '매도', STRONG_SELL: '즉시매도',
+  BREAKOUT: '즉시진입', SETUP: '진입대기', WATCH: '관심등록',
 };
 const SIG_COLOR: Record<string, string> = {
-  STRONG_BUY: 'text-emerald-300 border-emerald-500 bg-emerald-950',
-  BUY:        'text-emerald-400 border-emerald-700 bg-emerald-950/60',
-  HOLD:       'text-amber-400   border-amber-700   bg-amber-950/60',
-  SELL:       'text-red-400     border-red-700     bg-red-950/60',
-  STRONG_SELL:'text-red-300     border-red-500     bg-red-950',
+  STRONG_BUY:  'text-emerald-300 border-emerald-500 bg-emerald-950',
+  BUY:         'text-emerald-400 border-emerald-700 bg-emerald-950/60',
+  BREAKOUT:    'text-emerald-300 border-emerald-500 bg-emerald-950',
+  SETUP:       'text-emerald-400 border-emerald-700 bg-emerald-950/60',
+  WATCH:       'text-sky-400     border-sky-700     bg-sky-950/60',
+  HOLD:        'text-amber-400   border-amber-700   bg-amber-950/60',
+  SELL:        'text-red-400     border-red-700     bg-red-950/60',
+  STRONG_SELL: 'text-red-300     border-red-500     bg-red-950',
 };
 
 interface BullBear { text: string; type: 'bull' | 'bear' | 'neutral'; }
@@ -24,42 +29,34 @@ function generateReasons(s: StockAnalysis): { bulls: BullBear[]; bears: BullBear
   const bulls: BullBear[] = [];
   const bears: BullBear[] = [];
 
-  // RS
   if (s.rs_vs_index === 'STRONG')  bulls.push({ text: `S&P500 대비 RS 강세 — 지수 아웃퍼폼 중`, type: 'bull' });
   if (s.rs_vs_index === 'WEAK')    bears.push({ text: `S&P500 대비 RS 약세 — 지수 언더퍼폼 중`, type: 'bear' });
   if (s.rs_vs_sector === 'STRONG') bulls.push({ text: `섹터 내 RS 우위 — 동종 종목 대비 강세`, type: 'bull' });
   if (s.rs_vs_sector === 'WEAK')   bears.push({ text: `섹터 내 RS 열위 — 동종 종목 대비 약세`, type: 'bear' });
 
-  // MA
   if (s.ma50_status === 'ABOVE') bulls.push({ text: `50일 이동평균선 위에서 거래 중 (지지 확인)`, type: 'bull' });
   if (s.ma50_status === 'BELOW') bears.push({ text: `50일 이동평균선 아래 — 추세 약화 신호`, type: 'bear' });
   if (s.ma50_status === 'AT')    bears.push({ text: `50일 이동평균선 근접 — 지지/저항 테스트 중`, type: 'neutral' as 'bear' });
 
-  // RSI
   if (s.rsi >= 45 && s.rsi <= 70) bulls.push({ text: `RSI ${s.rsi} — 건전한 강세 구간 (45–70)`, type: 'bull' });
   if (s.rsi > 78)  bears.push({ text: `RSI ${s.rsi} 과열 — 단기 조정 가능성`, type: 'bear' });
   if (s.rsi < 35)  bears.push({ text: `RSI ${s.rsi} 침체 — 하락 압력 지속`, type: 'bear' });
 
-  // MACD
   if (s.macd_histogram > 0) bulls.push({ text: `MACD 히스토그램 양수(+${s.macd_histogram}) — 상승 모멘텀`, type: 'bull' });
   else bears.push({ text: `MACD 히스토그램 음수(${s.macd_histogram}) — 하락 모멘텀`, type: 'bear' });
 
-  // Volume
   if (s.volume_ratio > 1.5) bulls.push({ text: `거래량 ${s.volume_ratio}x — 평균 대비 강한 매수세 확인`, type: 'bull' });
   if (s.volume_ratio < 0.7) bears.push({ text: `거래량 ${s.volume_ratio}x — 거래량 부족, 신뢰도 낮음`, type: 'bear' });
 
-  // Bollinger Band
   if (s.bb_position >= 40 && s.bb_position <= 80) bulls.push({ text: `볼린저밴드 ${s.bb_position}% — 건전한 중간~상단 구간`, type: 'bull' });
   if (s.bb_position > 90) bears.push({ text: `볼린저밴드 ${s.bb_position}% — 상단 돌파, 과매수 주의`, type: 'bear' });
   if (s.bb_position < 15) bears.push({ text: `볼린저밴드 ${s.bb_position}% — 하단 근접, 약세 압력`, type: 'bear' });
 
-  // Pattern
   if (s.pattern === 'BREAKOUT')  bulls.push({ text: `52주 고점 돌파 패턴 — 강한 상승 모멘텀`, type: 'bull' });
   if (s.pattern === 'CUP')       bulls.push({ text: `컵앤핸들 패턴 형성 — 돌파 시 강한 상승 가능`, type: 'bull' });
   if (s.pattern === 'W_BASE')    bulls.push({ text: `W베이스 패턴 — 이중 바닥 후 반등 시도`, type: 'bull' });
   if (s.pattern === 'DOWNTREND') bears.push({ text: `하락 추세 패턴 — 반등 확인 전 진입 위험`, type: 'bear' });
 
-  // ATR
   if (s.atr_pct < 2) bulls.push({ text: `ATR ${s.atr_pct}% — 낮은 변동성, 안정적 진입 환경`, type: 'bull' });
   if (s.atr_pct > 4) bears.push({ text: `ATR ${s.atr_pct}% — 높은 변동성, 손절폭 확대 필요`, type: 'bear' });
 
@@ -69,31 +66,87 @@ function generateReasons(s: StockAnalysis): { bulls: BullBear[]; bears: BullBear
 export default function StockDetailPage() {
   const { ticker } = useParams<{ ticker: string }>();
   const router     = useRouter();
-  const [stock,    setStock]    = useState<StockAnalysis | null>(null);
-  const [notFound, setNotFound] = useState(false);
-  const [insider,  setInsider]  = useState<{
+  const [stock,     setStock]     = useState<StockAnalysis | null>(null);
+  const [notFound,  setNotFound]  = useState(false);
+  const [fetching,  setFetching]  = useState(false); // 라이브 API 호출 중
+  const [insider,   setInsider]   = useState<{
     transactions: { filingDate: string; insiderName: string; title: string; transactionType: string; shares: number; price: number | null; totalValue: number | null; isBuy: boolean }[];
     recentBuys: number; recentSells: number; netShares: number;
     signal: 'BULLISH' | 'BEARISH' | 'NEUTRAL'; detail: string;
   } | null>(null);
 
   useEffect(() => {
+    if (!ticker) return;
+    const upper = ticker.toUpperCase();
+
+    // ── 1) 메인 분석 캐시 (mt_analysis_v4) ───────────────────────────────────
     try {
       const cache = localStorage.getItem(CACHE_KEY);
       if (cache) {
         const { stocks } = JSON.parse(cache);
-        const found = (stocks as StockAnalysis[]).find(s => s.ticker === ticker?.toUpperCase());
+        const found = (stocks as StockAnalysis[]).find(s => s.ticker === upper);
         if (found) {
-        setStock(found);
-        // Fetch insider trading data
-        fetch(`/api/insider?ticker=${found.ticker}`)
-          .then(r => r.json()).then(d => setInsider(d)).catch(() => {});
-        return;
-      }
+          setStock(found);
+          fetch(`/api/insider?ticker=${found.ticker}`)
+            .then(r => r.json()).then(d => setInsider(d)).catch(() => {});
+          return;
+        }
       }
     } catch {}
-    setNotFound(true);
+
+    // ── 2) 포트폴리오 캐시 (mt_portfolio_cache_v2) ───────────────────────────
+    // portfolio 분석 결과에는 StockAnalysis와 호환되는 필드가 있음
+    try {
+      const pcache = localStorage.getItem(PORTFOLIO_CACHE);
+      if (pcache) {
+        const { results } = JSON.parse(pcache);
+        // portfolio API가 반환하는 HoldingResult에서 StockAnalysis에 필요한 필드 매핑
+        const found = (results as StockAnalysis[]).find(s => s.ticker === upper);
+        if (found) {
+          setStock(found);
+          fetch(`/api/insider?ticker=${found.ticker}`)
+            .then(r => r.json()).then(d => setInsider(d)).catch(() => {});
+          return;
+        }
+      }
+    } catch {}
+
+    // ── 3) 캐시 미스 → /api/analyze 직접 호출 ───────────────────────────────
+    setFetching(true);
+    fetch('/api/analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tickers: [upper] }),
+    })
+      .then(res => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json();
+      })
+      .then(data => {
+        const found = (data.stocks as StockAnalysis[])?.find(s => s.ticker === upper);
+        if (found) {
+          setStock(found);
+          fetch(`/api/insider?ticker=${found.ticker}`)
+            .then(r => r.json()).then(d => setInsider(d)).catch(() => {});
+        } else {
+          setNotFound(true);
+        }
+      })
+      .catch(() => setNotFound(true))
+      .finally(() => setFetching(false));
   }, [ticker]);
+
+  // ── 로딩 상태 (라이브 API 호출 중) ──────────────────────────────────────────
+  if (fetching) return (
+    <div className="min-h-screen bg-bg-base flex items-center justify-center">
+      <div className="text-center">
+        <div className="text-zinc-500 text-sm font-mono mb-2">
+          {ticker?.toUpperCase()} 실시간 분석 중...
+        </div>
+        <div className="text-xs text-zinc-600">Yahoo Finance 데이터 수집 중 (약 10–30초)</div>
+      </div>
+    </div>
+  );
 
   if (notFound) return (
     <div className="min-h-screen bg-bg-base flex items-center justify-center">
@@ -169,7 +222,6 @@ export default function StockDetailPage() {
 
         {/* Buy / Risk reasons */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
-          {/* Bullish */}
           <div className="bg-zinc-900/40 border border-emerald-900/60 rounded-xl p-4">
             <div className="text-xs font-semibold text-emerald-400 mb-3 flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block" />
@@ -186,7 +238,6 @@ export default function StockDetailPage() {
             </ul>
           </div>
 
-          {/* Bearish / Risk */}
           <div className="bg-zinc-900/40 border border-red-900/60 rounded-xl p-4">
             <div className="text-xs font-semibold text-red-400 mb-3 flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-red-400 inline-block" />
@@ -207,10 +258,10 @@ export default function StockDetailPage() {
         {/* Price levels */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-8">
           {[
-            { label: '진입 구간',  val: stock.entry_zone,    color: 'text-emerald-400', border: 'border-emerald-900' },
-            { label: '손절선',     val: stock.stop_loss,     color: 'text-red-400',     border: 'border-red-900' },
-            { label: '지지선',     val: stock.key_support,   color: 'text-sky-400',     border: 'border-sky-900' },
-            { label: '저항선',     val: stock.key_resistance,color: 'text-purple-400',  border: 'border-purple-900' },
+            { label: '진입 구간',  val: stock.entry_zone,     color: 'text-emerald-400', border: 'border-emerald-900' },
+            { label: '손절선',     val: stock.stop_loss,      color: 'text-red-400',     border: 'border-red-900' },
+            { label: '지지선',     val: stock.key_support,    color: 'text-sky-400',     border: 'border-sky-900' },
+            { label: '저항선',     val: stock.key_resistance, color: 'text-purple-400',  border: 'border-purple-900' },
           ].filter(x => x.val).map(({ label, val, color, border }) => (
             <div key={label} className={`bg-zinc-900/40 border ${border} rounded-xl p-4 text-center`}>
               <div className="text-[10px] text-zinc-600 uppercase tracking-widest mb-1">{label}</div>
@@ -235,7 +286,7 @@ export default function StockDetailPage() {
           })}
         </div>
 
-        {/* Insider Trading Section */}
+        {/* Insider Trading */}
         {insider && (
           <div className="mb-8">
             <div className="text-[10px] text-zinc-600 uppercase tracking-widest mb-3">
@@ -294,7 +345,6 @@ export default function StockDetailPage() {
           </div>
         )}
 
-        {/* Disclaimer */}
         <p className="text-[10px] text-zinc-700 text-center" style={{ fontFamily: 'system-ui, sans-serif' }}>
           ⚠ Yahoo Finance 공개 데이터 기반 참고 정보. 투자 판단 및 손익 책임은 본인에게 있습니다.
         </p>
