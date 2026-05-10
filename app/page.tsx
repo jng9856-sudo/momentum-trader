@@ -492,11 +492,20 @@ export default function Home() {
               </button>
             ))}
             {/* 즐겨찾기 상태 뱃지 */}
-            {favorites.size > 0 && activeTab === 'scanner' && (
-              <span className="flex items-center gap-1 px-2.5 py-1.5 text-xs rounded-lg border border-yellow-800/60 bg-yellow-950/40 text-yellow-500 whitespace-nowrap shrink-0 pointer-events-none">
-                ★ {favorites.size}개 상단 고정
-              </span>
-            )}
+           {favorites.size > 0 && activeTab === 'scanner' && (
+  <span className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs rounded-lg border border-yellow-800/60 bg-yellow-950/40 text-yellow-500 whitespace-nowrap shrink-0">
+    ★ {favorites.size}개 상단 고정
+    <button
+      onClick={() => {
+        setFavorites(new Set());
+        try { localStorage.removeItem(FAVORITES_KEY); } catch {}
+      }}
+      className="text-yellow-700 hover:text-yellow-400 transition-colors text-[10px] leading-none ml-0.5"
+      title="즐겨찾기 전체 해제">
+      ✕
+    </button>
+  </span>
+)}
           </div>
         </header>
 
