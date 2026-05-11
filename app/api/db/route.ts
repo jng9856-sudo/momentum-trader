@@ -23,7 +23,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(data);
   }
   if (type === 'watchlist') {
-    const { data, error } = await sb.from('user_watchlist').select('tickers').eq('id', 1).single();
+    const { data, error } = await sb.from('user_watchlist').select('tickers, favorites').eq('id', 1).single();
     if (error || !data) return NextResponse.json({ tickers: [], error: error?.message });
     return NextResponse.json({ tickers: data.tickers ?? [] });
   }
