@@ -1,8 +1,9 @@
-export type SignalType     = 'BREAKOUT' | 'SETUP' | 'WATCH' | 'HOLD' | 'SELL' | 'STRONG_SELL';
+export type SignalType     = 'BREAKOUT' | 'SETUP' | 'COILING' | 'WATCH' | 'HOLD' | 'SELL' | 'STRONG_SELL';
 export type ConfidenceType = 'HIGH' | 'MEDIUM' | 'LOW';
 export type StrengthType   = 'STRONG' | 'NEUTRAL' | 'WEAK';
 export type MA50Type       = 'ABOVE' | 'AT' | 'BELOW';
 export type PatternType    = 'CUP' | 'W_BASE' | 'BREAKOUT' | 'DOWNTREND' | 'NONE';
+export type StageType      = 1 | 2 | 3 | 4;
 
 export interface StockAnalysis {
   ticker:             string;
@@ -24,6 +25,10 @@ export interface StockAnalysis {
   // Extended indicators
   rsi:                number;
   macd_histogram:     number;
+  prev_macd_histogram?: number;
+  macd_expanding?:    boolean;
+  macd_contracting?:  boolean;
+  is_momentum_mode?:  boolean;
   volume_ratio:       number;
   bb_position:        number;
   atr_pct:            number;
@@ -55,7 +60,7 @@ export interface StockAnalysis {
   breakout_52w_vol?:    boolean;
   breakout_52w_detail?: string;
 
-  // PEAD (어닝 드리프트)
+  // PEAD
   pead_signal?:         boolean;
   pead_surprise_pct?:   number | null;
   pead_detail?:         string | null;
@@ -75,7 +80,7 @@ export interface StockAnalysis {
   short_squeeze?:       'HIGH' | 'MEDIUM' | 'LOW';
   short_detail?:        string | null;
 
-  // VCP / Pivot data
+  // VCP / Pivot
   vcp_score?:               number;
   vcp_is_vcp?:              boolean;
   vcp_contraction_count?:   number;
@@ -88,17 +93,17 @@ export interface StockAnalysis {
   pivot_dist?:              number;
   pivot_within_chase?:      boolean;
 
-  // ── 1번: 시장 국면 필터 ────────────────────────────────────────────────────
+  // 시장 국면
   regime_note?:             string | null;
 
-  // ── 2번: R/R 비율 ──────────────────────────────────────────────────────────
+  // R/R
   rr_ratio?:                number | null;
   rr_grade?:                'EXCELLENT' | 'GOOD' | 'FAIR' | 'POOR' | null;
   rr_risk?:                 number | null;
   rr_reward?:               number | null;
   rr_label?:                string;
 
-  // ── 3번: 눌림목 감지 ───────────────────────────────────────────────────────
+  // 눌림목
   pullback_is?:             boolean;
   pullback_grade?:          'IDEAL' | 'GOOD' | 'WEAK' | null;
   pullback_pct?:            number;
@@ -110,18 +115,18 @@ export interface StockAnalysis {
   pullback_high?:           number;
   pullback_detail?:         string;
 
-  // ── 섹터 정보 ──────────────────────────────────────────────────────────────
+  // 섹터
   sector?:                  string | null;
   industry?:                string | null;
 
-  // ── 4번: Pocket Pivot ──────────────────────────────────────────────────────
+  // Pocket Pivot
   pocket_pivot?:            boolean;
   pocket_pivot_days_ago?:   number;
   pocket_pivot_vol_ratio?:  number;
   pocket_pivot_above_ma?:   string | null;
   pocket_pivot_detail?:     string;
 
-  // ── 5번: RS Line ───────────────────────────────────────────────────────────
+  // RS Line
   rs_line?:                 number;
   rs_line_trend?:           'UP' | 'DOWN' | 'FLAT';
   rs_line_divergence?:      'BULLISH' | 'BEARISH' | 'NONE';
@@ -130,7 +135,7 @@ export interface StockAnalysis {
   rs_line_3m_change?:       number;
   rs_line_detail?:          string;
 
-  // ── 6번: 트레일링 스탑 ────────────────────────────────────────────────────
+  // 트레일링 스탑
   trail_initial_stop?:      number;
   trail_stop_10?:           number;
   trail_stop_20?:           number;
@@ -139,7 +144,7 @@ export interface StockAnalysis {
   trail_break_even?:        number;
   trail_detail?:            string;
 
-  // ── 7번: 분할 매수/매도 구간 ──────────────────────────────────────────────
+  // 분할 매수/매도
   split_entry1?:  { price: string; ratio: number; condition: string } | null;
   split_entry2?:  { price: string; ratio: number; condition: string } | null;
   split_entry3?:  { price: string; ratio: number; condition: string } | null;
@@ -147,6 +152,21 @@ export interface StockAnalysis {
   split_exit2?:   { price: string; ratio: number; gain: string } | null;
   split_exit3?:   { price: string; ratio: number; gain: string } | null;
   split_avg_entry?: number | null;
+
+  // ── 셋업 품질 분석 (신규) ──────────────────────────────────────────────────
+  // "아직 안 오른" 베이스 빌딩 종목을 발굴하는 점수
+  setup_score?:         number;       // 0-100 (높을수록 좋은 미발굴 셋업)
+  setup_label?:         string;       // 🔥 최상급 셋업 / ⚡ 코일링 / 📐 형성 중 등
+  setup_base_weeks?:    number;       // 베이스 기간 (주)
+  setup_atr_contraction?: number;     // 현재ATR / 역사적ATR — 낮을수록 압축 (0.6이하 = 강한 코일)
+  setup_price_range?:   number;       // 베이스 내 가격 변동폭 % (좁을수록 좋음)
+  setup_vol_drying?:    boolean;      // 베이스 중 거래량 고갈 여부
+  setup_rs_leading?:    boolean;      // RS Line이 주가보다 먼저 상승 (기관 조용히 매집 신호)
+  setup_pivot?:         number;       // 베이스 고점 = 돌파 기준가
+  setup_dist_pivot?:    number;       // 현재가 → 피봇까지 거리 % (음수 = 아직 돌파 전)
+  setup_stage?:         StageType;    // Minervini Stage 1~4
+  setup_is_coiling?:    boolean;      // 즉시 주목 셋업 플래그
+  setup_detail?:        string;       // 셋업 요약 문자열
 }
 
 export interface AnalysisResult {
