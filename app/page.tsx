@@ -7,6 +7,7 @@ import WatchlistManager from '@/components/WatchlistManager';
 import PortfolioTab from '@/components/PortfolioTab';
 import MarketStatus from '@/components/MarketStatus';
 import SectorHeatmap from '@/components/SectorHeatmap';
+import { supabase } from '@/lib/supabase';
 
 const DEFAULT_TICKERS = ['PLTR'];
 const CACHE_KEY = 'mt_analysis_v4';
