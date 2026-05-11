@@ -581,6 +581,7 @@ export default function Home() {
                       ['ALL', `전체(${allStocks.length})`],
                       ['BREAKOUT', `즉시진입(${allStocks.filter(s => s.signal==='BREAKOUT').length})`],
                       ['SETUP', `진입대기(${allStocks.filter(s => s.signal==='SETUP').length})`],
+                      ['COILING', `⚡코일링(${allStocks.filter(s=>s.signal==='COILING').length})`],
                       ['WATCH', `관심등록(${allStocks.filter(s => s.signal==='WATCH').length})`],
                       ['HOLD', `관망(${holdCnt})`],
                       ['SELL', `매도(${allStocks.filter(s => s.signal==='SELL').length})`],
