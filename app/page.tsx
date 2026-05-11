@@ -16,7 +16,7 @@ const FAVORITES_KEY = 'mt_favorites_v1';
 const MAX_TICKERS = 1000;
 const BATCH_SIZE = 50;
 
-type FilterType = 'ALL' | 'BREAKOUT' | 'SETUP' | 'WATCH' | 'HOLD' | 'SELL' | 'STRONG_SELL';
+type FilterType = 'ALL'|'BREAKOUT'|'SETUP'|'COILING'|'WATCH'|'HOLD'|'SELL'|'STRONG_SELL';
 type SortType = 'SCORE' | 'TICKER' | 'SIGNAL';
 type TabType = 'scanner' | 'portfolio' | 'sectors';
 
