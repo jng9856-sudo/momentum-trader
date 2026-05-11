@@ -308,6 +308,8 @@ export default function Home() {
       const n = new Set(prev);
       n.has(ticker) ? n.delete(ticker) : n.add(ticker);
       try { localStorage.setItem(FAVORITES_KEY, JSON.stringify([...n])); } catch {}
+       supabase.from('user_watchlist')
+      .update({ favorites: [...n] }).eq('id', 1).then(() => {});
       return n;
     });
   }
@@ -322,6 +324,7 @@ export default function Home() {
     try { const fav = localStorage.getItem(FAVORITES_KEY); if (fav) setFavorites(new Set(JSON.parse(fav))); } catch {}
     fetch('/api/db?type=watchlist').then(r => r.json()).then(d => {
       if (d.tickers?.length > 0) setWatchlist(d.tickers);
+      if (d.favorites?.length > 0) setFavorites(new Set(d.favorites));
       else { try { const wl = localStorage.getItem(WATCHLIST_KEY); if (wl) setWatchlist(JSON.parse(wl)); } catch {} }
     }).catch(() => { try { const wl = localStorage.getItem(WATCHLIST_KEY); if (wl) setWatchlist(JSON.parse(wl)); } catch {} });
     fetch(`/api/db?type=analysis&date=${todayKey()}`).then(r => r.json()).then(d => {
