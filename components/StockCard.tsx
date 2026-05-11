@@ -4,25 +4,31 @@ import { useRouter } from 'next/navigation';
 import EarningsBadge from '@/components/EarningsBadge';
 import { useState, useEffect } from 'react';
 
-const SIG_KO: Record<string, string> = { STRONG_BUY: '즉시매수', BUY: '매수', HOLD: '관망', SELL: '매도', STRONG_SELL: '즉시매도' };
+const SIG_KO: Record<string, string> = {
+  STRONG_BUY: '즉시매수', BUY: '매수', HOLD: '관망', SELL: '매도', STRONG_SELL: '즉시매도',
+  BREAKOUT: '즉시진입', SETUP: '진입대기', COILING: '코일링', WATCH: '관심등록',
+};
 const RS_KO:  Record<string, string> = { STRONG: '강세', NEUTRAL: '중립', WEAK: '약세' };
 const MA_KO:  Record<string, string> = { ABOVE: '50일선 위', AT: '50일선 근접', BELOW: '50일선 아래' };
 const PT_KO:  Record<string, string> = { CUP: '컵앤핸들', W_BASE: 'W베이스', BREAKOUT: '돌파', DOWNTREND: '하락추세', NONE: '패턴없음' };
 
 function sigColors(s: string) {
   switch (s) {
-    case 'STRONG_BUY':  return { border: 'border-l-emerald-400', badge: 'bg-emerald-900 text-emerald-200 border-emerald-600', bar: '#10b981' };
-    case 'BUY':         return { border: 'border-l-emerald-700', badge: 'bg-emerald-950 text-emerald-400 border-emerald-800', bar: '#34d399' };
-    case 'HOLD':        return { border: 'border-l-amber-600',   badge: 'bg-amber-950  text-amber-300   border-amber-800',   bar: '#f59e0b' };
-    case 'SELL':        return { border: 'border-l-red-700',     badge: 'bg-red-950    text-red-400     border-red-800',     bar: '#f87171' };
-    case 'STRONG_SELL': return { border: 'border-l-red-400',     badge: 'bg-red-900    text-red-200     border-red-500',     bar: '#ef4444' };
-    default:            return { border: 'border-l-zinc-600',    badge: 'bg-zinc-900   text-zinc-400    border-zinc-700',    bar: '#71717a' };
+    case 'BREAKOUT':    return { border: 'border-l-emerald-400', badge: 'bg-emerald-900 text-emerald-200 border-emerald-600', bar: '#10b981' };
+    case 'SETUP':       return { border: 'border-l-emerald-700', badge: 'bg-emerald-950 text-emerald-400 border-emerald-800', bar: '#34d399' };
+    // ── COILING: 아직 안 오른 압축 종목 — 보라색 계열 ──────────────────────
+    case 'COILING':     return { border: 'border-l-violet-400',  badge: 'bg-violet-950 text-violet-200 border-violet-600',   bar: '#a78bfa' };
+    case 'WATCH':       return { border: 'border-l-sky-700',     badge: 'bg-sky-950    text-sky-400    border-sky-800',      bar: '#38bdf8' };
+    case 'HOLD':        return { border: 'border-l-amber-600',   badge: 'bg-amber-950  text-amber-300  border-amber-800',    bar: '#f59e0b' };
+    case 'SELL':        return { border: 'border-l-red-700',     badge: 'bg-red-950    text-red-400    border-red-800',      bar: '#f87171' };
+    case 'STRONG_SELL': return { border: 'border-l-red-400',     badge: 'bg-red-900    text-red-200    border-red-500',      bar: '#ef4444' };
+    default:            return { border: 'border-l-zinc-600',    badge: 'bg-zinc-900   text-zinc-400   border-zinc-700',     bar: '#71717a' };
   }
 }
 function rsClass(r: string) { return r === 'STRONG' ? 'text-emerald-400' : r === 'WEAK' ? 'text-red-400' : 'text-zinc-400'; }
-
-// ── [수정] 0-100 스케일 기준으로 색상 임계값 변경 ──────────────────────────────
 function barColor(score: number) { return score >= 70 ? '#10b981' : score >= 40 ? '#f59e0b' : '#ef4444'; }
+// setup_score 색상 — 높을수록 좋음 (미발굴 셋업)
+function setupBarColor(s: number) { return s >= 75 ? '#a78bfa' : s >= 55 ? '#818cf8' : s >= 35 ? '#6366f1' : '#3f3f46'; }
 
 function rrColors(grade: string | null) {
   switch (grade) {
@@ -73,12 +79,9 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
   const [tab, setTab] = useState<TabKey>('core');
 
   const [rtPrice, setRtPrice] = useState<{
-    price:         number;
-    changePct:     number;
-    isRealtime?:   boolean;
+    price: number; changePct: number; isRealtime?: boolean;
     marketSession?: 'REGULAR' | 'PRE' | 'AFTER' | 'CLOSED';
-    extPrice?:     number | null;
-    extChangePct?: number | null;
+    extPrice?: number | null; extChangePct?: number | null;
   } | null>(null);
 
   useEffect(() => { if (forceOpen) setOpen(true); }, [forceOpen]);
@@ -88,24 +91,22 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
       .then(r => r.json())
       .then(d => {
         if (d.price && d.price > 0) setRtPrice({
-          price:         d.price,
-          changePct:     d.changePct     ?? 0,
-          isRealtime:    d.isRealtime,
-          marketSession: d.marketSession,
-          extPrice:      d.extPrice      ?? null,
-          extChangePct:  d.extChangePct  ?? null,
+          price: d.price, changePct: d.changePct ?? 0,
+          isRealtime: d.isRealtime, marketSession: d.marketSession,
+          extPrice: d.extPrice ?? null, extChangePct: d.extChangePct ?? null,
         });
-      })
-      .catch(() => {});
+      }).catch(() => {});
     fetchPrice();
     const iv = setInterval(fetchPrice, 30000);
     return () => clearInterval(iv);
   }, [stock.ticker]);
 
-  // ── [수정] 0-100 스케일로 클램핑 변경 ────────────────────────────────────────
-  const score = Math.min(100, Math.max(0, Math.round(Number(stock.momentum_score))));
+  const score      = Math.min(100, Math.max(0, Math.round(Number(stock.momentum_score))));
+  const setupScore = stock.setup_score ?? 0;
+  const isCoiling  = stock.setup_is_coiling ?? false;
+
   const c = sigColors(stock.signal);
-  const regimeNote  = stock.regime_note  ?? null;
+  const regimeNote  = stock.regime_note ?? null;
   const regimeStyle = regimeNote ? regimeBadgeStyle(regimeNote) : null;
   const rrRatio  = stock.rr_ratio  ?? null;
   const rrGrade  = stock.rr_grade  ?? null;
@@ -150,18 +151,18 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
   const rsLine3m         = stock.rs_line_3m_change  ?? 0;
   const rsLineDetail     = stock.rs_line_detail     ?? '';
   const rsLineNewHigh    = stock.rs_line_new_high   ?? false;
-  const trailInitial   = stock.trail_initial_stop ?? null;
-  const trailStop10    = stock.trail_stop_10      ?? null;
-  const trailStop20    = stock.trail_stop_20      ?? null;
-  const trailStop30    = stock.trail_stop_30      ?? null;
-  const trailMultiplier = stock.trail_multiplier  ?? null;
-  const trailBreakEven  = stock.trail_break_even  ?? null;
-  const splitEntry1  = stock.split_entry1    ?? null;
-  const splitEntry2  = stock.split_entry2    ?? null;
-  const splitEntry3  = stock.split_entry3    ?? null;
-  const splitExit1   = stock.split_exit1     ?? null;
-  const splitExit2   = stock.split_exit2     ?? null;
-  const splitExit3   = stock.split_exit3     ?? null;
+  const trailInitial    = stock.trail_initial_stop ?? null;
+  const trailStop10     = stock.trail_stop_10      ?? null;
+  const trailStop20     = stock.trail_stop_20      ?? null;
+  const trailStop30     = stock.trail_stop_30      ?? null;
+  const trailMultiplier = stock.trail_multiplier   ?? null;
+  const trailBreakEven  = stock.trail_break_even   ?? null;
+  const splitEntry1   = stock.split_entry1    ?? null;
+  const splitEntry2   = stock.split_entry2    ?? null;
+  const splitEntry3   = stock.split_entry3    ?? null;
+  const splitExit1    = stock.split_exit1     ?? null;
+  const splitExit2    = stock.split_exit2     ?? null;
+  const splitExit3    = stock.split_exit3     ?? null;
   const splitAvgEntry = stock.split_avg_entry ?? null;
 
   const FavBtn = () => onToggleFavorite ? (
@@ -176,28 +177,19 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
 
   const ExtPriceBadge = ({ compact: isCompact = false }: { compact?: boolean }) => {
     if (!rtPrice?.extPrice) return null;
-    const isPre   = rtPrice.marketSession === 'PRE';
-    const isAfter = rtPrice.marketSession === 'AFTER';
+    const isPre = rtPrice.marketSession === 'PRE', isAfter = rtPrice.marketSession === 'AFTER';
     if (!isPre && !isAfter) return null;
-
-    if (isCompact) {
-      return (
-        <span className={`flex items-center gap-0.5 px-1 py-0.5 rounded border ${isPre ? 'bg-sky-950 border-sky-800' : 'bg-violet-950 border-violet-800'}`}>
-          <span className={`text-[8px] font-semibold ${isPre ? 'text-sky-400' : 'text-violet-400'}`}>{isPre ? '프리' : '애프터'}</span>
-          <span className={`text-[8px] font-mono ${isPre ? 'text-sky-300' : 'text-violet-300'}`}>${rtPrice.extPrice.toLocaleString()}</span>
-        </span>
-      );
-    }
-
+    if (isCompact) return (
+      <span className={`flex items-center gap-0.5 px-1 py-0.5 rounded border ${isPre ? 'bg-sky-950 border-sky-800' : 'bg-violet-950 border-violet-800'}`}>
+        <span className={`text-[8px] font-semibold ${isPre ? 'text-sky-400' : 'text-violet-400'}`}>{isPre ? '프리' : '애프터'}</span>
+        <span className={`text-[8px] font-mono ${isPre ? 'text-sky-300' : 'text-violet-300'}`}>${rtPrice.extPrice.toLocaleString()}</span>
+      </span>
+    );
     return (
       <span className={`flex items-center gap-1 ml-1 px-1.5 py-0.5 rounded border ${isPre ? 'bg-sky-950 border-sky-800' : 'bg-violet-950 border-violet-800'}`}>
         <span className={`text-[9px] font-semibold ${isPre ? 'text-sky-400' : 'text-violet-400'}`}>{isPre ? '프리' : '애프터'}</span>
         <span className={`text-[9px] font-mono ${isPre ? 'text-sky-300' : 'text-violet-300'}`}>${rtPrice.extPrice.toLocaleString()}</span>
-        {rtPrice.extChangePct != null && (
-          <span className={`text-[9px] font-mono ${rtPrice.extChangePct >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-            {rtPrice.extChangePct >= 0 ? '+' : ''}{rtPrice.extChangePct.toFixed(2)}%
-          </span>
-        )}
+        {rtPrice.extChangePct != null && <span className={`text-[9px] font-mono ${rtPrice.extChangePct >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{rtPrice.extChangePct >= 0 ? '+' : ''}{rtPrice.extChangePct.toFixed(2)}%</span>}
       </span>
     );
   };
@@ -223,6 +215,8 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
             {ppIs && <span className="text-[9px] bg-violet-950 text-violet-200 border border-violet-700 px-1.5 py-0.5 rounded">⚡ 포켓피벗</span>}
             {pbIs && pbGrade && <span className={`text-[9px] px-1.5 py-0.5 rounded border ${pbc.badge}`}>{pbGrade === 'IDEAL' ? '🎯 눌림목' : '📉 눌림목'}</span>}
             {rrRatio !== null && <span className={`text-[9px] px-1.5 py-0.5 rounded border font-mono ${rrc.bg} ${rrc.text} ${rrc.border}`}>R/R 1:{rrRatio}</span>}
+            {/* COILING 컴팩트 배지 */}
+            {isCoiling && <span className="text-[9px] bg-violet-950 text-violet-300 border border-violet-700 px-1.5 py-0.5 rounded">🌀 코일링</span>}
           </div>
           <div className="flex items-center gap-2 shrink-0">
             {rtPrice && (
@@ -233,7 +227,6 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
               </div>
             )}
             <span className={`text-[10px] font-semibold px-2 py-0.5 rounded border ${c.badge}`}>{SIG_KO[stock.signal] ?? stock.signal}</span>
-            {/* ── [수정] 컴팩트 점수 표기 ── */}
             <span className="text-xs font-mono" style={{ color: barColor(score) }}>{score}</span>
             {stock.entry_zone && <span className="text-[9px] text-emerald-400 font-mono hidden sm:inline">진입 {stock.entry_zone}</span>}
             {stock.stop_loss  && <span className="text-[9px] text-red-400 font-mono hidden sm:inline">손절 {stock.stop_loss}</span>}
@@ -282,12 +275,18 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
           {rrRatio !== null && <span className={`text-[9px] px-1.5 py-0.5 rounded border font-mono ${rrc.bg} ${rrc.text} ${rrc.border}`}>R/R 1:{rrRatio}</span>}
           {regimeNote && regimeStyle && <span className={`text-[9px] px-1.5 py-0.5 rounded border ${regimeStyle.bg} ${regimeStyle.text} ${regimeStyle.border}`}>{regimeNote.split('—')[0].trim()}</span>}
           {macroWarning && stock.signal.includes('BUY') && <span className="text-[9px] bg-red-950 text-red-300 border border-red-700 px-1.5 py-0.5 rounded">⚡ {macroWarning.title} D-{macroWarning.daysUntil}</span>}
+          {/* ── COILING 배지 — 아직 안 오른 압축 셋업 ──────────────────────── */}
+          {isCoiling && stock.signal !== 'COILING' && (
+            <span className="text-[9px] bg-violet-950 text-violet-300 border border-violet-700 px-1.5 py-0.5 rounded">🌀 코일링</span>
+          )}
+          {/* RS Leading 배지 */}
+          {stock.setup_rs_leading && (
+            <span className="text-[9px] bg-indigo-950 text-indigo-300 border border-indigo-700 px-1.5 py-0.5 rounded">📡 RS선행</span>
+          )}
         </div>
 
-        {/* ── 헤더 우측: 신호 배지 + 점수 + 즐겨찾기 + 접기 ── */}
         <div className="flex items-center gap-2 shrink-0 ml-2">
           <span className={`text-xs font-semibold px-2.5 py-1 rounded-md border ${c.badge}`}>{SIG_KO[stock.signal] ?? stock.signal}</span>
-          {/* ── [수정] 헤더 점수 표기 ── */}
           <span className="text-xs font-mono" style={{ color: barColor(score) }}>{score}</span>
           <FavBtn />
           {!forceOpen && <span className="text-zinc-600 text-xs">{open ? '▲' : '▼'}</span>}
@@ -304,10 +303,12 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
           <span>MACD <span className={stock.macd_histogram > 0 ? 'text-emerald-400' : 'text-red-400'}>{stock.macd_histogram > 0 ? '▲상승' : '▼하락'}</span></span>
           <span>거래량 <span className={stock.volume_ratio > 1.5 ? 'text-emerald-400' : 'text-zinc-400'}>{stock.volume_ratio}x</span></span>
           <span className={stock.ma50_status === 'ABOVE' ? 'text-emerald-400' : 'text-red-400'}>{MA_KO[stock.ma50_status]}</span>
-          {pbIs && <span>눌림목 <span className={pbc.text}>{Math.abs(pbPct)}% 조정{pbSupport ? ` → ${pbSupport}` : ''}</span></span>}
+          {pbIs && <span>눌림목 <span className={pbc.text}>{Math.abs(pbPct)}%{pbSupport ? ` → ${pbSupport}` : ''}</span></span>}
           {rrRatio !== null && <span>R/R <span className={rrc.text}>1:{rrRatio}</span></span>}
           {stock.entry_zone && <span>진입 <span className="text-emerald-400 font-mono">{stock.entry_zone}</span></span>}
           {stock.stop_loss  && <span>손절 <span className="text-red-400 font-mono">{stock.stop_loss}</span></span>}
+          {/* 셋업 요약 */}
+          {setupScore >= 40 && <span>셋업 <span style={{ color: setupBarColor(setupScore) }}>{setupScore}점 {stock.setup_label}</span></span>}
         </div>
       )}
 
@@ -348,8 +349,8 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
                   </div>
                 )}
 
-                {/* ── [수정] 모멘텀 강도 바 — 0-100 스케일 ── */}
-                <div className="mb-3">
+                {/* 모멘텀 강도 바 */}
+                <div className="mb-2">
                   <div className="flex justify-between text-xs text-zinc-500 mb-1.5">
                     <span>모멘텀 강도</span>
                     <span className="font-semibold" style={{ color: c.bar }}>{score} / 100</span>
@@ -358,6 +359,38 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
                     <div className="h-full rounded-full" style={{ width: `${score}%`, background: c.bar }} />
                   </div>
                 </div>
+
+                {/* ── 셋업 품질 바 (신규) — "아직 안 오른" 정도 ──────────── */}
+                {setupScore > 0 && (
+                  <div className="mb-3 p-3 rounded-lg border border-violet-900/50 bg-violet-950/10">
+                    <div className="flex justify-between text-xs mb-1.5">
+                      <span className="text-zinc-500">셋업 품질 <span className="text-zinc-600 text-[10px]">(베이스 빌딩)</span></span>
+                      <span className="font-semibold" style={{ color: setupBarColor(setupScore) }}>{setupScore}점 — {stock.setup_label}</span>
+                    </div>
+                    <div className="h-1.5 bg-zinc-800 rounded-full overflow-hidden mb-2">
+                      <div className="h-full rounded-full transition-all" style={{ width: `${setupScore}%`, background: setupBarColor(setupScore) }} />
+                    </div>
+                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-zinc-600">
+                      {stock.setup_base_weeks !== undefined && stock.setup_base_weeks > 0 &&
+                        <span>베이스 <span className="text-zinc-400">{stock.setup_base_weeks}주</span></span>}
+                      {stock.setup_atr_contraction !== undefined &&
+                        <span>ATR압축 <span style={{ color: setupBarColor(setupScore) }}>{Math.round(stock.setup_atr_contraction * 100)}%</span></span>}
+                      {stock.setup_price_range !== undefined &&
+                        <span>가격범위 <span className="text-zinc-400">{stock.setup_price_range}%</span></span>}
+                      {stock.setup_vol_drying &&
+                        <span className="text-violet-400">거래량 고갈 ✓</span>}
+                      {stock.setup_rs_leading &&
+                        <span className="text-indigo-400">RS Line 선행 ✓</span>}
+                      {stock.setup_dist_pivot !== undefined &&
+                        <span>피봇까지 <span className={Math.abs(stock.setup_dist_pivot) <= 5 ? 'text-violet-300' : 'text-zinc-400'}>{stock.setup_dist_pivot > 0 ? '+' : ''}{stock.setup_dist_pivot}%</span></span>}
+                      {stock.setup_stage !== undefined &&
+                        <span>Stage <span className={stock.setup_stage === 2 ? 'text-emerald-400' : stock.setup_stage === 1 ? 'text-violet-400' : 'text-zinc-500'}>{stock.setup_stage}</span></span>}
+                    </div>
+                    {stock.setup_detail && (
+                      <p className="text-[10px] text-zinc-600 mt-1.5" style={{ fontFamily: 'system-ui' }}>{stock.setup_detail}</p>
+                    )}
+                  </div>
+                )}
 
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
                   <Metric label="지수 RS"><span className={`text-sm font-medium ${rsClass(stock.rs_vs_index)}`}>{RS_KO[stock.rs_vs_index]}</span></Metric>
@@ -374,11 +407,11 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
                   </div>
                 )}
                 <div className="grid grid-cols-5 gap-2 mb-3 p-3 bg-zinc-900/50 rounded-lg">
-                  <IndBox label="RSI(14)" val={stock.rsi}              color={stock.rsi > 78 ? 'text-red-400' : stock.rsi < 35 ? 'text-sky-400' : 'text-emerald-400'} sub={stock.rsi > 78 ? '과열' : stock.rsi < 35 ? '침체' : '정상'} />
-                  <IndBox label="MACD"    val={stock.macd_histogram}   color={stock.macd_histogram > 0 ? 'text-emerald-400' : 'text-red-400'} sub={stock.macd_histogram > 0 ? '상승' : '하락'} />
+                  <IndBox label="RSI(14)" val={stock.rsi}               color={stock.rsi > 78 ? 'text-red-400' : stock.rsi < 35 ? 'text-sky-400' : 'text-emerald-400'} sub={stock.rsi > 78 ? '과열' : stock.rsi < 35 ? '침체' : '정상'} />
+                  <IndBox label="MACD"    val={stock.macd_histogram}    color={stock.macd_histogram > 0 ? 'text-emerald-400' : 'text-red-400'} sub={stock.macd_histogram > 0 ? '상승' : '하락'} />
                   <IndBox label="거래량"  val={`${stock.volume_ratio}x`} color={stock.volume_ratio > 1.5 ? 'text-emerald-400' : stock.volume_ratio < 0.7 ? 'text-red-400' : 'text-zinc-400'} sub={stock.volume_ratio > 1.5 ? '강함' : '보통'} />
                   <IndBox label="BB위치"  val={`${stock.bb_position}%`} color={stock.bb_position > 80 ? 'text-amber-400' : 'text-zinc-400'} sub={stock.bb_position > 80 ? '상단' : '중간'} />
-                  <IndBox label="ATR%"    val={`${stock.atr_pct}%`}    color="text-zinc-400" sub="변동성" />
+                  <IndBox label="ATR%"    val={`${stock.atr_pct}%`}     color="text-zinc-400" sub="변동성" />
                 </div>
                 <div className="mb-3">
                   <div className="flex justify-between text-[10px] text-zinc-600 mb-1">
@@ -409,7 +442,7 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
                     <div className="flex flex-wrap gap-x-3 gap-y-1 text-[9px]">
                       <span className={pbVolTrend === 'DECLINING' ? 'text-emerald-400' : pbVolTrend === 'RISING' ? 'text-red-400' : 'text-zinc-500'}>{pbVolTrend === 'DECLINING' ? '✓ 거래량 감소' : pbVolTrend === 'RISING' ? '✕ 거래량 증가' : '— 거래량 보합'}</span>
                       <span className={pbRsiCooled ? 'text-emerald-400' : 'text-zinc-500'}>{pbRsiCooled ? '✓ RSI 냉각' : '— RSI 미냉각'}</span>
-                      <span className={pbSupport ? 'text-emerald-400' : 'text-zinc-500'}>{pbSupport ? `✓ MA 지지 확인 (${pbSupport})` : '— MA 지지 없음'}</span>
+                      <span className={pbSupport ? 'text-emerald-400' : 'text-zinc-500'}>{pbSupport ? `✓ MA 지지 (${pbSupport})` : '— MA 지지 없음'}</span>
                     </div>
                     <p className="text-[10px] text-zinc-500 mt-2" style={{ fontFamily: 'system-ui' }}>{pbDetail}</p>
                   </div>
@@ -468,7 +501,6 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
                         <span className="text-[10px] text-zinc-500 uppercase tracking-widest">주봉 멀티 타임프레임</span>
                         {stock.weekly_is_entry && <span className="text-[9px] bg-emerald-800 text-emerald-200 border border-emerald-600 px-1.5 py-0.5 rounded font-semibold">🎯 최고 타점</span>}
                       </div>
-                      {/* ── [수정] 주봉 alignScore 0-100 스케일 표기 ── */}
                       <span className={`text-xs font-semibold ${stock.weekly_trend === 'UPTREND' ? 'text-emerald-400' : stock.weekly_trend === 'DOWNTREND' ? 'text-red-400' : 'text-zinc-400'}`}>
                         {stock.weekly_align_score ?? '-'}/100 {stock.weekly_trend === 'UPTREND' ? '▲ 주봉 상승' : stock.weekly_trend === 'DOWNTREND' ? '▼ 주봉 하락' : '— 횡보'}
                       </span>
@@ -499,7 +531,7 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
                         {stock.short_squeeze === 'HIGH' && <span className="text-[9px] bg-amber-900 text-amber-300 border border-amber-700 px-1.5 py-0.5 rounded">숏스퀴즈 주의 ⚡</span>}
                       </div>
                       <span className={`text-xs font-mono ${stock.short_pct > 20 ? 'text-red-400' : stock.short_pct > 10 ? 'text-amber-400' : 'text-zinc-400'}`}>
-                        {stock.short_pct}% {stock.short_ratio && `/ ${stock.short_ratio}일`}
+                        {stock.short_pct}%{stock.short_ratio ? ` / ${stock.short_ratio}일` : ''}
                       </span>
                     </div>
                     <p className="text-[10px] text-zinc-500" style={{ fontFamily: 'system-ui' }}>{stock.short_detail ?? ''}</p>
@@ -516,7 +548,6 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
                       <span className="text-xs font-bold font-mono text-violet-300">거래량 {ppVolRatio}x</span>
                     </div>
                     <p className="text-[10px] text-zinc-500" style={{ fontFamily: 'system-ui' }}>{ppDetail}</p>
-                    <p className="text-[10px] text-zinc-600 mt-1" style={{ fontFamily: 'system-ui' }}>Minervini 기법 — 하락일 최대 거래량 초과 + MA 위 = 기관 선취매 신호</p>
                   </div>
                 )}
                 {stock.rs_line !== undefined && (
@@ -593,7 +624,7 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
                           {[splitEntry1, splitEntry2, splitEntry3].map((e, i) => e && (
                             <div key={i} className="flex items-center justify-between px-2 py-1.5 rounded border border-emerald-900/50 bg-emerald-950/20">
                               <div>
-                                <span className="text-[9px] text-emerald-600 font-semibold">{i + 1}차 {e.ratio}%</span>
+                                <span className="text-[9px] text-emerald-600 font-semibold">{i+1}차 {e.ratio}%</span>
                                 <p className="text-[9px] text-zinc-600 mt-0.5" style={{ fontFamily: 'system-ui' }}>{e.condition}</p>
                               </div>
                               <span className="text-xs font-bold font-mono text-emerald-300">{e.price}</span>
@@ -607,7 +638,7 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
                           {[splitExit1, splitExit2, splitExit3].map((e, i) => e && (
                             <div key={i} className="flex items-center justify-between px-2 py-1.5 rounded border border-red-900/50 bg-red-950/20">
                               <div>
-                                <span className="text-[9px] text-red-500 font-semibold">{i + 1}차 {e.ratio}%</span>
+                                <span className="text-[9px] text-red-500 font-semibold">{i+1}차 {e.ratio}%</span>
                                 <p className="text-[9px] text-zinc-600 mt-0.5">{e.gain}</p>
                               </div>
                               <span className="text-xs font-bold font-mono text-red-300">{e.price}</span>
@@ -649,7 +680,6 @@ export default function StockCard({ stock, highlight = false, onRemove, earnings
                 )}
               </div>
             )}
-
           </div>
         </div>
       )}
