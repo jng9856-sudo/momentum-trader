@@ -23,9 +23,13 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(data);
   }
   if (type === 'watchlist') {
-    const { data, error } = await sb.from('user_watchlist').select('tickers, favorites').eq('id', 1).single();
-    if (error || !data) return NextResponse.json({ tickers: [], error: error?.message });
-    return NextResponse.json({ tickers: data.tickers ?? [] });
+    const { error } = await sb.from('user_watchlist').upsert({
+      id: 1,
+      tickers: body.tickers,
+      ...(body.favorites !== undefined && { favorites: body.favorites }),
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'id' });
+    return NextResponse.json({ ok: !error, error: error?.message });
   }
   if (type === 'portfolio') {
     const { data, error } = await sb.from('user_portfolio').select('*').eq('id', 1).single();
